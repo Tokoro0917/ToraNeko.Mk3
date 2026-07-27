@@ -9,4 +9,4 @@ BT1,Battery Connector,2S LiPo,1,7.4V nominal
 -,Wall Sensor (IR emitter),OSI5FU3A11C,4,2 front-diagonal + 2 side
 -,Wall Sensor (IR receiver),LTR-209,4,2 front-diagonal + 2 side
 -,IR LED Drive Transistor,TBD,4,"1 per emitter, switched sequentially"
--,3.3V Regulator,TBD,TBD,for MCU/sensors
+U7,3.3V Regulator,LXDC55FAAA-203,1,for MCU/sensors
