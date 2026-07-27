@@ -6,6 +6,7 @@ U5/U6,Magnetic Encoder,AS5047P,2,1 per motor shaft (left/right)
 M1/M2,Brushed DC Motor,NFP-D0812-1-3.7,2,left/right drive
 -,Tire,14mm diameter,2,left/right
 BT1,Battery Connector,2S LiPo,1,7.4V nominal
--,Wall Sensor (IR emitter),TBD,TBD,reflective IR - part TBD
--,Wall Sensor (IR receiver),TBD,TBD,reflective IR - part TBD
+-,Wall Sensor (IR emitter),OSI5FU3A11C,4,2 front-diagonal + 2 side
+-,Wall Sensor (IR receiver),LTR-209,4,2 front-diagonal + 2 side
+-,IR LED Drive Transistor,TBD,4,"1 per emitter, switched sequentially"
 -,3.3V Regulator,TBD,TBD,for MCU/sensors
