@@ -1,0 +1,53 @@
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Editors / IDE ---
+.vscode/
+.idea/
+*.swp
+*~
+
+# --- KiCad ---
+*.bak
+*.kicad_pcb-bak
+*.kicad_sch-bak
+*-backups/
+_autosave-*
+fp-info-cache
+*.lck
+*.000
+*.net.bak
+sym-lib-table.bak
+fp-lib-table.bak
+
+# --- Mechanical CAD (Fusion360 / SolidWorks / STEP exports) ---
+*~lock*
+*.SLDPRT.lock
+*.f3d.bak
+
+# --- C/C++ build artifacts ---
+build/
+cmake-build-*/
+*.o
+*.obj
+*.elf
+*.hex
+*.bin
+*.map
+
+# --- PlatformIO / Arduino ---
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- Misc ---
+*.log
+*.tmp

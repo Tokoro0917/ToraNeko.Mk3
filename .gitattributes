@@ -1,0 +1,18 @@
+# KiCad files are text-based and diff/merge reasonably well as text.
+*.kicad_sch text
+*.kicad_pcb text
+*.kicad_pro text
+*.kicad_sym text
+*.kicad_mod text
+
+# Treat common binary/export formats as binary (no diff, no EOL conversion).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.step binary
+*.stp binary
+*.stl binary
+*.f3d binary
+*.SLDPRT binary
+*.SLDASM binary
