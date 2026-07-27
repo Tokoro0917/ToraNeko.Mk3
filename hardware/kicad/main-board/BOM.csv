@@ -1,0 +1,11 @@
+Reference,Part,Value/PartNumber,Qty,Notes
+U1,MCU,STM32F411CEU6,1,UFQFPN48
+U2/U3,Motor Driver,MP6551,2,1 per motor (left/right)
+U4,IMU,LSM6DSRXTR,1,SPI/I2C 6-axis
+U5/U6,Magnetic Encoder,AS5047P,2,1 per motor shaft (left/right)
+M1/M2,Brushed DC Motor,NFP-D0812-1-3.7,2,left/right drive
+-,Tire,14mm diameter,2,left/right
+BT1,Battery Connector,2S LiPo,1,7.4V nominal
+-,Wall Sensor (IR emitter),TBD,TBD,reflective IR - part TBD
+-,Wall Sensor (IR receiver),TBD,TBD,reflective IR - part TBD
+-,3.3V Regulator,TBD,TBD,for MCU/sensors
