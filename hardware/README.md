@@ -8,11 +8,14 @@
 
 ```
 hardware/
-└── kicad/
-    ├── main-board/
-    ├── motor-driver-board/
-    └── sensor-board/
+├── kicad/
+│   ├── main-board/
+│   ├── motor-driver-board/
+│   └── sensor-board/
+└── datasheets/    # 使用部品のデータシートPDF（型番横断で一元管理）
 ```
+
+使用部品のデータシートは [datasheets/](./datasheets/) にまとめています。
 
 各プロジェクトディレクトリには、KiCad のプロジェクト一式（`.kicad_pro` / `.kicad_sch` / `.kicad_pcb` など）に加えて、
 以下も一緒に管理することを推奨します。
