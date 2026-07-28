@@ -50,8 +50,8 @@
 - 吸引ファンのための気密シール（スカート）が必要（TODO）
 - 具体的な層構成・材質は未定（TODO）
 
-回路設計の詳細（機能ブロック・ペリフェラル割り当て案・BOMドラフト）は
-[hardware/kicad/main-board/](../hardware/kicad/main-board/) を参照してください。
+回路設計の詳細（機能ブロック・ペリフェラル割り当て案・BOMドラフト・KiCadプロジェクト）は
+[hardware/kicad/TORANEKO.Mk3/](../hardware/kicad/TORANEKO.Mk3/) を参照してください。
 
 ## ソフトウェア
 

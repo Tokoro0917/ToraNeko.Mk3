@@ -9,7 +9,7 @@
 ```
 hardware/
 ├── kicad/
-│   ├── main-board/
+│   ├── TORANEKO.Mk3/
 │   ├── motor-driver-board/
 │   └── sensor-board/
 └── datasheets/    # 使用部品のデータシートPDF（型番横断で一元管理）
