@@ -13,4 +13,4 @@ mechanical/
 └── exported/      # 発注・共有用に書き出したSTEP/STL等
 ```
 
-CADツール（Fusion360 / SolidWorks 等）は未確定です。決まり次第、本READMEに追記します。
+CADツールは **Fusion 360** を使用しています。
