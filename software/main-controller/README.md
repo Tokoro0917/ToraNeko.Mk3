@@ -14,6 +14,8 @@ KOGUMA.MkIIl のコード（[../reference/koguma-mkiil/](../reference/koguma-mki
 | 書き込み・デバッグ | STLINK-V3MODS（SWD） | SWDIO=PA13, SWCLK=PA14, NRST。SWO（PB3）は任意 |
 | PCとの通信・printf | UART → STLINK-V3MODS の仮想COMポート | 書き込みとログがケーブル1本で済む。**USBは使わない**（PA11/PA12 を他用途に回せる） |
 | UART | USART1（PA9 TX / PA10 RX）を推奨 | APB2 側なので高速化しやすい。PA2/PA3（USART2）は ADC 入力と取り合いになるため避ける |
+| 開発環境 | STM32CubeIDE | KOGUMA と同じ。ピン・クロック設定は `.ioc`（CubeMX）で管理 |
+| ライブラリ | STM32 HAL | 1kHz 割り込み内で重い箇所は、必要になったら LL/レジスタ直接に置き換える |
 | クロック | HSE 水晶 10MHz → SYSCLK 100MHz | PLL: M=5, N=200, P=4（VCO 400MHz）。APB1=50MHz、APB2=100MHz、タイマークロックは全て100MHz。USBを使わないので48MHzは不要 |
 
 ## 実装の進め方
