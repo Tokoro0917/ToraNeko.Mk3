@@ -1,0 +1,21 @@
+# STM32CubeIDE build outputs
+Debug/
+Release/
+
+# Per-object build metadata that STM32CubeIDE scatters next to sources
+*.o
+*.d
+*.su
+*.cyclo
+*.list
+*.map
+*.elf
+*.bin
+*.hex
+
+# Eclipse/IDE local state
+.metadata/
+
+# ホスト側テストのビルド成果物 (test/test_deadend.c)
+/test_deadend
+/test_deadend32

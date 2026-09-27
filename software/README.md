@@ -15,5 +15,4 @@ software/
 
 ## 既存資産について
 
-以前の KOGUMA.Mk3 リポジトリのソフトウェア資産は、現時点ではこのリポジトリに移行していません。
-必要になったサブシステムから順次移行するか、参照のみに留めるかを都度検討します。
+メイン基板のファームウェアは KOGUMA.MkIIl をベースにし、`main-controller/` に取り込みました（STM32F411CEU6 への移植はこれから）。詳細は [main-controller/README.md](main-controller/README.md) を参照。

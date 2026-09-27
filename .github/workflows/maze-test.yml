@@ -1,0 +1,31 @@
+name: maze-test
+
+# software/main-controller/Core/Src/Maze.c はHALに依存しないので、ホストのgccにそのままリンクして
+# 迷路アルゴリズムの不変条件を検証できる。ファームウェア本体のARMビルドはここでは行わない。
+on:
+  push:
+    branches: [main]
+    paths: ['software/main-controller/**', '.github/workflows/maze-test.yml']
+  pull_request:
+    paths: ['software/main-controller/**', '.github/workflows/maze-test.yml']
+
+jobs:
+  deadend-fill:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: software/main-controller
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 行き止まり潰しの検証 (16x16)
+        run: |
+          gcc -std=c11 -Wall -I Core/Inc -o test_deadend \
+            test/test_deadend.c Core/Src/Maze.c
+          ./test_deadend
+
+      - name: 行き止まり潰しの検証 (32x32)
+        run: |
+          gcc -std=c11 -Wall -DMAZE_SIZE=32 -I Core/Inc -o test_deadend32 \
+            test/test_deadend.c Core/Src/Maze.c
+          ./test_deadend32
