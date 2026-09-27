@@ -9,7 +9,7 @@ BT1,Battery Connector,2S LiPo,1,7.4V nominal
 -,Wall Sensor (IR emitter),OSI5FU3A11C,4,2 front-diagonal + 2 side
 -,Wall Sensor (IR receiver),LTR-209,4,2 front-diagonal + 2 side
 U8/U9/U10/U11,IR LED Driver,NCR321PAS,4,"constant-current, digital PWM enable, 1 per emitter"
--,IR LED Driver Current-Set Resistor,TBD,4,"sets NCR321PAS output current per channel"
+R?,IR LED Driver Current-Set Resistor,9.1 ohm 1%,4,"Rext for NCR321PAS: ~100 mA peak (typ, from datasheet Fig.16/17/24); verify by measurement"
 U7,3.3V Regulator,LXDC55FAAA-203,1,for MCU/sensors
 M3,Suction Fan,TBD,1,downforce - part TBD
 Q1,Fan Drive MOSFET,TBD,1,N-channel low-side PWM drive
