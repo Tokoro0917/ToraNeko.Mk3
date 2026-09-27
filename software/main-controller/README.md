@@ -19,14 +19,13 @@ KOGUMA.MkIIl のコード（[../reference/koguma-mkiil/](../reference/koguma-mki
 | ライブラリ | STM32 HAL | 1kHz 割り込み内で重い箇所は、必要になったら LL/レジスタ直接に置き換える |
 | プロジェクト名 | `TORANEKO.Mk3` | KiCad プロジェクトと揃える |
 | クロック | HSE 水晶 10MHz → SYSCLK 100MHz | PLL: M=5, N=200, P=4（VCO 400MHz）。APB1=50MHz、APB2=100MHz、タイマークロックは全て100MHz。USBを使わないので48MHzは不要 |
-| 制御周期のタイマー | TIM11 | ピンを使わない内部タイマー。周期（1kHz / 2kHz / 4kHz）は検討中 |
-| 壁センサの点灯・測定の順番制御 | TIM3 で ADC を起動し、DMA 完了割り込みで次の LED に進める連鎖方式 | CPU を待たせずに 4 組を毎周期測定できる。詳細はステップ6 |
+| 制御周期 | **2kHz**（`config/robot_params.h` の `CTRL_FREQ_HZ` で変更可能にする） | 処理時間の見積りは CPU 使用率 約10〜18%。実機で余裕を測り、余裕があれば 4kHz（壁センサは 2kHz のまま）に上げる。PID ゲイン等は周期から換算する作りにする |
+| 制御周期のタイマー | TIM11 | ピンを使わない内部タイマー |
+| 壁センサの点灯・測定の順番制御 | TIM3 で ADC を起動し、DMA 完了割り込みで次の LED に進める連鎖方式 | CPU を待たせずに 4 組を毎周期測定できる（連鎖全体で約 170〜200µs）。詳細はステップ6 |
+| 処理時間計測・µs 待ち | TIM5（32bit）を 1MHz でフリーラン | 制御割り込みの開始・終了時刻を記録して CPU 使用率を常に確認できるようにする |
+| ms 単位の待ち | SysTick（`HAL_GetTick()`） | KOGUMA の「共通カウンタを 0 に戻す `wait_ms`」はやめる |
+| 割り込み優先度 | 壁センサの連鎖（ADC の DMA）> 制御周期（TIM11）> ログ送信（USART の DMA） | 制御処理が長引いてもセンサ測定が遅れないようにする |
 | ファイル構成・命名規則 | 下記「ファイル構成」「命名規則」の通り | 生成コードと自作コードを分離し、自作コードは層ごとにフォルダ分け |
-
-### 検討中
-
-- 制御周期（1kHz から上げたい。2kHz / 4kHz の時間見積りは検討中）
-- TIM5 を 1µs フリーランで処理時間計測に使う案、`wait_ms` を SysTick にする案、割り込み優先度（壁センサの連鎖 > 制御周期）
 
 ## ファイル構成
 
@@ -133,7 +132,7 @@ sys  →  ctrl / maze  →  drv  →  HAL（Core/, Drivers/）
 |---|---|---|---|---|
 | 0 | F411 用の空プロジェクト作成（CubeIDE、クロック設定） | `.ioc`, `Core/`, `App/app.c` | `KOGUMA.MkIIl.ioc` | 設定値決定済み（[CUBEMX_SETUP.md](CUBEMX_SETUP.md)）。プロジェクト作成待ち |
 | 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c` | `UI.c`, `syscalls.c` | 未着手 |
-| 2 | 1kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | 未着手 |
+| 2 | 2kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | 未着手 |
 | 3 | エンコーダ読み取り（AS5047P） | `drv/encoder.c` | `PL_encoder.c` | 未着手 |
 | 4 | IMU 読み取り（LSM6DSR） | `drv/imu.c` | `lsm6dsr.c` | 未着手 |
 | 5 | モータ PWM | `drv/motor.c` | `motor.c`（出力部分） | 未着手 |

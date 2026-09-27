@@ -81,8 +81,9 @@ STM32CubeIDE で `TORANEKO.Mk3` プロジェクトを新規作成するときの
 |---|---|---|---|---|---|---|
 | モータ PWM | **TIM4** CH1〜CH4 | PWM Generation CH1〜CH4 | 10-1 | 200-1 | **50 kHz** | 分解能 200 は KOGUMA と同じなので、`motor.c` の `200 - Motor_Voltage` の考え方がそのまま使える。MP6551 の入力 PWM 周波数の上限はステップ5で確認 |
 | 吸引ファン PWM | **TIM2** CH2 | PWM Generation CH2 | 20-1 | 100-1 | **50 kHz** | KOGUMA と同じ周波数・分解能 |
-| 制御周期（1kHz） | **TIM11**（案） | Activated（内部クロック、ピン不使用） | 100-1 | 1000-1 | **1 kHz** | NVIC: `TIM1_TRG_COM_TIM11_IRQn` を有効化。**検討中**（ステップ2で確定。TIM9/TIM10 でも可） |
-| 処理時間計測・µs 待ち | **TIM5**（案） | Activated（内部クロック） | 100-1 | 0xFFFFFFFF | 1 MHz でカウント | 32bit フリーランカウンタ。壁センサの LED 点灯待ち（30〜40µs）にも使う |
+| 制御周期 | **TIM11** | Activated（内部クロック、ピン不使用） | 100-1 | **500-1** | **2 kHz** | NVIC: `TIM1_TRG_COM_TIM11_IRQn` を有効化。4kHz にする場合は ARR を 250-1 に |
+| 壁センサの順番制御 | **TIM3** | Activated（内部クロック、ピン不使用）、**One Pulse Mode** | 100-1 | 35-1 | 1回 35µs | Trigger Event Selection（TRGO）= **Update Event**。LED 点灯と同時に起動し、35µs 後に ADC を起動する。割り込みは不要 |
+| 処理時間計測・µs 待ち | **TIM5** | Activated（内部クロック） | 100-1 | 0xFFFFFFFF | 1 MHz でカウント | 32bit フリーランカウンタ |
 
 KOGUMA の設定（参考）: TIM3 PSC 9-1 / ARR 200-1（50kHz）、TIM2 PSC 18-1 / ARR 100-1（50kHz）、TIM6 PSC 90-1 / ARR 1000-1（1kHz）。
 
@@ -96,7 +97,7 @@ KOGUMA の設定（参考）: TIM3 PSC 9-1 / ARR 200-1（50kHz）、TIM2 PSC 18-
 | Scan Conversion Mode | Enable | Enable |
 | Continuous Conversion Mode | Disable（1回ずつソフトで開始） | Enable |
 | DMA Continuous Requests | Disable | Enable |
-| External Trigger | Software | Software |
+| External Trigger Conversion Source | **Timer 3 Trigger Out event**（立ち上がり） | Software |
 | Number Of Conversion | 5 | 5 |
 | DMA | ADC1 → **DMA2 Stream0**、Peripheral to Memory、Half Word、Normal | DMA2 Stream0 |
 
@@ -111,7 +112,7 @@ KOGUMA の設定（参考）: TIM3 PSC 9-1 / ARR 200-1（50kHz）、TIM2 PSC 18-
 | 5 | IN6 | PA6 | Wallsen-1 | `[4]` | 15 cycles |
 
 - 5ch の変換時間は (15+12) × 5 / 25MHz ≒ 5.4µs
-- 壁センサは「LED 点灯 → 30〜40µs 待つ → 変換 → 消灯」を1組ずつ行う予定（受光素子 LTR-209 の立ち上がり 10µs・立ち下がり 15µs のため）。変換の起動方法（スキャン一括か、1ch ずつか）はステップ6で決める。ここではまずスキャン＋DMA で設定しておく
+- 壁センサは「LED n 点灯と同時に TIM3 を起動 → 35µs 後に TIM3 が ADC を起動 → 5ch スキャン → DMA 完了割り込みで LED n を消灯・LED n+1 を点灯して TIM3 を再起動」を4組分連鎖させる（受光素子 LTR-209 の立ち上がり 10µs・立ち下がり 15µs のため 35µs 待つ）。消灯時の値（外乱光）も連鎖の中で1回測る。連鎖全体で約 170〜200µs。詳細はステップ6で詰める
 - バッテリ電圧の換算: `V = AD × 3.3 / 4095 × (100 + 47) / 47`（KOGUMA は `× (47 + 10) / 10`）
 
 ## 6. SPI
@@ -147,12 +148,12 @@ KOGUMA は両方ともデータシートの上限を超えるクロックで動�
 
 | 割り込み | 優先度 | 用途 |
 |---|---|---|
-| DMA2 Stream0（ADC1） | 1 | 壁センサ・バッテリの変換完了 |
-| TIM1_TRG_COM_TIM11 | 2 | 1kHz 制御周期 |
+| DMA2 Stream0（ADC1） | 1 | 壁センサの連鎖（次の LED へ進める）・バッテリの変換完了 |
+| TIM1_TRG_COM_TIM11 | 2 | 2kHz 制御周期 |
 | DMA2 Stream7（USART1_TX） | 5 | ログ送信完了 |
 | SysTick | CubeMX の既定値 | `HAL_Delay` 用。割り込み処理の中では `HAL_Delay` を使わない |
 
-優先度はステップ2（制御周期）で見直します。
+壁センサの連鎖を制御周期より高い優先度にし、制御処理が長引いてもセンサ測定が遅れないようにします。
 
 ## 9. 生成後にやること
 
