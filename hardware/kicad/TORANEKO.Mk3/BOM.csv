@@ -9,7 +9,7 @@ BT1,Battery Connector,2S LiPo,1,7.4V nominal
 -,Wall Sensor (IR emitter),OSI5FU3A11C,4,2 front-diagonal + 2 side
 -,Wall Sensor (IR receiver),LTR-209,4,2 front-diagonal + 2 side
 U8/U9/U10/U11,IR LED Driver,NCR321PAS,4,"constant-current, digital PWM enable, 1 per emitter"
-R?,IR LED Driver Current-Set Resistor,4.3 ohm 1%,4,"Rext for NCR321PAS: ~180 mA peak (typ, interpolated from datasheet Fig.16/17); 0603/0805 so it can be swapped; verify by measurement"
+R?,IR LED Driver Current-Set Resistor,5.1 ohm 1%,4,"Rext for NCR321PAS: ~155 mA peak (typ, interpolated from datasheet Fig.16/17); 0603/0805 so it can be swapped; verify by measurement"
 R?,IR LED Driver VEN Pull-down,100k,4,"keeps LED off while GPIO is floating (reset)"
 FB?,Ferrite Bead (3V3_LED branch),0603 >=300mA DCR<=0.1ohm,1,"or 0 ohm; separates LED pulse current from MCU/ADC 3.3V"
 C?,3V3_LED Bulk Capacitor,47uF 10V X5R 1206,2,"~100 uF effective total near the LED drivers"
