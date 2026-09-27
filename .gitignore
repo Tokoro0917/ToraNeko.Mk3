@@ -38,6 +38,15 @@ cmake-build-*/
 *.bin
 *.map
 
+# --- STM32CubeIDE ---
+software/main-controller/TORANEKO.Mk3/Debug/
+software/main-controller/TORANEKO.Mk3/Release/
+.metadata/
+*.d
+*.su
+*.cyclo
+*.list
+
 # --- PlatformIO / Arduino ---
 .pio/
 .pioenvs/

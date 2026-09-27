@@ -1,12 +1,70 @@
-# ソフト側が期待する周辺機能とピン（KOGUMA.MkIIl → ToraNeko.Mk3）
+# ピン割り当て（ToraNeko.Mk3 確定版）と KOGUMA.MkIIl との対応
 
-KOGUMA.MkIIl のファームウェアが使っている周辺機能と、STM32F411CEU6（UFQFPN48）へ移すときの注意点をまとめたものです。
-回路図を起こす際の参考、および回路図完成後の照合に使います。
+ToraNeko.Mk3 メイン基板（STM32F411CEU6, UFQFPN48）の確定したピン割り当てと、KOGUMA.MkIIl（STM32F446RE）との違いをまとめたものです。
+CubeMX の具体的な設定値は [CUBEMX_SETUP.md](CUBEMX_SETUP.md) を参照。
 
-**周辺機能の構成（どのSPI・どのタイマーを何に使うか）を KOGUMA に合わせるほど、ソフトの修正が少なくて済みます。**
-ピン自体は変わっても、`main.h` のラベル定義と `.ioc` を直すだけで吸収できます。
+## ToraNeko.Mk3 の確定ピン割り当て
 
-## KOGUMA.MkIIl（STM32F446RE）での割り当て
+回路図 `hardware/kicad/TORANEKO.Mk3/TORANEKO.Mk3.kicad_sch`（コミット `9a54a18`）から抽出。
+
+| ピン番号 | ピン | 回路図のネット名 | 用途 | 周辺機能（AF） | CubeMX ラベル案 |
+|---|---|---|---|---|---|
+| 2 | PC13 | - | 未使用 | - | - |
+| 3 | PC14 | - | 未使用 | - | - |
+| 4 | PC15 | ENCO-R-NSS | 右エンコーダ CS | GPIO 出力（低速のみ可） | `ENC_R_CS` |
+| 5 / 6 | PH0 / PH1 | - | 10MHz セラミック発振子（CSTNE10M0G52Z000R0） | RCC_OSC_IN / OUT | - |
+| 7 | NRST | NRST | リセット（J6） | - | - |
+| 10 | PA0 | LED3 | 表示LED3 | GPIO 出力 | `LED3` |
+| 11 | PA1 | FunPWM | 吸引ファン PWM（Q5 ゲート） | TIM2_CH2（AF1） | - |
+| 12 | PA2 | BATT | バッテリ電圧（100k/47k 分圧、C24 0.1µF） | ADC1_IN2 | - |
+| 13 | PA3 | Wallsen-4 | 壁センサ受光4 | ADC1_IN3 | - |
+| 14 | PA4 | Wallsen-3 | 壁センサ受光3 | ADC1_IN4 | - |
+| 15 | PA5 | Wallsen-2 | 壁センサ受光2 | ADC1_IN5 | - |
+| 16 | PA6 | Wallsen-1 | 壁センサ受光1 | ADC1_IN6 | - |
+| 17 | PA7 | WallLED-4 | 壁センサ発光4（NCR321PAS VEN） | GPIO 出力 | `WALL_LED4` |
+| 18 | PB0 | WallLED-3 | 壁センサ発光3 | GPIO 出力 | `WALL_LED3` |
+| 19 | PB1 | WallLED-2 | 壁センサ発光2 | GPIO 出力 | `WALL_LED2` |
+| 20 | PB2 | LED1 | 表示LED1（BOOT1 兼用。BOOT0=Low なので影響なし） | GPIO 出力 | `LED1` |
+| 21 | PB10 | WallLED-1 | 壁センサ発光1 | GPIO 出力 | `WALL_LED1` |
+| 25 | PB12 | LED2 | 表示LED2 | GPIO 出力 | `LED2` |
+| 26 | PB13 | ENCO-SCK | エンコーダ SPI SCK | SPI2_SCK（AF5） | - |
+| 27 | PB14 | ENCO-MISO | エンコーダ SPI MISO | SPI2_MISO（AF5） | - |
+| 28 | PB15 | ENCO-MOSI | エンコーダ SPI MOSI | SPI2_MOSI（AF5） | - |
+| 29 | PA8 | ENCO-L-NSS | 左エンコーダ CS | GPIO 出力 | `ENC_L_CS` |
+| 30 | PA9 | UART-TX | ログ出力（STLINK-V3MODS 仮想COMポートへ） | USART1_TX（AF7） | - |
+| 31 | PA10 | LED4 | 表示LED4 | GPIO 出力 | `LED4` |
+| 32 | PA11 | LED5 | 表示LED5 | GPIO 出力 | `LED5` |
+| 33 | PA12 | - | ユーザースイッチ SW1（押すと High、R9 10k プルダウン） | GPIO 入力 | `SW_USER` |
+| 34 | PA13 | SWDIO | SWD | SYS_JTMS-SWDIO | - |
+| 37 | PA14 | SWCLK | SWD | SYS_JTCK-SWCLK | - |
+| 38 | PA15 | IMU-NSS | IMU CS | GPIO 出力 | `IMU_CS` |
+| 39 | PB3 | IMU-SCK | IMU SPI SCK | SPI1_SCK（AF5） | - |
+| 40 | PB4 | IMU-MISO | IMU SPI MISO | SPI1_MISO（AF5） | - |
+| 41 | PB5 | IMU-MOSI | IMU SPI MOSI | SPI1_MOSI（AF5） | - |
+| 42 | PB6 | PWML-1 | 左モータ MP6551 IN1 | TIM4_CH1（AF2） | - |
+| 43 | PB7 | PWML-2 | 左モータ MP6551 IN2 | TIM4_CH2（AF2） | - |
+| 44 | BOOT0 | - | R8 10k で GND | - | - |
+| 45 | PB8 | PWMR-1 | 右モータ MP6551 IN1 | TIM4_CH3（AF2） | - |
+| 46 | PB9 | PWMR-2 | 右モータ MP6551 IN2 | TIM4_CH4（AF2） | - |
+
+### KOGUMA.MkIIl との違い（ソフトの修正点）
+
+| 機能 | KOGUMA.MkIIl | ToraNeko.Mk3 | ソフトへの影響 |
+|---|---|---|---|
+| モータ PWM | TIM3 CH1〜4 | **TIM4 CH1〜4** | `htim3` → `htim4`。チャンネル割り当て（左 CH1/2、右 CH3/4）は同じ |
+| 吸引ファン PWM | TIM2 CH1 | **TIM2 CH2** | チャンネル番号のみ変更 |
+| ブザー | TIM4 CH4 | **なし** | ブザー関連コードは移植しない |
+| 制御周期割り込み | TIM6 | **TIM11（案、検討中）** | F411 に TIM6 がないため |
+| IMU | SPI1（PA5〜7）、CS=PA4 | **SPI1（PB3〜5）**、CS=PA15 | ハンドルは同じ `hspi1`。CS ピンのみ変更 |
+| エンコーダ | SPI3、CS=PC5/PA15 | **SPI2**、CS=PA8/PC15 | `hspi3` → `hspi2` |
+| 壁センサ受光 | ADC1 IN10〜13 | **ADC1 IN3〜6** | チャンネル番号を変更。DMA バッファの並び（[0]=バッテリ、[4]=センサ1）は同じにできる |
+| バッテリ電圧 | ADC1 IN9、分圧 10k/47k | **ADC1 IN2、分圧 47k/100k** | 換算式を `× (100+47)/47` に変更 |
+| 壁センサ発光 | GPIO 2本（2組ずつ同時点灯） | **GPIO 4本（1組ずつ点灯）** | 点灯シーケンスを4段に変更（ステップ6で設計） |
+| 表示LED | 12個 | **5個** | UI 表示を作り直す |
+| シリアル | USART2 半二重（PA2）115200bps | **USART1 TX のみ（PA9）** | `huart2` → `huart1` |
+| スイッチ | - | **PA12 ×1** | モード選択の操作を1ボタン＋エンコーダ等で設計（ステップ9） |
+
+## 参考: KOGUMA.MkIIl（STM32F446RE）での割り当て
 
 | 機能 | 周辺機能 | ピン | 使用箇所 | 備考 |
 |---|---|---|---|---|
@@ -26,7 +84,7 @@ KOGUMA.MkIIl のファームウェアが使っている周辺機能と、STM32F4
 | 外部クロック | HSE 10MHz | PH0 / PH1 | | SYSCLK 180MHz |
 | 未使用のGPIO出力 | | PA10 / PA11 / PA12 | | 用途なし（初期化のみ） |
 
-## STM32F411CEU6 へ移すときの論点
+## STM32F411CEU6 へ移すときの論点（回路図作成前の検討メモ。結論は上の確定表）
 
 | 項目 | 問題 | 対応案 |
 |---|---|---|
@@ -43,9 +101,9 @@ KOGUMA.MkIIl のファームウェアが使っている周辺機能と、STM32F4
 
 ## 回路図完成後の照合項目
 
-- [ ] 上表の各機能に、実際に割り当てたピン・周辺機能を記入
-- [ ] ADC 5ch が全て ADC 入力可能ピンか
-- [ ] タイマーのチャンネルと AF 番号がデータシートと一致しているか
-- [ ] SPI の CS ピン（IMU、エンコーダ ×2）
-- [ ] MP6551 の入力方式（IN1/IN2 PWM）とソフトの PWM 出し方（`motor.c` の `200 - Motor_Voltage`）が合っているか
-- [ ] HSE の周波数
+- [x] 上表の各機能に、実際に割り当てたピン・周辺機能を記入（上の確定表）
+- [x] ADC 5ch が全て ADC 入力可能ピンか（PA2〜PA6 = IN2〜IN6）
+- [x] タイマーのチャンネルと AF 番号（TIM4 CH1〜4 = PB6〜PB9 AF2、TIM2 CH2 = PA1 AF1）
+- [x] SPI の CS ピン（IMU=PA15、エンコーダ左=PA8、右=PC15）
+- [ ] MP6551 の入力方式（IN1/IN2 PWM）とソフトの PWM 出し方（`motor.c` の `200 - Motor_Voltage`）が合っているか（ステップ5で MP6551 データシートと照合）
+- [x] HSE の周波数（10MHz セラミック発振子）
