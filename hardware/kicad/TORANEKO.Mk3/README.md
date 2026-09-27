@@ -17,7 +17,8 @@ KiCadプロジェクト本体（`TORANEKO.Mk3.kicad_pro` / `.kicad_sch` / `.kica
 | 壁センサ | 反射型IR。受光: LTR-209、発光: OSI5FU3A11C、LEDドライバ: **NCR321PAS**（定電流・PWM対応）。前方斜め左右2組・側面左右2組の計4組 |
 | 吸引ファン | サクションファン × 1（型番未定）。NチャネルMOSFETによるローサイドPWM駆動 |
 | 電源 | 2セルLiPo入力 → MCU/センサ用3.3V系（**LXDC55FAAA-203**）、モータドライバ（MP6551）はLiPo直結 |
-| デバッグ/書き込み | SWD、USB（STM32F411CEU6のUSB OTG FSを想定） |
+| デバッグ/書き込み | STLINK-V3MODS（SWD＋仮想COMポート）。USBは使わない |
+| クロック | HSE 水晶 10MHz → SYSCLK 100MHz |
 
 ## ペリフェラル割り当て案（STM32F411CEU6）
 
@@ -28,8 +29,8 @@ KiCadプロジェクト本体（`TORANEKO.Mk3.kicad_pro` / `.kicad_sch` / `.kica
 - **PWM（モータ駆動用）**: MP6551 × 2 に対し、1モータあたり2本（IN1/IN2、もしくはPWM+DIR）を想定。TIM1などの高機能タイマーを優先的に割り当てる。
 - **ADC（壁センサ用）**: LTR-209（受光）× 4組ぶんでADC 4チャンネルを使用。OSI5FU3A11C（発光）側は **NCR321PAS**（定電流LEDドライバ、デジタルPWM入力対応・最大10kHz）のPWM/イネーブル入力用に4本のGPIOを確保し、1組ずつ順番に点灯・測定して隣接センサ間のクロストークを避ける。
 - **PWM（吸引ファン用）**: MOSFETゲート駆動用に1チャンネル。モータ駆動用タイマーとは別チャンネルを割り当てる。
-- **USB**: PA11/PA12（USB OTG FS）をデバッグ・書き込み・ログ出力用に確保する想定。
-- **SWD**: ST-Link等での書き込み・デバッグ用に確保。
+- **UART（ログ出力）**: USART1（PA9 TX / PA10 RX）を STLINK-V3MODS の仮想COMポートに接続する案。USBは使わないので PA11/PA12 は他用途に使える。
+- **SWD**: STLINK-V3MODS での書き込み・デバッグ用に PA13（SWDIO）/ PA14（SWCLK）/ NRST を確保。SWO（PB3）は任意。
 
 ## 電源設計メモ
 
