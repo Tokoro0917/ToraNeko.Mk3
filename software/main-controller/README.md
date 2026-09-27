@@ -115,7 +115,7 @@ sys  →  ctrl / maze  →  drv  →  HAL（Core/, Drivers/）
 |---|---|---|
 | ファイル名 | 小文字＋アンダースコア。層はフォルダで表し、ファイル名には付けない | `drv/encoder.c`, `ctrl/pid.c` |
 | 関数名 | `モジュール名_動詞_目的語`（小文字＋アンダースコア） | `encoder_read_angle()`, `motor_set_voltage()` |
-| 型名 | 小文字＋アンダースコア＋`_t` | `pid_t`, `odometry_state_t` |
+| 型名 | 小文字＋アンダースコア＋`_t` | `pid_ctrl_t`, `odometry_state_t`（`pid_t` は標準ライブラリと衝突するので使わない） |
 | ファイルをまたぐ変数 | `g_` を付ける（なるべく使わず、関数経由で受け渡す） | `g_maze_map` |
 | ファイル内だけの変数・関数 | `static` を付ける | `static float s_prev_error;` |
 | 定数・マクロ | 大文字＋アンダースコア | `MAZE_SIZE`, `CTRL_PERIOD_S` |
