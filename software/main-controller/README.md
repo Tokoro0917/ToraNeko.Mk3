@@ -5,7 +5,8 @@ ToraNeko.Mk3 メイン基板（STM32F411CEU6）のファームウェアです。
 KOGUMA.MkIIl のコード（[../reference/koguma-mkiil/](../reference/koguma-mkiil/)）を参照しつつ、機能ごとに内容を確認しながら一つずつ実装していきます。
 確認・実装が済んだものだけをこのディレクトリに置きます。
 
-- [PIN_REQUIREMENTS.md](PIN_REQUIREMENTS.md): KOGUMA が使っている周辺機能・ピンと、F411CEU6 へ移すときの論点
+- [PIN_REQUIREMENTS.md](PIN_REQUIREMENTS.md): 確定したピン割り当て（回路図から抽出）と、KOGUMA との違い
+- [CUBEMX_SETUP.md](CUBEMX_SETUP.md): CubeMX（`.ioc`）の設定値（ステップ0）
 
 ## 決定事項
 
@@ -22,7 +23,7 @@ KOGUMA.MkIIl のコード（[../reference/koguma-mkiil/](../reference/koguma-mki
 
 ### 検討中
 
-- 制御周期割り込みのタイマー構成（F411 には TIM6 がない。候補: TIM11 で 1kHz、TIM5 を 1µs フリーランで処理時間計測）
+- 制御周期割り込みのタイマー構成（F411 には TIM6 がない。案: TIM11 で 1kHz、TIM5 を 1µs フリーランで処理時間計測。CUBEMX_SETUP.md には案として記載）
 
 ## ファイル構成
 
@@ -127,7 +128,7 @@ sys  →  ctrl / maze  →  drv  →  HAL（Core/, Drivers/）
 
 | # | 内容 | 作るファイル | KOGUMA側の対応ファイル | 状態 |
 |---|---|---|---|---|
-| 0 | F411 用の空プロジェクト作成（CubeIDE、クロック設定） | `.ioc`, `Core/`, `App/app.c` | `KOGUMA.MkIIl.ioc` | 未着手（ピン確定待ち） |
+| 0 | F411 用の空プロジェクト作成（CubeIDE、クロック設定） | `.ioc`, `Core/`, `App/app.c` | `KOGUMA.MkIIl.ioc` | 設定値決定済み（[CUBEMX_SETUP.md](CUBEMX_SETUP.md)）。プロジェクト作成待ち |
 | 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c` | `UI.c`, `syscalls.c` | 未着手 |
 | 2 | 1kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | 未着手 |
 | 3 | エンコーダ読み取り（AS5047P） | `drv/encoder.c` | `PL_encoder.c` | 未着手 |
