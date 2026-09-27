@@ -15,4 +15,4 @@ software/
 
 ## 既存資産について
 
-メイン基板のファームウェアは KOGUMA.MkIIl をベースにし、`main-controller/` に取り込みました（STM32F411CEU6 への移植はこれから）。詳細は [main-controller/README.md](main-controller/README.md) を参照。
+KOGUMA.MkIIl のファームウェアを参照用として `reference/koguma-mkiil/` に取り込みました。メイン基板のファームウェアは、これを参照しながら `main-controller/` に一つずつ実装していきます。

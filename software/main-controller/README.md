@@ -2,30 +2,24 @@
 
 ToraNeko.Mk3 メイン基板（STM32F411CEU6）のファームウェアです。
 
-## 出どころ
+KOGUMA.MkIIl のコード（[../reference/koguma-mkiil/](../reference/koguma-mkiil/)）を参照しつつ、機能ごとに内容を確認しながら一つずつ実装していきます。
+確認・実装が済んだものだけをこのディレクトリに置きます。
 
-[KOGUMA.MkIIl](https://github.com/Tokoro0917/KOGUMA.MkIIl) のコミット
-`e456da38832444fc30eb78e9e4e20f32978636c6`（2026-09-25）をそのままコピーしたものです。
-旧版一式の `KOGUMA.MkII/` と `.github/` は持ち込んでいません（CIはリポジトリ直下の `.github/workflows/` に移設）。
+- [PIN_REQUIREMENTS.md](PIN_REQUIREMENTS.md): KOGUMA が使っている周辺機能・ピンと、F411CEU6 へ移すときの論点
 
-元のREADME（迷路アルゴリズム・動作モードの説明）は [README.koguma.md](README.koguma.md) にあります。
+## 実装の進め方
 
-## 現状
+各ステップで「KOGUMA の該当コードを読む → ToraNeko で変える点を決める → 実装 → 実機/PCで確認」を行います。
 
-**まだ STM32F446RE（LQFP64）向けのまま**で、ToraNeko.Mk3 の基板では動きません。
-`.ioc`・プロジェクト名・リンカスクリプト・起動コードも KOGUMA.MkIIl のままです。
-
-移植の流れ:
-
-1. ToraNeko.Mk3 の回路図・ピン割り当てを確定する（[PIN_REQUIREMENTS.md](PIN_REQUIREMENTS.md) を参考に）
-2. 回路図とソフト側の要求を照合し、食い違いを洗い出す
-3. STM32F411CEU6 向けに書き換える（`.ioc`、起動コード、リンカスクリプト、クロック 100MHz 化、タイマー番号、ピン定義）
-
-## ホスト上のテスト
-
-`Core/Src/Maze.c` はHALに依存しないので、PC上でテストできます。
-
-```bash
-gcc -std=c11 -Wall -I Core/Inc -o test_deadend test/test_deadend.c Core/Src/Maze.c && ./test_deadend
-gcc -std=c11 -Wall -DMAZE_SIZE=32 -I Core/Inc -o test_deadend32 test/test_deadend.c Core/Src/Maze.c && ./test_deadend32
-```
+| # | 内容 | KOGUMA側の対応ファイル | 状態 |
+|---|---|---|---|
+| 0 | F411 用の空プロジェクト作成（CubeIDE、クロック設定） | `.ioc` | 未着手（ピン確定待ち） |
+| 1 | LED点灯とシリアル出力（printf） | `UI.c`, `syscalls.c` | 未着手 |
+| 2 | 1kHz 制御周期割り込み | `PL_timer.c` | 未着手 |
+| 3 | エンコーダ読み取り（AS5047P） | `PL_encoder.c` | 未着手 |
+| 4 | IMU 読み取り（LSM6DSR） | `lsm6dsr.c` | 未着手 |
+| 5 | モータ PWM | `motor.c`（出力部分） | 未着手 |
+| 6 | 壁センサ（4組を1組ずつ点灯） | `PL_sensor.c`, `Wallsensor.c` | 未着手 |
+| 7 | 速度・角度制御（PID、フィードフォワード） | `motor.c`, `Move.c` | 未着手 |
+| 8 | 迷路探索と最短経路 | `Maze.c` | 未着手（PCでテスト可） |
+| 9 | 走行モード、ログ、フェイルセーフ | `main.c`, `LOG.c`, `Failsafe.c` | 未着手 |
