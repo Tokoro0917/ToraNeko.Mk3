@@ -5,7 +5,7 @@ CubeMX の具体的な設定値は [CUBEMX_SETUP.md](CUBEMX_SETUP.md) を参照�
 
 ## ToraNeko.Mk3 の確定ピン割り当て
 
-回路図 `hardware/kicad/TORANEKO.Mk3/TORANEKO.Mk3.kicad_sch`（コミット `9a54a18`）から抽出。
+回路図 `hardware/kicad/TORANEKO.Mk3/TORANEKO.Mk3.kicad_sch`（コミット `d0b5a54`）から抽出。
 
 | ピン番号 | ピン | 回路図のネット名 | 用途 | 周辺機能（AF） | CubeMX ラベル案 |
 |---|---|---|---|---|---|
@@ -14,26 +14,26 @@ CubeMX の具体的な設定値は [CUBEMX_SETUP.md](CUBEMX_SETUP.md) を参照�
 | 4 | PC15 | ENCO-R-NSS | 右エンコーダ CS | GPIO 出力（低速のみ可） | `ENC_R_CS` |
 | 5 / 6 | PH0 / PH1 | - | 10MHz セラミック発振子（CSTNE10M0G52Z000R0） | RCC_OSC_IN / OUT | - |
 | 7 | NRST | NRST | リセット（J6） | - | - |
-| 10 | PA0 | LED3 | 表示LED3 | GPIO 出力 | `LED3` |
+| 10 | PA0 | LED7 | 表示LED7 | GPIO 出力 | `LED7` |
 | 11 | PA1 | FunPWM | 吸引ファン PWM（Q5 ゲート） | TIM2_CH2（AF1） | - |
 | 12 | PA2 | BATT | バッテリ電圧（100k/47k 分圧、C24 0.1µF） | ADC1_IN2 | - |
 | 13 | PA3 | Wallsen-4 | 壁センサ受光4 | ADC1_IN3 | - |
 | 14 | PA4 | Wallsen-3 | 壁センサ受光3 | ADC1_IN4 | - |
 | 15 | PA5 | Wallsen-2 | 壁センサ受光2 | ADC1_IN5 | - |
 | 16 | PA6 | Wallsen-1 | 壁センサ受光1 | ADC1_IN6 | - |
-| 17 | PA7 | WallLED-4 | 壁センサ発光4（NCR321PAS VEN） | GPIO 出力 | `WALL_LED4` |
-| 18 | PB0 | WallLED-3 | 壁センサ発光3 | GPIO 出力 | `WALL_LED3` |
-| 19 | PB1 | WallLED-2 | 壁センサ発光2 | GPIO 出力 | `WALL_LED2` |
-| 20 | PB2 | LED1 | 表示LED1（BOOT1 兼用。BOOT0=Low なので影響なし） | GPIO 出力 | `LED1` |
-| 21 | PB10 | WallLED-1 | 壁センサ発光1 | GPIO 出力 | `WALL_LED1` |
-| 25 | PB12 | LED2 | 表示LED2 | GPIO 出力 | `LED2` |
+| 17 | PA7 | WallLED-2 | 壁センサ発光 組B（IC4/D8 と IC9/D10 の VEN を同時駆動） | GPIO 出力 | `WALL_LED_B` |
+| 18 | PB0 | WallLED-1 | 壁センサ発光 組A（IC3/D7 と IC8/D9 の VEN を同時駆動） | GPIO 出力 | `WALL_LED_A` |
+| 19 | PB1 | LED6 | 表示LED6 | GPIO 出力 | `LED6` |
+| 20 | PB2 | LED5 | 表示LED5（BOOT1 兼用。BOOT0=Low なので影響なし） | GPIO 出力 | `LED5` |
+| 21 | PB10 | LED4 | 表示LED4 | GPIO 出力 | `LED4` |
+| 25 | PB12 | LED3 | 表示LED3 | GPIO 出力 | `LED3` |
 | 26 | PB13 | ENCO-SCK | エンコーダ SPI SCK | SPI2_SCK（AF5） | - |
 | 27 | PB14 | ENCO-MISO | エンコーダ SPI MISO | SPI2_MISO（AF5） | - |
 | 28 | PB15 | ENCO-MOSI | エンコーダ SPI MOSI | SPI2_MOSI（AF5） | - |
 | 29 | PA8 | ENCO-L-NSS | 左エンコーダ CS | GPIO 出力 | `ENC_L_CS` |
 | 30 | PA9 | UART-TX | ログ出力（STLINK-V3MODS 仮想COMポートへ） | USART1_TX（AF7） | - |
-| 31 | PA10 | LED4 | 表示LED4 | GPIO 出力 | `LED4` |
-| 32 | PA11 | LED5 | 表示LED5 | GPIO 出力 | `LED5` |
+| 31 | PA10 | LED2 | 表示LED2 | GPIO 出力 | `LED2` |
+| 32 | PA11 | LED1 | 表示LED1 | GPIO 出力 | `LED1` |
 | 33 | PA12 | - | ユーザースイッチ SW1（押すと High、R9 10k プルダウン） | GPIO 入力 | `SW_USER` |
 | 34 | PA13 | SWDIO | SWD | SYS_JTMS-SWDIO | - |
 | 37 | PA14 | SWCLK | SWD | SYS_JTCK-SWCLK | - |
@@ -59,8 +59,8 @@ CubeMX の具体的な設定値は [CUBEMX_SETUP.md](CUBEMX_SETUP.md) を参照�
 | エンコーダ | SPI3、CS=PC5/PA15 | **SPI2**、CS=PA8/PC15 | `hspi3` → `hspi2` |
 | 壁センサ受光 | ADC1 IN10〜13 | **ADC1 IN3〜6** | チャンネル番号を変更。DMA バッファの並び（[0]=バッテリ、[4]=センサ1）は同じにできる |
 | バッテリ電圧 | ADC1 IN9、分圧 10k/47k | **ADC1 IN2、分圧 47k/100k** | 換算式を `× (100+47)/47` に変更 |
-| 壁センサ発光 | GPIO 2本（2組ずつ同時点灯） | **GPIO 4本（1組ずつ点灯）** | 点灯シーケンスを4段に変更（ステップ6で設計） |
-| 表示LED | 12個 | **5個** | UI 表示を作り直す |
+| 壁センサ発光 | GPIO 2本（2組ずつ同時点灯） | **GPIO 2本（2組ずつ同時点灯）**。ただし LED 1個ごとに NCR321PAS 1個 | 点灯の順番は KOGUMA と同じ2段。ピンと組み合わせだけ変更 |
+| 表示LED | 12個 | **7個** | UI 表示を作り直す |
 | シリアル | USART2 半二重（PA2）115200bps | **USART1 TX のみ（PA9）** | `huart2` → `huart1` |
 | スイッチ | - | **PA12 ×1** | モード選択の操作を1ボタン＋エンコーダ等で設計（ステップ9） |
 
