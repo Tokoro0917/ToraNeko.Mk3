@@ -1,0 +1,138 @@
+;Proteus Design Interchange Format
+(PDIF
+ (vendor "SamacSys Limited")
+ (version 1 0)
+ (library
+  (part "NCR321PASX"
+   (description "LED Driver IC 1 Output Linear Constant Current PWM Dimming 250mA DFN2020D-6")
+   (family "ANA")
+   (package "NCR321PASX")
+   (attribute "Datasheet Link" "https://assets.nexperia.com/documents/data-sheet/NCR320PAS_NCR321PAS.pdf")
+   (attribute "Geometry.Height" "0.65mm")
+   (attribute "RS Part Number" "")
+   (attribute "RS Price/Stock" "")
+   (attribute "Manufacturer_Name" "Nexperia")
+   (attribute "Manufacturer_Part_Number" "NCR321PASX")
+   (gate
+    (symbol "NCR321PASX")
+    (pin "VEN" 1 PS)
+    (pin "REXT" 2 PS)
+    (pin "N/C_1" 3 PS)
+    (pin "N/C_2" 4 PS)
+    (pin "GND_" 5 PS)
+    (pin "IOUT__1" 6 PS)
+    (pin "IOUT__2" 7 PS)
+    (pin "N/C_3" 8 PS)
+   )
+  )
+  (symbol "NCR321PASX"
+   (units THOU)
+   (origin (pt 0 0))
+   (graphic
+    (stroke 10)
+    (path (pt 200 100) (pt 1100 100) (pt 1100 -400) (pt 200 -400) (pt 200 100) (closed))
+   )
+   (terminal
+    (body (symbol "PIN") (pt 0 0) (rot 0) (mir 0) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 0 -100) (rot 0) (mir 0) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 0 -200) (rot 0) (mir 0) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 0 -300) (rot 0) (mir 0) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 1300 0) (rot 0) (mir X) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 1300 -100) (rot 0) (mir X) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 1300 -200) (rot 0) (mir X) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 1300 -300) (rot 0) (mir X) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+  )
+  (symbol "PIN"
+   (units THOU)
+   (origin (pt 0 0))
+   (graphic
+    (stroke 10)
+    (path (pt 0 0) (pt 200 0))))
+  (symbol "PINSHORT"
+   (units THOU)
+   (origin (pt 0 0))
+   (graphic
+    (stroke 10)
+    (path (pt 0 0) (pt 100 0))))
+  (package "NCR321PASX"
+   (units MM)
+   (layer TASM
+    (graphic
+     (stroke 0.1)
+     (path
+      (closed true)
+      (pt -1 -1)
+      (pt 1 -1)
+      (pt 1 1)
+      (pt -1 1)
+      (pt -1 -1))))
+   (layer OCCA
+    (graphic
+     (stroke 0.1)
+     (path
+      (closed true)
+      (pt -2 2.15)
+      (pt 2 2.15)
+      (pt 2 -2.15)
+      (pt -2 -2.15)
+      (pt -2 2.15))))
+   (layer TSLK
+    (graphic
+     (stroke 0.1)
+     (path
+      (closed true)
+      (pt -0.65 -1.5)
+      (arc (pt -0.650 -1.500) (pt -0.700 -1.600) (pt -0.600 -1.500) (start 180.0) (sweep 90.0))
+      (pt -0.65 -1.6)
+      (arc (pt -0.650 -1.600) (pt -0.700 -1.600) (pt -0.600 -1.500) (start 180.0) (sweep -90.0))
+      (pt -0.65 -1.5))))
+   (leg 1 (pt -0.650 -0.935) (padstack 0))
+   (leg 2 (pt 0.000 -0.935) (padstack 0))
+   (leg 3 (pt 0.650 -0.935) (padstack 0))
+   (leg 4 (pt 0.650 0.935) (padstack 0))
+   (leg 5 (pt 0.000 0.935) (padstack 0))
+   (leg 6 (pt -0.650 0.935) (padstack 0))
+   (leg 7 (pt -0.490 0.000) (padstack 7))
+   (leg 8 (pt 0.490 0.000) (padstack 8))
+   (padstack 0
+    (plated false)
+    (pad (layer TCOP) (rectf 0.350 0.430 0 0 90.000))
+   )
+   (padstack 7
+    (plated false)
+    (pad (layer TCOP) (rectf 0.670 1.000 0 0 90.000))
+   )
+   (padstack 8
+    (plated false)
+    (pad (layer TCOP) (rectf 0.670 1.000 0 0 90.000))
+   )
+   (model "NCR321PASX.stp"
+    (euler -90 0 0)
+    (offset -0.7300000190734863 -1.5299999713897705 1.1699999570846558)
+   )
+  )
+ )
+)

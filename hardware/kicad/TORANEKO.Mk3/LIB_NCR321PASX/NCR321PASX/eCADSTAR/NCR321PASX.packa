@@ -1,0 +1,13 @@
+(unit MM)
+
+(package "NCR321PASX"
+    (type UNDEF)
+    (uver 2)
+    (cuser "SamacSys")
+    (uuser "SamacSys")
+    (utime 2024-11-15-04:38:22)
+    (mountForm default
+        (footprintRef "NCR321PASX")
+        (spec "System")
+    )
+)

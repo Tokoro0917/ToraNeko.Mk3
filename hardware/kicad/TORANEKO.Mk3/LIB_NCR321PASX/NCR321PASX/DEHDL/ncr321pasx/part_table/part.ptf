@@ -1,0 +1,11 @@
+FILE_TYPE = MULTI_PHYS_TABLE;
+
+PART 'NCR321PASX'
+CLASS = IC
+{========================================================================================}
+:"MANUFACTURER_NAME", "MANUFACTURER_PART_NUMBER"= "PART_NUMBER", "JEDEC_TYPE", "PACK_TYPE", "RS_PART_NUMBER", "RS_PRICE/STOCK", "DESCRIPTION", "DATASHEET", "HEIGHT";
+{========================================================================================}
+ "Nexperia", "NCR321PASX" (!) = "", "NCR321PASX", "Other", "", "", "LED Driver IC 1 Output Linear Constant Current PWM Dimming 250mA DFN2020D-6", "https://assets.nexperia.com/documents/data-sheet/NCR320PAS_NCR321PAS.pdf", "0.65 mm"
+END_PART
+
+END.

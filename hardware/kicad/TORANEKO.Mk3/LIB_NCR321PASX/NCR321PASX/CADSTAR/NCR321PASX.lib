@@ -1,0 +1,16 @@
+.NCR321PASX :1 ;LED Driver IC 1 Output Linear Constant Current PWM Dimming 250mA DFN2020D-6
+NCR321PASX
+*STM IC
+*NGS
+*PLB 1="VEN" 2="REXT" 3="N/C_1" 4="N/C_2" 5="GND " 6="IOUT _1" 7="IOUT _2" 8="N/C_3"
+*MXP 8
+*DFN NCR321PASX
+~!RS Part Number (-)
+~!RS Price/Stock (-)
+~!Manufacturer_Name (Nexperia)
+~!Manufacturer_Part_Number (NCR321PASX)
+~!Link Datasheet (https://assets.nexperia.com/documents/data-sheet/NCR320PAS_NCR321PAS.pdf)
+~!Height (0.65mm)
+~!3D_Model (NCR321PASX)
+NCR321PASX
+1.1!U 2.1!U 3.1!U 4.1!U 5.1!U 6.1!U 7.1!U 8.1!U 

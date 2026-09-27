@@ -1,0 +1,9 @@
+EESchema-DOCLIB  Version 2.0
+#
+$CMP NCR321PASX
+D LED Driver IC 1 Output Linear Constant Current PWM Dimming 250mA DFN2020D-6
+K
+F https://assets.nexperia.com/documents/data-sheet/NCR320PAS_NCR321PAS.pdf
+$ENDCMP
+#
+#End Doc Library

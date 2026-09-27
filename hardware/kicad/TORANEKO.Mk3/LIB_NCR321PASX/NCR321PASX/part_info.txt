@@ -1,0 +1,9 @@
+Manufacturer=Nexperia
+PartNumber=NCR321PASX
+PartCategory=Integrated Circuit
+PackageCategory=Other
+PinCount=8
+Version=4.2
+Released=2021-01-21 10:17:10
+Downloaded=2026-09-27 13:48:22
+3D=Y

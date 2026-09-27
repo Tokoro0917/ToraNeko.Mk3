@@ -1,0 +1,10 @@
+(unit MM)
+
+(package "NCR321PASX"
+    (type UNDEF)
+    (uver 2)
+    (mountForm default
+        (footprintRef "NCR321PASX")
+        (spec "default")
+    )
+)
