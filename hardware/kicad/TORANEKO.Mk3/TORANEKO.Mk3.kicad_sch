@@ -6612,6 +6612,16 @@
 	)
 	(wire
 		(pts
+			(xy 241.3 82.55) (xy 241.3 83.82)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "038a12b7-1efc-4f2a-aa0a-fbbe35b67fc4")
+	)
+	(wire
+		(pts
 			(xy 147.32 165.1) (xy 147.32 166.37)
 		)
 		(stroke
@@ -6739,6 +6749,16 @@
 			(type default)
 		)
 		(uuid "0aa65c43-d0bb-462a-ae72-d5d1635791fb")
+	)
+	(wire
+		(pts
+			(xy 241.3 91.44) (xy 241.3 92.71)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0aaf4804-a22a-4e11-869a-29a32cc8420a")
 	)
 	(wire
 		(pts
@@ -7232,6 +7252,16 @@
 	)
 	(wire
 		(pts
+			(xy 245.11 73.66) (xy 245.11 74.93)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "29f46af6-c573-4693-9a03-d4841670bd92")
+	)
+	(wire
+		(pts
 			(xy 40.64 36.83) (xy 38.1 36.83)
 		)
 		(stroke
@@ -7319,6 +7349,16 @@
 			(type default)
 		)
 		(uuid "3250a499-7571-4044-9009-021927398d87")
+	)
+	(wire
+		(pts
+			(xy 24.13 36.83) (xy 21.59 36.83)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3365f70f-d270-4711-80ec-3e8bb62185a4")
 	)
 	(wire
 		(pts
@@ -7792,6 +7832,16 @@
 	)
 	(wire
 		(pts
+			(xy 24.13 33.02) (xy 24.13 36.83)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "56aba58c-6d5e-416e-86eb-a42c5b563e7b")
+	)
+	(wire
+		(pts
 			(xy 229.87 91.44) (xy 229.87 92.71)
 		)
 		(stroke
@@ -7899,6 +7949,16 @@
 			(type default)
 		)
 		(uuid "5992a05e-65b6-47f8-8226-c2ef9dd720d9")
+	)
+	(wire
+		(pts
+			(xy 21.59 39.37) (xy 31.75 39.37)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5c13ce39-22e4-4570-82ee-e769c343d90c")
 	)
 	(wire
 		(pts
@@ -8089,16 +8149,6 @@
 			(type default)
 		)
 		(uuid "68b5abde-a553-4fce-b83f-9bcf1cea6977")
-	)
-	(wire
-		(pts
-			(xy 31.75 30.48) (xy 33.02 30.48)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "695a22db-d7f7-4e0c-a82f-043e7c5105f4")
 	)
 	(wire
 		(pts
@@ -9172,6 +9222,16 @@
 	)
 	(wire
 		(pts
+			(xy 31.75 39.37) (xy 31.75 33.02)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "afe06fb6-a39c-47a6-9206-9129ae935e35")
+	)
+	(wire
+		(pts
 			(xy 128.27 191.77) (xy 128.27 181.61)
 		)
 		(stroke
@@ -9302,6 +9362,16 @@
 	)
 	(wire
 		(pts
+			(xy 21.59 33.02) (xy 24.13 33.02)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "bb800b82-e033-467b-9385-6ee062f2dc2c")
+	)
+	(wire
+		(pts
 			(xy 161.29 22.86) (xy 161.29 50.8)
 		)
 		(stroke
@@ -9372,6 +9442,16 @@
 	)
 	(wire
 		(pts
+			(xy 245.11 91.44) (xy 245.11 92.71)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c0544c13-5d15-427d-84d0-2b2dc4c86c25")
+	)
+	(wire
+		(pts
 			(xy 276.86 149.86) (xy 276.86 146.05)
 		)
 		(stroke
@@ -9379,6 +9459,16 @@
 			(type default)
 		)
 		(uuid "c09f0ead-81ef-470a-8cfa-587e3f89fce4")
+	)
+	(wire
+		(pts
+			(xy 241.3 73.66) (xy 241.3 74.93)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c0c11ae1-1fd4-4721-97e0-ea5542b4ad5c")
 	)
 	(wire
 		(pts
@@ -9772,6 +9862,16 @@
 	)
 	(wire
 		(pts
+			(xy 245.11 82.55) (xy 245.11 83.82)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d9adf34a-818e-4163-b365-9b8b3862fff7")
+	)
+	(wire
+		(pts
 			(xy 199.39 50.8) (xy 203.2 50.8)
 		)
 		(stroke
@@ -9999,6 +10099,16 @@
 			(type default)
 		)
 		(uuid "f00ef755-1ea7-4540-a1e4-d8991bd6e1bd")
+	)
+	(wire
+		(pts
+			(xy 21.59 30.48) (xy 33.02 30.48)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f09629b1-4010-4581-9e6e-067c73eec40d")
 	)
 	(wire
 		(pts
@@ -10312,7 +10422,7 @@
 			)
 		)
 	)
-	(global_label "LED4"
+	(global_label "LED2"
 		(shape input)
 		(at 91.44 102.87 0)
 		(fields_autoplaced yes)
@@ -10532,6 +10642,94 @@
 			)
 		)
 	)
+	(global_label "LED4"
+		(shape input)
+		(at 73.66 135.89 270)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "3619c214-76e7-488e-a331-17fdf1d9af9c")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 73.66 143.5318 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "WallLED-1"
+		(shape input)
+		(at 93.98 154.94 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "369a1376-4e6c-4233-9978-79d4a997e7b9")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 80.835 154.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "WallLED-2"
+		(shape input)
+		(at 153.67 154.94 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "3709be7c-5a12-4cde-8179-060215289a3b")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 140.525 154.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "LED6"
+		(shape input)
+		(at 241.3 73.66 90)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "3902cc45-77d2-43ac-a3a4-64f81490c8d9")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 241.3 66.0182 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+	)
 	(global_label "ENCO-L-NSS"
 		(shape input)
 		(at 91.44 107.95 0)
@@ -10554,7 +10752,7 @@
 			)
 		)
 	)
-	(global_label "LED5"
+	(global_label "LED1"
 		(shape input)
 		(at 91.44 100.33 0)
 		(fields_autoplaced yes)
@@ -10620,7 +10818,7 @@
 			)
 		)
 	)
-	(global_label "LED3"
+	(global_label "LED7"
 		(shape input)
 		(at 45.72 113.03 180)
 		(fields_autoplaced yes)
@@ -10686,29 +10884,7 @@
 			)
 		)
 	)
-	(global_label "LED1"
-		(shape input)
-		(at 71.12 135.89 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "4b4fee68-f4c7-4f21-86d1-5c7e92d4cb37")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 71.12 143.5318 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "WallLED-3"
+	(global_label "WallLED-1"
 		(shape input)
 		(at 66.04 135.89 270)
 		(fields_autoplaced yes)
@@ -10818,7 +10994,7 @@
 			)
 		)
 	)
-	(global_label "WallLED-4"
+	(global_label "WallLED-2"
 		(shape input)
 		(at 63.5 135.89 270)
 		(fields_autoplaced yes)
@@ -11016,6 +11192,28 @@
 			)
 		)
 	)
+	(global_label "LED6"
+		(shape input)
+		(at 68.58 135.89 270)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "785978a4-dad2-47b8-bb57-6bd7debefced")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 68.58 143.5318 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
 	(global_label "BATT"
 		(shape input)
 		(at 74.93 36.83 0)
@@ -11104,28 +11302,6 @@
 			)
 		)
 	)
-	(global_label "WallLED-1"
-		(shape input)
-		(at 73.66 135.89 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "87fd6b8b-18a9-45f2-8bcc-e369bde57e92")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 73.66 149.035 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
 	(global_label "VBAT"
 		(shape input)
 		(at 66.04 22.86 0)
@@ -11170,7 +11346,7 @@
 			)
 		)
 	)
-	(global_label "LED2"
+	(global_label "LED3"
 		(shape input)
 		(at 91.44 118.11 0)
 		(fields_autoplaced yes)
@@ -11188,6 +11364,28 @@
 					(size 1.27 1.27)
 				)
 				(justify left)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "LED5"
+		(shape input)
+		(at 71.12 135.89 270)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "92132cc0-f87a-4761-bdb3-cbf0918208fe")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 71.12 143.5318 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
 				(hide yes)
 			)
 		)
@@ -11390,24 +11588,24 @@
 			)
 		)
 	)
-	(global_label "WallLED-3"
+	(global_label "LED7"
 		(shape input)
-		(at 93.98 154.94 180)
+		(at 245.11 73.66 90)
 		(fields_autoplaced yes)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right)
+			(justify left)
 		)
-		(uuid "a6842a89-3306-4962-b638-2e2a40c9ec1b")
+		(uuid "a4caba67-506b-4e96-bec1-728a2345c239")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 80.835 154.94 0)
+			(at 245.11 66.0182 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify right)
+				(justify left)
 				(hide yes)
 			)
 		)
@@ -11430,28 +11628,6 @@
 					(size 1.27 1.27)
 				)
 				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "WallLED-4"
-		(shape input)
-		(at 153.67 154.94 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "b7353dd7-5b51-4a62-a398-02093b33a3a7")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 140.525 154.94 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
 				(hide yes)
 			)
 		)
@@ -11562,28 +11738,6 @@
 					(size 1.27 1.27)
 				)
 				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "WallLED-2"
-		(shape input)
-		(at 68.58 135.89 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "d4dddad7-6ea9-4604-9475-c30367598dba")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 68.58 149.035 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
 				(hide yes)
 			)
 		)
@@ -12599,7 +12753,7 @@
 	)
 	(symbol
 		(lib_id "Connector:Conn_01x02_Pin")
-		(at 26.67 30.48 0)
+		(at 16.51 30.48 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -12608,7 +12762,7 @@
 		(fields_autoplaced yes)
 		(uuid "12ba70ca-5617-41bc-8c47-c5745519c8bd")
 		(property "Reference" "J1"
-			(at 27.305 25.4 0)
+			(at 17.145 25.4 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12616,15 +12770,15 @@
 			)
 		)
 		(property "Value" "Conn_01x02_Pin"
-			(at 27.305 27.94 0)
+			(at 17.145 27.94 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical"
-			(at 26.67 30.48 0)
+		(property "Footprint" "Connector_JST:JST_ZH_B2B-ZR_1x02_P1.50mm_Vertical"
+			(at 16.51 30.48 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12633,7 +12787,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 26.67 30.48 0)
+			(at 16.51 30.48 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12642,7 +12796,7 @@
 			)
 		)
 		(property "Description" "Generic connector, single row, 01x02, script generated"
-			(at 26.67 30.48 0)
+			(at 16.51 30.48 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12795,6 +12949,76 @@
 			(project "TORANEKO.Mk3"
 				(path "/326092ef-e572-4d1c-914e-fb52f7d8dea0"
 					(reference "R5")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:LED")
+		(at 241.3 78.74 90)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "18e3664a-5489-4d69-a63f-50e39dab31ab")
+		(property "Reference" "D23"
+			(at 245.11 79.0574 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "LED"
+			(at 245.11 81.5974 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" "LED_SMD:LED_0402_1005Metric"
+			(at 241.3 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 241.3 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Light emitting diode"
+			(at 241.3 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "cfb02c20-8ef9-4b93-8f24-2666c14ba2d3")
+		)
+		(pin "1"
+			(uuid "c6153ad1-c65b-44f2-a5ca-2187a998383c")
+		)
+		(instances
+			(project "TORANEKO.Mk3"
+				(path "/326092ef-e572-4d1c-914e-fb52f7d8dea0"
+					(reference "D23")
 					(unit 1)
 				)
 			)
@@ -14950,6 +15174,141 @@
 		)
 	)
 	(symbol
+		(lib_id "power:GND")
+		(at 241.3 92.71 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "40fd9128-3fb9-454c-9f69-4fa34541d358")
+		(property "Reference" "#PWR064"
+			(at 241.3 99.06 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 245.364 94.742 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 241.3 92.71 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 241.3 92.71 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 241.3 92.71 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "2846068b-55dd-4f6d-bacb-e9aba8fb4321")
+		)
+		(instances
+			(project "TORANEKO.Mk3"
+				(path "/326092ef-e572-4d1c-914e-fb52f7d8dea0"
+					(reference "#PWR064")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:LED")
+		(at 245.11 78.74 90)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "4271b351-6157-4c8a-bd86-5ab6bb1624f1")
+		(property "Reference" "D24"
+			(at 248.92 79.0574 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "LED"
+			(at 248.92 81.5974 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" "LED_SMD:LED_0402_1005Metric"
+			(at 245.11 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 245.11 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Light emitting diode"
+			(at 245.11 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "94c6e7a5-9215-45a1-b3b2-eec0b55bad5a")
+		)
+		(pin "1"
+			(uuid "f02c4d6e-d494-49d4-9bec-50365cd06dd1")
+		)
+		(instances
+			(project "TORANEKO.Mk3"
+				(path "/326092ef-e572-4d1c-914e-fb52f7d8dea0"
+					(reference "D24")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:+3.3V")
 		(at 207.01 152.4 0)
 		(unit 1)
@@ -15893,6 +16252,76 @@
 			(project "TORANEKO.Mk3"
 				(path "/326092ef-e572-4d1c-914e-fb52f7d8dea0"
 					(reference "R25")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 245.11 87.63 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "5755daf3-a5be-4e5e-a9cb-ea357fe7d383")
+		(property "Reference" "R30"
+			(at 247.65 86.3599 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "2k"
+			(at 247.65 88.8999 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
+			(at 243.332 87.63 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 245.11 87.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 245.11 87.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "30b46b47-b95f-4818-aca4-804bb71636c1")
+		)
+		(pin "1"
+			(uuid "0961d98f-c28a-42af-8d21-b1ed64c939dd")
+		)
+		(instances
+			(project "TORANEKO.Mk3"
+				(path "/326092ef-e572-4d1c-914e-fb52f7d8dea0"
+					(reference "R30")
 					(unit 1)
 				)
 			)
@@ -18141,6 +18570,76 @@
 			(project "TORANEKO.Mk3"
 				(path "/326092ef-e572-4d1c-914e-fb52f7d8dea0"
 					(reference "R20")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 241.3 87.63 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "7cf0a7f6-a8a8-40f0-af4e-e75d9f45617c")
+		(property "Reference" "R29"
+			(at 243.84 86.3599 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "2k"
+			(at 243.84 88.8999 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
+			(at 239.522 87.63 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 241.3 87.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 241.3 87.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "c226632a-b639-469a-b950-9eade62489a2")
+		)
+		(pin "1"
+			(uuid "4be0a87a-d8b6-4eae-9c2d-12387f44f9c8")
+		)
+		(instances
+			(project "TORANEKO.Mk3"
+				(path "/326092ef-e572-4d1c-914e-fb52f7d8dea0"
+					(reference "R29")
 					(unit 1)
 				)
 			)
@@ -20537,6 +21036,74 @@
 			(project "TORANEKO.Mk3"
 				(path "/326092ef-e572-4d1c-914e-fb52f7d8dea0"
 					(reference "#PWR043")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector:Conn_01x02_Pin")
+		(at 16.51 36.83 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "a50efd86-5bee-4bd3-94f2-3ee5c6021c1f")
+		(property "Reference" "J4"
+			(at 17.145 31.75 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Conn_01x02_Pin"
+			(at 17.145 34.29 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Connector_JST:JST_ZH_B2B-ZR_1x02_P1.50mm_Vertical"
+			(at 16.51 36.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 16.51 36.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Generic connector, single row, 01x02, script generated"
+			(at 16.51 36.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "021a5f37-b1be-4cda-b521-b428633439b4")
+		)
+		(pin "1"
+			(uuid "d0622a5f-3d06-4e14-b09d-db57dcdb4604")
+		)
+		(instances
+			(project "TORANEKO.Mk3"
+				(path "/326092ef-e572-4d1c-914e-fb52f7d8dea0"
+					(reference "J4")
 					(unit 1)
 				)
 			)
