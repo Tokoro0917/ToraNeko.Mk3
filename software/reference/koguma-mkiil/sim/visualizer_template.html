@@ -1,0 +1,533 @@
+<title>KOGUMA MkIIl — 迷路探索ビジュアライザ</title>
+<style>
+  :root{
+    --bg:#10141a;
+    --panel:#171d26;
+    --panel-2:#1d2530;
+    --line:#2a3444;
+    --wall:#c3cddc;
+    --explored-fill:rgba(79,209,197,0.07);
+    --text:#e8edf3;
+    --text-dim:#7c8798;
+    --accent-robot:#f0a63a;
+    --accent-check:#4fd1c5;
+    --accent-path:#6fcf7c;
+    --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    --font-sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#eef1f5;
+      --panel:#ffffff;
+      --panel-2:#f5f7fa;
+      --line:#d7dce3;
+      --wall:#2a3444;
+      --explored-fill:rgba(15,150,140,0.06);
+      --text:#161a20;
+      --text-dim:#5b6572;
+      --accent-robot:#c97a12;
+      --accent-check:#0f8f85;
+      --accent-path:#2f9e46;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#10141a; --panel:#171d26; --panel-2:#1d2530; --line:#2a3444;
+    --wall:#c3cddc; --explored-fill:rgba(79,209,197,0.07); --text:#e8edf3; --text-dim:#7c8798;
+    --accent-robot:#f0a63a; --accent-check:#4fd1c5; --accent-path:#6fcf7c;
+  }
+  :root[data-theme="light"]{
+    --bg:#eef1f5; --panel:#ffffff; --panel-2:#f5f7fa; --line:#d7dce3;
+    --wall:#2a3444; --explored-fill:rgba(15,150,140,0.06); --text:#161a20; --text-dim:#5b6572;
+    --accent-robot:#c97a12; --accent-check:#0f8f85; --accent-path:#2f9e46;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:var(--font-sans);
+    -webkit-font-smoothing:antialiased;
+  }
+  body{ min-height:100vh; }
+
+  .app{
+    max-width:1180px; margin:0 auto; padding:28px 20px 40px;
+    display:flex; flex-direction:column; gap:18px;
+  }
+
+  header.top{
+    display:flex; align-items:baseline; justify-content:space-between; gap:16px;
+    flex-wrap:wrap;
+  }
+  header.top h1{
+    font-size:1.35rem; font-weight:650; letter-spacing:-0.01em; margin:0;
+    text-wrap:balance;
+  }
+  header.top h1 .mono{ font-family:var(--font-mono); font-weight:500; color:var(--text-dim); font-size:0.85rem; }
+  header.top p{ margin:2px 0 0; color:var(--text-dim); font-size:0.88rem; max-width:60ch; }
+
+  .layout{
+    display:grid; grid-template-columns: minmax(0,1fr) 300px; gap:18px; align-items:start;
+  }
+  @media (max-width: 860px){
+    .layout{ grid-template-columns: 1fr; }
+  }
+
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:16px;
+  }
+
+  .scenario-tabs{
+    display:flex; gap:6px; font-family:var(--font-mono); font-size:0.82rem;
+  }
+  .scenario-tabs button{
+    appearance:none; border:1px solid var(--line); background:var(--panel-2); color:var(--text-dim);
+    padding:7px 12px; border-radius:7px; cursor:pointer; letter-spacing:0.01em;
+    transition:color .12s ease, border-color .12s ease, background .12s ease;
+  }
+  .scenario-tabs button:hover{ color:var(--text); }
+  .scenario-tabs button.active{
+    color:var(--bg); background:var(--accent-robot); border-color:var(--accent-robot); font-weight:600;
+  }
+  .scenario-tabs button:focus-visible, .transport button:focus-visible, input:focus-visible{
+    outline:2px solid var(--accent-check); outline-offset:2px;
+  }
+
+  .canvas-wrap{
+    display:flex; align-items:center; justify-content:center;
+    aspect-ratio: 1 / 1;
+    width:100%;
+  }
+  canvas{ width:100%; height:100%; display:block; }
+
+  .side{ display:flex; flex-direction:column; gap:14px; }
+
+  .phase-chip{
+    display:inline-flex; align-items:center; gap:7px;
+    font-family:var(--font-mono); font-size:0.78rem; letter-spacing:0.02em;
+    padding:6px 10px; border-radius:999px; background:var(--panel-2); border:1px solid var(--line);
+    color:var(--text); width:fit-content;
+  }
+  .phase-chip .dot{ width:7px; height:7px; border-radius:50%; background:var(--accent-robot); flex:none; }
+  .phase-chip.check .dot{ background:var(--accent-check); }
+  .phase-chip.path .dot{ background:var(--accent-path); }
+
+  .stat-row{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-family:var(--font-mono); font-size:0.78rem; color:var(--text-dim);
+    font-variant-numeric:tabular-nums;
+  }
+  .stat-row b{ color:var(--text); font-weight:600; }
+
+  .legend{ display:flex; flex-direction:column; gap:7px; font-size:0.8rem; color:var(--text-dim); }
+  .legend .item{ display:flex; align-items:center; gap:8px; }
+  .legend .swatch{ width:12px; height:12px; border-radius:3px; flex:none; }
+
+  .transport{ display:flex; flex-direction:column; gap:10px; }
+  .transport .row{ display:flex; align-items:center; gap:8px; }
+  .transport button{
+    appearance:none; border:1px solid var(--line); background:var(--panel-2); color:var(--text);
+    border-radius:7px; padding:8px 10px; cursor:pointer; font-size:0.85rem; line-height:1;
+    display:flex; align-items:center; justify-content:center;
+    transition:border-color .12s ease, background .12s ease;
+  }
+  .transport button:hover{ border-color:var(--accent-robot); }
+  .transport button.primary{
+    background:var(--accent-robot); border-color:var(--accent-robot); color:var(--bg); font-weight:700; flex:1;
+  }
+  input[type="range"]{
+    -webkit-appearance:none; appearance:none; width:100%; height:4px; border-radius:2px;
+    background:var(--line); outline-offset:4px;
+  }
+  input[type="range"]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none; width:14px; height:14px; border-radius:50%;
+    background:var(--accent-robot); cursor:pointer; border:2px solid var(--panel);
+  }
+  input[type="range"]::-moz-range-thumb{
+    width:14px; height:14px; border-radius:50%; background:var(--accent-robot); cursor:pointer; border:2px solid var(--panel);
+  }
+  label.speed{ display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:0.75rem; color:var(--text-dim); }
+
+  .caption{ font-size:0.78rem; color:var(--text-dim); line-height:1.5; }
+  .caption code{ font-family:var(--font-mono); background:var(--panel-2); padding:1px 5px; border-radius:4px; color:var(--text); }
+
+  ::selection{ background:var(--accent-check); color:var(--bg); }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div>
+      <h1>迷路探索ビジュアライザ <span class="mono">Core/Src/Maze.c</span></h1>
+      <p>実際のMaze.cをネイティブコンパイルして走らせたトレースを再生しています。手作業のシミュレーションではありません。</p>
+    </div>
+    <div class="scenario-tabs" role="tablist" aria-label="シナリオ選択">
+      <button id="tabA" class="active" role="tab" aria-selected="true">A: エセ全面探索</button>
+      <button id="tabB" role="tab" aria-selected="false">B: Dijkstra誘導 未知壁探索</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="panel">
+      <div class="canvas-wrap">
+        <canvas id="mazeCanvas" width="900" height="900"></canvas>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="panel" style="display:flex; flex-direction:column; gap:12px;">
+        <div class="phase-chip" id="phaseChip"><span class="dot"></span><span id="phaseLabel">outbound</span></div>
+        <div class="stat-row"><span>ステップ</span><b id="stepCount">0 / 0</b></div>
+        <div class="stat-row"><span>位置</span><b id="posLabel">(0, 0)</b></div>
+        <div class="stat-row"><span>向き</span><b id="dirLabel">北</b></div>
+      </div>
+
+      <div class="panel transport">
+        <div class="row">
+          <button id="btnStart" title="先頭へ">⏮</button>
+          <button id="btnStepBack" title="1コマ戻る">◀</button>
+          <button class="primary" id="btnPlay">再生</button>
+          <button id="btnStepFwd" title="1コマ進む">▶</button>
+          <button id="btnEnd" title="末尾へ">⏭</button>
+        </div>
+        <input type="range" id="scrub" min="0" max="0" value="0" step="1" aria-label="再生位置">
+        <label class="speed">速度
+          <input type="range" id="speed" min="1" max="12" value="6" step="1" style="flex:1">
+          <span id="speedLabel" style="font-variant-numeric:tabular-nums;">6</span>
+        </label>
+      </div>
+
+      <div class="panel legend">
+        <div class="item"><span class="swatch" style="background:var(--accent-robot)"></span>ロボット(向き付き三角)</div>
+        <div class="item"><span class="swatch" style="background:var(--explored-fill); border:1px solid var(--line)"></span>訪問済みセル</div>
+        <div class="item"><span class="swatch" style="background:var(--accent-check)"></span>未知壁を確認しに行くターゲット</div>
+        <div class="item"><span class="swatch" style="background:var(--accent-path)"></span>確定した最終経路</div>
+      </div>
+
+      <div class="panel caption">
+        <b style="color:var(--text)">A</b>: 未探索セルを全部同時にBFSゴールにし、迷路全体を踏破してから戻る (<code>ALL_MODE=1</code>)。<br><br>
+        <b style="color:var(--text)">B</b>: スタート→ゴール固定方向でDijkstra経路を計算し、経路上の未知壁を現在位置から直接見に行くことを繰り返す (<code>ALL_MODE=2</code>)。全て確認できたらスタートに戻って最終走行。
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const TRACE = __TRACE_DATA__;
+const MAZE_SIZE = 16;
+const GOAL_X = 7, GOAL_Y = 7;
+
+const PHASE_LABELS = {
+  outbound: "往路探索",
+  full_coverage: "全面探索(復路)",
+  check_unknown_wall: "経路上の未知壁を確認中",
+  return_to_start: "スタートへ帰還",
+  final_path: "最終経路 確定",
+  final_run: "最終高速走行",
+};
+
+// --- フレーム構築: final_path マーカーの後に、経路をなぞる合成フレームを追加する ---
+function buildFrames(rawFrames) {
+  const out = [];
+  for (const f of rawFrames) {
+    if (f.phase === "final_path") {
+      out.push(f);
+      const px = f.pathX, py = f.pathY;
+      const base = out.length ? findLastMovement(out) : null;
+      for (let k = 0; k < px.length; k++) {
+        const x = px[k], y = py[k];
+        const prev = k === 0 ? (base || { x: 0, y: 0 }) : { x: px[k - 1], y: py[k - 1] };
+        let dir = 0;
+        if (x > prev.x) dir = 1; else if (x < prev.x) dir = 3;
+        else if (y > prev.y) dir = 0; else if (y < prev.y) dir = 2;
+        else dir = base ? base.dir : 0;
+        out.push({
+          step: f.step, scenario: f.scenario, phase: "final_run",
+          x, y, dir, mode: 0,
+          row: f._row, col: f._col, explored: f._explored,
+          targetX: null, targetY: null, wallIsRow: null, wallI: null, wallJ: null,
+        });
+      }
+    } else {
+      out.push(f);
+    }
+  }
+  return out;
+}
+function findLastMovement(arr) {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (arr[i].x !== undefined && arr[i].phase !== "final_path") return arr[i];
+  }
+  return null;
+}
+
+// final_path フレームには row/col/explored が無いので、直前の実移動フレームから引き継ぐ
+function annotate(rawFrames) {
+  let lastRow = null, lastCol = null, lastExplored = null;
+  for (const f of rawFrames) {
+    if (f.row) { lastRow = f.row; lastCol = f.col; lastExplored = f.explored; }
+    f._row = lastRow; f._col = lastCol; f._explored = lastExplored;
+  }
+  return rawFrames;
+}
+
+const scenarios = {
+  A: buildFrames(annotate(TRACE.filter(f => f.scenario === "A"))),
+  B: buildFrames(annotate(TRACE.filter(f => f.scenario === "B"))),
+};
+
+let currentScenario = "A";
+let frames = scenarios[currentScenario];
+let idx = 0;
+let playing = false;
+let lastTick = 0;
+
+const canvas = document.getElementById("mazeCanvas");
+const ctx = canvas.getContext("2d");
+const dpr = Math.max(1, window.devicePixelRatio || 1);
+
+function resizeCanvas() {
+  const cssSize = canvas.parentElement.clientWidth;
+  canvas.width = cssSize * dpr;
+  canvas.height = cssSize * dpr;
+  draw();
+}
+window.addEventListener("resize", resizeCanvas);
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function draw() {
+  const f = frames[idx];
+  if (!f) return;
+  const size = canvas.width;
+  const pad = size * 0.035;
+  const cell = (size - pad * 2) / MAZE_SIZE;
+  ctx.clearRect(0, 0, size, size);
+
+  const colGrid = cssVar("--line");
+  const colWall = cssVar("--wall");
+  const colExplored = cssVar("--explored-fill");
+  const colRobot = cssVar("--accent-robot");
+  const colCheck = cssVar("--accent-check");
+  const colPath = cssVar("--accent-path");
+  const colText = cssVar("--text-dim");
+
+  function cx(x) { return pad + x * cell; }
+  function cyTop(y) { return pad + (MAZE_SIZE - 1 - y) * cell; } // y=0 at bottom
+
+  // explored cell fill
+  const explored = f._explored || f.explored;
+  if (explored) {
+    for (let y = 0; y < MAZE_SIZE; y++) {
+      const bits = explored[y];
+      for (let x = 0; x < MAZE_SIZE; x++) {
+        if ((bits >> x) & 1) {
+          ctx.fillStyle = colExplored;
+          ctx.fillRect(cx(x), cyTop(y), cell, cell);
+        }
+      }
+    }
+  }
+
+  // goal room tint
+  ctx.fillStyle = "rgba(240,166,58,0.08)";
+  ctx.fillRect(cx(GOAL_X), cyTop(GOAL_Y + 1), cell * 2, cell * 2);
+
+  // grid
+  ctx.strokeStyle = colGrid;
+  ctx.lineWidth = Math.max(1, cell * 0.02);
+  for (let i = 0; i <= MAZE_SIZE; i++) {
+    ctx.beginPath();
+    ctx.moveTo(pad, pad + i * cell);
+    ctx.lineTo(pad + MAZE_SIZE * cell, pad + i * cell);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(pad + i * cell, pad);
+    ctx.lineTo(pad + i * cell, pad + MAZE_SIZE * cell);
+    ctx.stroke();
+  }
+
+  // walls
+  const row = f._row || f.row;
+  const col = f._col || f.col;
+  ctx.strokeStyle = colWall;
+  ctx.lineCap = "round";
+  ctx.lineWidth = Math.max(2, cell * 0.09);
+  if (row) {
+    for (let y = 0; y <= MAZE_SIZE; y++) {
+      for (let x = 0; x < MAZE_SIZE; x++) {
+        if ((row[y] >> x) & 1) {
+          const yy = pad + (MAZE_SIZE - y) * cell;
+          ctx.beginPath();
+          ctx.moveTo(cx(x), yy);
+          ctx.lineTo(cx(x + 1), yy);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+  if (col) {
+    for (let x = 0; x <= MAZE_SIZE; x++) {
+      for (let y = 0; y < MAZE_SIZE; y++) {
+        if ((col[x] >> y) & 1) {
+          const xx = pad + x * cell;
+          ctx.beginPath();
+          ctx.moveTo(xx, cyTop(y));
+          ctx.lineTo(xx, cyTop(y) + cell);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  // start marker
+  ctx.fillStyle = colText;
+  ctx.font = `${cell * 0.32}px var(--font-mono)`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("S", cx(0) + cell / 2, cyTop(0) + cell / 2);
+  ctx.fillText("G", cx(GOAL_X) + cell, cyTop(GOAL_Y + 1) + cell);
+
+  // final path overlay
+  if (f.phase === "final_run" || f.phase === "final_path") {
+    const px = f.pathX || (frames.find(x => x.phase === "final_path") || {}).pathX;
+    const py = f.pathY || (frames.find(x => x.phase === "final_path") || {}).pathY;
+    if (px && px.length) {
+      ctx.strokeStyle = colPath;
+      ctx.lineWidth = Math.max(2, cell * 0.14);
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.moveTo(cx(0) + cell / 2, cyTop(0) + cell / 2);
+      for (let k = 0; k < px.length; k++) {
+        ctx.lineTo(cx(px[k]) + cell / 2, cyTop(py[k]) + cell / 2);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // unknown-wall target highlight
+  if (f.targetX !== null && f.targetX !== undefined) {
+    ctx.fillStyle = colCheck;
+    ctx.globalAlpha = 0.35;
+    ctx.fillRect(cx(f.targetX), cyTop(f.targetY), cell, cell);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = colCheck;
+    ctx.lineWidth = Math.max(2, cell * 0.05);
+    ctx.strokeRect(cx(f.targetX) + 1, cyTop(f.targetY) + 1, cell - 2, cell - 2);
+  }
+  if (f.wallI !== null && f.wallI !== undefined && f.wallIsRow !== null) {
+    ctx.strokeStyle = colCheck;
+    ctx.lineWidth = Math.max(3, cell * 0.13);
+    ctx.beginPath();
+    if (f.wallIsRow) {
+      const yy = pad + (MAZE_SIZE - f.wallJ) * cell;
+      ctx.moveTo(cx(f.wallI), yy);
+      ctx.lineTo(cx(f.wallI + 1), yy);
+    } else {
+      const xx = pad + f.wallI * cell;
+      ctx.moveTo(xx, cyTop(f.wallJ));
+      ctx.lineTo(xx, cyTop(f.wallJ) + cell);
+    }
+    ctx.stroke();
+  }
+
+  // robot
+  const rx = cx(f.x) + cell / 2;
+  const ry = cyTop(f.y) + cell / 2;
+  const ang = [0, 1, 2, 3].includes(f.dir) ? [-Math.PI / 2, 0, Math.PI / 2, Math.PI][f.dir] : -Math.PI / 2;
+  ctx.save();
+  ctx.translate(rx, ry);
+  ctx.rotate(ang);
+  const r = cell * 0.34;
+  ctx.fillStyle = colRobot;
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.lineTo(-r * 0.7, r * 0.62);
+  ctx.lineTo(-r * 0.35, 0);
+  ctx.lineTo(-r * 0.7, -r * 0.62);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // side panel updates
+  document.getElementById("stepCount").textContent = `${idx + 1} / ${frames.length}`;
+  document.getElementById("posLabel").textContent = `(${f.x}, ${f.y})`;
+  document.getElementById("dirLabel").textContent = ["北", "東", "南", "西"][f.dir] || "-";
+  const chip = document.getElementById("phaseChip");
+  chip.className = "phase-chip" + (f.phase === "check_unknown_wall" ? " check" : (f.phase.startsWith("final") ? " path" : ""));
+  document.getElementById("phaseLabel").textContent = PHASE_LABELS[f.phase] || f.phase;
+  document.getElementById("scrub").value = idx;
+}
+
+function setScenario(s) {
+  currentScenario = s;
+  frames = scenarios[s];
+  idx = 0;
+  document.getElementById("scrub").max = frames.length - 1;
+  document.getElementById("tabA").classList.toggle("active", s === "A");
+  document.getElementById("tabA").setAttribute("aria-selected", s === "A");
+  document.getElementById("tabB").classList.toggle("active", s === "B");
+  document.getElementById("tabB").setAttribute("aria-selected", s === "B");
+  draw();
+}
+
+document.getElementById("tabA").addEventListener("click", () => setScenario("A"));
+document.getElementById("tabB").addEventListener("click", () => setScenario("B"));
+
+document.getElementById("scrub").addEventListener("input", (e) => {
+  idx = Number(e.target.value);
+  playing = false;
+  document.getElementById("btnPlay").textContent = "再生";
+  draw();
+});
+
+document.getElementById("btnStepFwd").addEventListener("click", () => {
+  idx = Math.min(frames.length - 1, idx + 1);
+  draw();
+});
+document.getElementById("btnStepBack").addEventListener("click", () => {
+  idx = Math.max(0, idx - 1);
+  draw();
+});
+document.getElementById("btnStart").addEventListener("click", () => { idx = 0; draw(); });
+document.getElementById("btnEnd").addEventListener("click", () => { idx = frames.length - 1; draw(); });
+
+const speedInput = document.getElementById("speed");
+speedInput.addEventListener("input", () => {
+  document.getElementById("speedLabel").textContent = speedInput.value;
+});
+
+const btnPlay = document.getElementById("btnPlay");
+btnPlay.addEventListener("click", () => {
+  playing = !playing;
+  btnPlay.textContent = playing ? "一時停止" : "再生";
+  if (playing) requestAnimationFrame(tick);
+});
+
+function tick(ts) {
+  if (!playing) return;
+  const stepsPerSec = Number(speedInput.value) * 3;
+  const interval = 1000 / stepsPerSec;
+  if (ts - lastTick >= interval) {
+    lastTick = ts;
+    if (idx < frames.length - 1) {
+      idx++;
+      draw();
+    } else {
+      playing = false;
+      btnPlay.textContent = "再生";
+    }
+  }
+  if (playing) requestAnimationFrame(tick);
+}
+
+document.getElementById("scrub").max = frames.length - 1;
+resizeCanvas();
+draw();
+
+// respond to the artifact host's light/dark toggle re-render (CSS vars change, so just redraw)
+const themeObserver = new MutationObserver(() => draw());
+themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+</script>
