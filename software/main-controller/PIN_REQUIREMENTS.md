@@ -21,8 +21,8 @@ CubeMX の具体的な設定値は [CUBEMX_SETUP.md](CUBEMX_SETUP.md) を参照�
 | 14 | PA4 | Wallsen-3 | 壁センサ受光3 | ADC1_IN4 | - |
 | 15 | PA5 | Wallsen-2 | 壁センサ受光2 | ADC1_IN5 | - |
 | 16 | PA6 | Wallsen-1 | 壁センサ受光1 | ADC1_IN6 | - |
-| 17 | PA7 | WallLED-2 | 壁センサ発光 組B（IC4/D8 と IC9/D10 の VEN を同時駆動） | GPIO 出力 | `WALL_LED_B` |
-| 18 | PB0 | WallLED-1 | 壁センサ発光 組A（IC3/D7 と IC8/D9 の VEN を同時駆動） | GPIO 出力 | `WALL_LED_A` |
+| 17 | PA7 | WallLED-2 | 壁センサ発光 組B: 右前向き＋左向き（IC4/D8 と IC9/D10 の VEN を同時駆動） | GPIO 出力 | `WALL_LED_B` |
+| 18 | PB0 | WallLED-1 | 壁センサ発光 組A: 左前向き＋右向き（IC3/D7 と IC8/D9 の VEN を同時駆動） | GPIO 出力 | `WALL_LED_A` |
 | 19 | PB1 | LED6 | 表示LED6 | GPIO 出力 | `LED6` |
 | 20 | PB2 | LED5 | 表示LED5（BOOT1 兼用。BOOT0=Low なので影響なし） | GPIO 出力 | `LED5` |
 | 21 | PB10 | LED4 | 表示LED4 | GPIO 出力 | `LED4` |
