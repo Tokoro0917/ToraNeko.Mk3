@@ -17,6 +17,7 @@ desktop.ini
 _autosave-*
 fp-info-cache
 *.kicad_prl
+.history/
 *.lck
 *.000
 *.net.bak
