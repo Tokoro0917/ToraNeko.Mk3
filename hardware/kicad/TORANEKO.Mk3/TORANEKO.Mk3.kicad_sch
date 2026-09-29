@@ -5937,6 +5937,12 @@
 		(uuid "12e44046-7252-459f-8a24-7240641aab4d")
 	)
 	(junction
+		(at 146.05 39.37)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "15699bf1-cc16-4191-b4cf-796d60f6d662")
+	)
+	(junction
 		(at 95.25 81.28)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -6157,6 +6163,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "916de270-a2eb-4d89-b3a2-5eb0783fe971")
+	)
+	(junction
+		(at 151.13 27.94)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "93161575-5c4f-4511-a73f-bddfcf3a0d93")
 	)
 	(junction
 		(at 146.05 27.94)
@@ -6632,7 +6644,7 @@
 	)
 	(wire
 		(pts
-			(xy 149.86 27.94) (xy 146.05 27.94)
+			(xy 153.67 27.94) (xy 151.13 27.94)
 		)
 		(stroke
 			(width 0)
@@ -6932,6 +6944,16 @@
 	)
 	(wire
 		(pts
+			(xy 151.13 27.94) (xy 146.05 27.94)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "14c7c5fb-9d1d-4dc5-a4be-04f637b2555a")
+	)
+	(wire
+		(pts
 			(xy 187.96 118.11) (xy 187.96 120.65)
 		)
 		(stroke
@@ -7149,6 +7171,16 @@
 			(type default)
 		)
 		(uuid "22d5a4bd-500b-4e66-8290-8b5e90c68278")
+	)
+	(wire
+		(pts
+			(xy 151.13 35.56) (xy 151.13 39.37)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2306b605-0c2e-4192-b869-d22b654ce05c")
 	)
 	(wire
 		(pts
@@ -8692,7 +8724,7 @@
 	)
 	(wire
 		(pts
-			(xy 146.05 35.56) (xy 146.05 41.91)
+			(xy 146.05 35.56) (xy 146.05 39.37)
 		)
 		(stroke
 			(width 0)
@@ -8922,6 +8954,16 @@
 	)
 	(wire
 		(pts
+			(xy 151.13 39.37) (xy 146.05 39.37)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "9ecb4fd6-2508-405b-8b21-436e7408b2f8")
+	)
+	(wire
+		(pts
 			(xy 92.71 135.89) (xy 92.71 138.43)
 		)
 		(stroke
@@ -9069,6 +9111,16 @@
 			(type default)
 		)
 		(uuid "a5f38e77-d74e-4cd1-9bcd-f9c9c8f5cd62")
+	)
+	(wire
+		(pts
+			(xy 146.05 39.37) (xy 146.05 41.91)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a626c40a-3e08-41ba-b09c-f8c06ba9f09f")
 	)
 	(wire
 		(pts
@@ -13258,7 +13310,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Encorder-WG:Encord_B_L"
+		(property "Footprint" "TORANEKO_Encoder:TN_ENC_Base"
 			(at 191.77 13.97 0)
 			(effects
 				(font
@@ -13476,7 +13528,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" "Connector_PinHeader_1.00mm:PinHeader_1x02_P1.00mm_Vertical"
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
 			(at 128.27 59.69 0)
 			(effects
 				(font
@@ -14969,7 +15021,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Encorder-WG:Encord_L"
+		(property "Footprint" "TORANEKO_Encoder:TN_ENC_Edge"
 			(at 170.18 15.24 0)
 			(effects
 				(font
@@ -15115,7 +15167,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Encorder-WG:Encord"
+		(property "Footprint" "TORANEKO_Encoder:TN_ENC_Edge"
 			(at 234.95 15.24 0)
 			(effects
 				(font
@@ -20547,7 +20599,7 @@
 	)
 	(symbol
 		(lib_id "power:+3.3V")
-		(at 149.86 27.94 0)
+		(at 153.67 27.94 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -20556,7 +20608,7 @@
 		(fields_autoplaced yes)
 		(uuid "995135da-b796-4cb5-ab79-c98396f5798c")
 		(property "Reference" "#PWR0125"
-			(at 149.86 31.75 0)
+			(at 153.67 31.75 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -20565,7 +20617,7 @@
 			)
 		)
 		(property "Value" "+3.3V"
-			(at 149.86 24.3642 0)
+			(at 153.67 24.3642 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -20573,7 +20625,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 149.86 27.94 0)
+			(at 153.67 27.94 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -20582,7 +20634,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 149.86 27.94 0)
+			(at 153.67 27.94 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -20591,7 +20643,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 149.86 27.94 0)
+			(at 153.67 27.94 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21118,7 +21170,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Encorder-WG:Encord_B"
+		(property "Footprint" "TORANEKO_Encoder:TN_ENC_Base"
 			(at 256.54 13.97 0)
 			(effects
 				(font
@@ -21449,10 +21501,9 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "a9829362-ecf8-464f-861e-2030c0bccc7f")
 		(property "Reference" "C9"
-			(at 149.86 30.4799 0)
+			(at 153.67 30.4799 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21842,6 +21893,75 @@
 			(project "TORANEKO.Mk3"
 				(path "/326092ef-e572-4d1c-914e-fb52f7d8dea0"
 					(reference "C25")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:C")
+		(at 151.13 31.75 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "b5b89fae-5768-4199-bbd4-89b10cae979a")
+		(property "Reference" "C14"
+			(at 158.75 30.4799 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "47u"
+			(at 154.94 33.0199 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+			(at 152.0952 35.56 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 151.13 31.75 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 151.13 31.75 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "3e6f30b3-8641-4a78-b4b4-64025a760b21")
+		)
+		(pin "2"
+			(uuid "24e90209-0764-4347-903f-1ecfec5c904a")
+		)
+		(instances
+			(project "TORANEKO.Mk3"
+				(path "/326092ef-e572-4d1c-914e-fb52f7d8dea0"
+					(reference "C14")
 					(unit 1)
 				)
 			)
