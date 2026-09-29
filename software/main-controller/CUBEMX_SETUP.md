@@ -37,15 +37,15 @@ STM32CubeIDE で `TORANEKO.Mk3` プロジェクトを新規作成するときの
 
 | ピン | モード | 初期出力 | プル | 速度 | User Label |
 |---|---|---|---|---|---|
-| PB2 | GPIO_Output | Low | なし | Low | `LED1` |
-| PB12 | GPIO_Output | Low | なし | Low | `LED2` |
-| PA0 | GPIO_Output | Low | なし | Low | `LED3` |
-| PA10 | GPIO_Output | Low | なし | Low | `LED4` |
-| PA11 | GPIO_Output | Low | なし | Low | `LED5` |
-| PB10 | GPIO_Output | Low | なし | Low | `WALL_LED1` |
-| PB1 | GPIO_Output | Low | なし | Low | `WALL_LED2` |
-| PB0 | GPIO_Output | Low | なし | Low | `WALL_LED3` |
-| PA7 | GPIO_Output | Low | なし | Low | `WALL_LED4` |
+| PA11 | GPIO_Output | Low | なし | Low | `LED1` |
+| PA10 | GPIO_Output | Low | なし | Low | `LED2` |
+| PB12 | GPIO_Output | Low | なし | Low | `LED3` |
+| PB10 | GPIO_Output | Low | なし | Low | `LED4` |
+| PB2 | GPIO_Output | Low | なし | Low | `LED5` |
+| PB1 | GPIO_Output | Low | なし | Low | `LED6` |
+| PA0 | GPIO_Output | Low | なし | Low | `LED7` |
+| PB0 | GPIO_Output | Low | なし | Low | `WALL_LED_A` |
+| PA7 | GPIO_Output | Low | なし | Low | `WALL_LED_B` |
 | PA15 | GPIO_Output | **High** | なし | High | `IMU_CS` |
 | PA8 | GPIO_Output | **High** | なし | High | `ENC_L_CS` |
 | PC15 | GPIO_Output | **High** | なし | **Low**（PC13〜15 は 2MHz 以下の制約あり） | `ENC_R_CS` |
@@ -53,7 +53,7 @@ STM32CubeIDE で `TORANEKO.Mk3` プロジェクトを新規作成するときの
 | PC13, PC14 | 未設定（Analog のまま） | - | - | - | - |
 
 - CS ピンは初期値 High（非選択）にする。Low で起動すると、電源投入直後に IMU・エンコーダが選択状態になる
-- 壁センサ LED（`WALL_LEDn`）は初期値 Low（消灯）
+- 壁センサ LED（`WALL_LED_A` / `WALL_LED_B`）は初期値 Low（消灯）
 
 ## 3. クロック構成（Clock Configuration）
 
@@ -112,7 +112,7 @@ KOGUMA の設定（参考）: TIM3 PSC 9-1 / ARR 200-1（50kHz）、TIM2 PSC 18-
 | 5 | IN6 | PA6 | Wallsen-1 | `[4]` | 15 cycles |
 
 - 5ch の変換時間は (15+12) × 5 / 25MHz ≒ 5.4µs
-- 壁センサは「LED n 点灯と同時に TIM3 を起動 → 35µs 後に TIM3 が ADC を起動 → 5ch スキャン → DMA 完了割り込みで LED n を消灯・LED n+1 を点灯して TIM3 を再起動」を4組分連鎖させる（受光素子 LTR-209 の立ち上がり 10µs・立ち下がり 15µs のため 35µs 待つ）。消灯時の値（外乱光）も連鎖の中で1回測る。連鎖全体で約 170〜200µs。詳細はステップ6で詰める
+- 壁センサは「組A 点灯と同時に TIM3 を起動 → 35µs 後に TIM3 が ADC を起動 → 5ch スキャン → DMA 完了割り込みで組A 消灯・組B 点灯して TIM3 を再起動 → …」を2段連鎖させる（受光素子 LTR-209 の立ち上がり 10µs・立ち下がり 15µs のため 35µs 待つ）。消灯時の値（外乱光）も連鎖の中で1回測る。連鎖全体で約 100µs。詳細はステップ6で詰める
 - バッテリ電圧の換算: `V = AD × 3.3 / 4095 × (100 + 47) / 47`（KOGUMA は `× (47 + 10) / 10`）
 
 ## 6. SPI
@@ -141,7 +141,7 @@ KOGUMA は両方ともデータシートの上限を超えるクロックで動�
 | TX ピン | PA9 | PA2 |
 | DMA | USART1_TX → DMA2 Stream7（Memory to Peripheral、Byte、Normal） | なし |
 
-- Asynchronous にすると CubeMX が **PA10 を USART1_RX に自動で割り当てる**。PA10 は LED4 なので、PA10 をクリックして GPIO_Output に設定し直す
+- Asynchronous にすると CubeMX が **PA10 を USART1_RX に自動で割り当てる**。PA10 は LED2 なので、PA10 をクリックして GPIO_Output に設定し直す
 - KOGUMA の半二重モードは TX ピンがオープンドレインになるため、STLINK-V3MODS 側にプルアップがないと信号が出ない可能性がある。ToraNeko では通常の非同期モード（TX のみ）にする
 
 ## 8. NVIC（割り込み優先度の案）
