@@ -13,4 +13,6 @@ mechanical/
 └── exported/      # 発注・共有用に書き出したSTEP/STL等
 ```
 
+`jigs/` には製作用の治具を置いています（[エンコーダはんだ付け治具](./jigs/encoder_solder_jig/)）。
+
 CADツールは **Fusion 360** を使用しています。
