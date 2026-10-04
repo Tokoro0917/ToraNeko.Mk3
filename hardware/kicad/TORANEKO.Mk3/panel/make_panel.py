@@ -1,11 +1,12 @@
 import re, uuid
-from shapely.geometry import box, Polygon
+from shapely.geometry import box, Polygon, Point
 from shapely.ops import unary_union
 import os
 HERE=os.path.dirname(os.path.abspath(__file__))
 SRC=os.path.join(HERE,'..','TORANEKO.Mk3.kicad_pcb')
 OUT=os.path.join(HERE,'TORANEKO.Mk3_panel.kicad_pcb')
 UPPER_DXF=os.path.join(HERE,'..','上部固定基板外形.dxf')
+LOGO_DXF=os.path.join(HERE,'..','ロゴ_ホワイトグリント.dxf')
 s=open(SRC).read()
 def blocks_top(src):
     # yield top-level child blocks of (kicad_pcb ...)
@@ -36,8 +37,8 @@ def netmap(b,suffix):
     return b
 INV=None
 head=[b for b in top if re.match(r'\((version|generator|generator_version|general|paper|layers|setup|net) ',b) or re.match(r'\((general|layers|setup)\b',b)]
-BOARDS={'A':dict(rect=(75.0,83.303,81.0,91.803),refs=['U3','IC5','C26']),
-        'B':dict(rect=(82.55,83.35,88.55,91.85),refs=['U5','IC7','C27'])}
+BOARDS={'A':dict(rect=(82.654,74.6965,88.654,83.1965),refs=['U3','IC5','C26']),
+        'B':dict(rect=(82.524,84.5365,88.524,93.0365),refs=['U5','IC7','C27'])}
 fps={}
 for b in top:
     if b.startswith('(footprint'):
@@ -148,8 +149,51 @@ fp=[f'(footprint "TORANEKO_Panel:UpperPlateHoles" (layer "F.Cu") (uuid "{uuid.uu
 for x,y,d in npth: fp.append(f'(pad "" np_thru_hole circle (at {x:.4f} {y:.4f}) (size {d:.2f} {d:.2f}) (drill {d:.2f}) (layers "*.Cu" "*.Mask") (uuid "{uuid.uuid4()}"))')
 fp.append(')'); out.append('\n'.join(fp))
 out.append(f'(gr_text "TORANEKO.Mk3 encoder x6 + upper plate  0.6mm" (at {PX0+PW/2:.2f} {PY0+2.5} 0) (layer "F.SilkS") (uuid "{uuid.uuid4()}") (effects (font (size 1.2 1.2) (thickness 0.18))))')
+# logo on the upper plate (F.SilkS): largest size that fits the lower-left free area, 0.3 mm from edges/cutouts/holes
+from shapely.affinity import scale as sscale, translate as stranslate
+rings=sorted([Polygon([(q[0],-q[1]) for q in e.get_points()]) for e in ezdxf.readfile(LOGO_DXF).modelspace()],key=lambda g:-g.area)
+logo=rings[0]
+for r in rings[1:]: logo=logo.symmetric_difference(r)          # even-odd fill (DXF y up -> KiCad y down)
+plate=upper.difference(unary_union([Polygon([u2k(*q) for q in l]) for l in upper_loops[1:]]+
+      [Polygon(Point(*u2k(cx,cy)).buffer(r+(0.1 if r<=1.0 else 0)).exterior) for cx,cy,r in upper_circles]))
+LOGO_MARGIN=0.3
+allowed=plate.buffer(-LOGO_MARGIN).intersection(box(UL,UT+UH*0.5,UL+UW*0.45,UB))
+from shapely.prepared import prep
+pa=prep(allowed); lx0,ly0,lx1,ly1=logo.bounds; ax0,ay0,ax1,ay1=allowed.bounds
+def fits(sz,step):
+    lg=sscale(stranslate(logo,-lx0,-ly0),sz/(lx1-lx0),sz/(lx1-lx0),origin=(0,0)).simplify(0.02)
+    return [(x,y) for x in [ax0+i*step for i in range(int((ax1-ax0)/step)+1)]
+                  for y in [ay0+j*step for j in range(int((ay1-ay0)/step)+1)] if pa.contains(stranslate(lg,x,y))]
+lo,hi=4.0,12.0                                                  # logo width in mm, bisection
+while hi-lo>0.05:
+    mid=(lo+hi)/2
+    if fits(mid,0.2): lo=mid
+    else: hi=mid
+LOGO_W=round(lo-0.15,1)                                         # leave a little room so it can be centred
+pos=fits(LOGO_W,0.1)
+x,y=sum(p[0] for p in pos)/len(pos),sum(p[1] for p in pos)/len(pos)   # centre of the feasible positions
+if not pa.contains(stranslate(sscale(stranslate(logo,-lx0,-ly0),LOGO_W/(lx1-lx0),LOGO_W/(lx1-lx0),origin=(0,0)),x,y)):
+    x,y=min(pos,key=lambda p:(p[0]-x)**2+(p[1]-y)**2)
+logo_k=stranslate(sscale(stranslate(logo,-lx0,-ly0),LOGO_W/(lx1-lx0),LOGO_W/(lx1-lx0),origin=(0,0)),x,y)
+assert logo_k.within(allowed)
+def keyhole(poly):
+    # KiCad fp_poly has no holes: bridge each hole into the outline with a zero-width slit
+    ring=list(poly.exterior.coords)[:-1]
+    for h in poly.interiors:
+        hp=list(h.coords)[:-1]
+        i,j=min(((i,j) for i in range(len(ring)) for j in range(len(hp))),key=lambda t:(ring[t[0]][0]-hp[t[1]][0])**2+(ring[t[0]][1]-hp[t[1]][1])**2)
+        ring=ring[:i+1]+hp[j:]+hp[:j+1]+ring[i:]
+    return ring
+lp=[f'(footprint "TORANEKO_Panel:Logo" (layer "F.Cu") (uuid "{uuid.uuid4()}") (at 0 0)',
+    f'(property "Reference" "LOGO1" (at {UL+1} {UB-1} 0) (layer "F.Fab") (hide yes) (uuid "{uuid.uuid4()}") (effects (font (size 1 1) (thickness 0.15))))',
+    f'(property "Value" "WhiteGlint" (at {UL+1} {UB-2} 0) (layer "F.Fab") (hide yes) (uuid "{uuid.uuid4()}") (effects (font (size 1 1) (thickness 0.15))))',
+    '(attr board_only exclude_from_pos_files exclude_from_bom)']
+for g in (logo_k.geoms if logo_k.geom_type=='MultiPolygon' else [logo_k]):
+    pts=' '.join(f'(xy {x:.4f} {y:.4f})' for x,y in keyhole(g))
+    lp.append(f'(fp_poly (pts {pts}) (stroke (width 0) (type solid)) (fill yes) (layer "F.SilkS") (uuid "{uuid.uuid4()}"))')
+lp.append(')'); out.append('\n'.join(lp))
 head+= [f'(net {n} "{nm}")' for n,nm in EXTRA]
 # keep header order: nets must follow setup; head already ends with nets
 res='(kicad_pcb\n\t'+'\n\t'.join(head+out)+'\n)\n'
 import os; os.makedirs(os.path.dirname(OUT),exist_ok=True); open(OUT,'w').write(res)
-print('panel',PW,'x',round(PH,3),'upper',round(UW,3),'x',round(UH,3),'npth',len(npth),'mm; footprints',sum(1 for o in out if o.startswith('(footprint')),'segments',sum(1 for o in out if o.startswith('(segment')),'vias',sum(1 for o in out if o.startswith('(via')),'holes',len(holes),'cut polys',len(polys))
+print('panel',PW,'x',round(PH,3),'upper',round(UW,3),'x',round(UH,3),'npth',len(npth),'logo',LOGO_W,'mm',[round(v,2) for v in logo_k.bounds],'mm; footprints',sum(1 for o in out if o.startswith('(footprint')),'segments',sum(1 for o in out if o.startswith('(segment')),'vias',sum(1 for o in out if o.startswith('(via')),'holes',len(holes),'cut polys',len(polys))
