@@ -154,6 +154,9 @@ from shapely.affinity import scale as sscale, translate as stranslate
 rings=sorted([Polygon([(q[0],-q[1]) for q in e.get_points()]) for e in ezdxf.readfile(LOGO_DXF).modelspace()],key=lambda g:-g.area)
 logo=rings[0]
 for r in rings[1:]: logo=logo.symmetric_difference(r)          # even-odd fill (DXF y up -> KiCad y down)
+from shapely.affinity import rotate as srotate
+LOGO_ROT=90                                                     # degrees clockwise as seen in KiCad (y down)
+logo=srotate(logo,LOGO_ROT,origin='centroid')
 plate=upper.difference(unary_union([Polygon([u2k(*q) for q in l]) for l in upper_loops[1:]]+
       [Polygon(Point(*u2k(cx,cy)).buffer(r+(0.1 if r<=1.0 else 0)).exterior) for cx,cy,r in upper_circles]))
 LOGO_MARGIN=0.3
