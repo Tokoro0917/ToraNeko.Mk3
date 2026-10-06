@@ -38,7 +38,7 @@ def netmap(b,suffix):
 INV=None
 head=[b for b in top if re.match(r'\((version|generator|generator_version|general|paper|layers|setup|net) ',b) or re.match(r'\((general|layers|setup)\b',b)]
 BOARDS={'A':dict(rect=(82.654,74.6965,88.654,83.1965),refs=['U3','IC5','C26']),
-        'B':dict(rect=(82.524,84.5365,88.524,93.0365),refs=['U5','IC7','C27'])}
+        'B':dict(rect=(82.524,84.5865,88.524,93.0865),refs=['U5','IC7','C27'])}
 fps={}
 for b in top:
     if b.startswith('(footprint'):

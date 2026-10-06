@@ -1,0 +1,12 @@
+(version 1)
+
+# Fine-pitch IC pads (LSM6DSRX LGA-14 and STM32 UFQFPN48, 0.5mm pitch) are
+# only 0.15-0.18mm apart by footprint design. Allow that between pads of the
+# same IC; everything else keeps the 0.2mm netclass clearance.
+(rule "fine pitch pads U1"
+  (constraint clearance (min 0.14mm))
+  (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.intersectsCourtyard('U1') && B.intersectsCourtyard('U1')"))
+
+(rule "fine pitch pads IC6"
+  (constraint clearance (min 0.14mm))
+  (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.intersectsCourtyard('IC6') && B.intersectsCourtyard('IC6')"))
