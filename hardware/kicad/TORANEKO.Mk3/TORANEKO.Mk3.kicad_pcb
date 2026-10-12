@@ -2227,7 +2227,7 @@
 				)
 			)
 		)
-		(property "Value" "10"
+		(property "Value" "1u"
 			(at 0 1.16 0)
 			(layer "F.Fab")
 			(uuid "55b14893-a100-4e7e-b407-de10210668be")
@@ -4930,7 +4930,7 @@
 				)
 			)
 		)
-		(property "Value" "10"
+		(property "Value" "1u"
 			(at 0 1.16 0)
 			(layer "F.Fab")
 			(uuid "824bc3c9-389f-4692-ab2e-4225d89c2b8e")
