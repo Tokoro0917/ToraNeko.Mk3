@@ -16,7 +16,8 @@ KOGUMA.MkIIl のコード（[../reference/koguma-mkiil/](../reference/koguma-mki
 | 書き込み・デバッグ | STLINK-V3MODS（SWD） | SWDIO=PA13, SWCLK=PA14, NRST。SWO（PB3）は任意 |
 | PCとの通信・printf | UART → STLINK-V3MODS の仮想COMポート | 書き込みとログがケーブル1本で済む。**USBは使わない**（PA11/PA12 を他用途に回せる） |
 | UART | USART1（PA9 TX / PA10 RX）を推奨 | APB2 側なので高速化しやすい。PA2/PA3（USART2）は ADC 入力と取り合いになるため避ける |
-| 開発環境 | STM32CubeIDE | KOGUMA と同じ。ピン・クロック設定は `.ioc`（CubeMX）で管理 |
+| 開発環境 | **STM32CubeMX（コード生成、Toolchain = CMake）＋ VS Code（STM32Cube for Visual Studio Code 拡張）** | ピン・クロック設定は `.ioc`（CubeMX）で管理。ビルドは CMake + Ninja + arm-none-eabi-gcc なのでコマンドラインだけでビルドでき、CI や Claude の環境でもファームのビルドを確認できる。CubeIDE は使わない |
+| ビルド | `cmake --preset Debug && cmake --build --preset Debug` | CubeMX が生成する `CMakePresets.json` をそのまま使う。成果物は `build/Debug/TORANEKO.Mk3.elf` |
 | ライブラリ | STM32 HAL | 制御周期の割り込み内で重い箇所は、必要になったら LL/レジスタ直接に置き換える |
 | プロジェクト名 | `TORANEKO.Mk3` | KiCad プロジェクトと揃える |
 | クロック | HSE 水晶 10MHz → SYSCLK 100MHz | PLL: M=5, N=200, P=4（VCO 400MHz）。APB1=50MHz、APB2=100MHz、タイマークロックは全て100MHz。USBを使わないので48MHzは不要 |
@@ -38,10 +39,15 @@ software/main-controller/
 ├── CUBEMX_SETUP.md               .ioc の設定値
 ├── KOGUMA_PORTING.md             KOGUMA コードの棚卸しと移植判断
 │
-└── TORANEKO.Mk3/                 CubeIDE プロジェクト
+└── TORANEKO.Mk3/                 CubeMX（CMake）プロジェクト
     ├── TORANEKO.Mk3.ioc          CubeMX 設定（ピン・クロック・周辺機能）
-    ├── .project / .cproject      CubeIDE のプロジェクト設定（生成）
-    ├── STM32F411CEUX_FLASH.ld    リンカスクリプト（生成）
+    ├── CMakeLists.txt            ビルド設定（初回だけ生成。App/ の追加はここに書く）
+    ├── CMakePresets.json         Debug / Release のプリセット（生成）
+    ├── cmake/
+    │   ├── gcc-arm-none-eabi.cmake   ツールチェーン設定（生成）
+    │   └── stm32cubemx/CMakeLists.txt  Core/・Drivers/ のソース一覧（再生成のたびに上書き。編集しない）
+    ├── startup_stm32f411xe.s     スタートアップ（生成）
+    ├── STM32F411XX_FLASH.ld      リンカスクリプト（生成）
     │
     ├── Core/                     ── CubeMX が生成。USER CODE 欄以外は編集しない
     │   ├── Inc/
@@ -57,10 +63,8 @@ software/main-controller/
     │   │   ├── system_stm32f4xx.c
     │   │   ├── syscalls.c        printf の出力先を UART に向ける
     │   │   └── sysmem.c
-    │   └── Startup/
-    │       └── startup_stm32f411ceux.s
     │
-    ├── Drivers/                  ── HAL / CMSIS（生成・編集しない）
+    ├── Drivers/                  ── HAL / CMSIS（生成・編集しない。CubeMX なしでビルドできるようにコミットする）
     │
     ├── App/                      ── 自作コードはすべてここ
     │   ├── app.c / app.h         app_init()、app_loop()。全体の入口
@@ -102,9 +106,9 @@ software/main-controller/
     │       ├── failsafe.c/.h     異常の検知（衝突、電圧低下など）と停止
     │       └── flash.c/.h        迷路・パラメータの Flash への保存
     │
-    └── （test/ は置かない。CubeIDE が ARM 向けにビルドしようとするため）
+    └── （build/ はビルド成果物。.gitignore で除外）
 
-software/main-controller/test/    ── PC 上で動かすテスト（CI で実行）。CubeIDE プロジェクトの外
+software/main-controller/test/    ── PC 上で動かすテスト（CI で実行）。ホストの gcc でビルドするので、ARM 向けの CMake プロジェクトとは分ける
     ├── test_maze.c               迷路探索・最短経路のテスト（../TORANEKO.Mk3/App/maze/*.c をリンク）
     └── Makefile
 ```
@@ -123,7 +127,7 @@ sys（explore / mode / ...）
 - HAL を直接呼ぶのは `drv/` と `sys/scheduler.c`（タイマー割り込みの起動）だけ
 - `maze/` は `drv` も HAL も使わない。PC 上でそのままテストできる
 - `Core/` 側の生成コードには、USER CODE 欄に `App/` の関数呼び出しを1行書くだけにする（CubeMX で再生成しても自作コードが消えないように）
-- CubeIDE は `Core/` と `Drivers/` しか自動でビルドしないので、`App/` をソースフォルダ・インクルードパスに追加する（手順は [CUBEMX_SETUP.md](CUBEMX_SETUP.md) の「CubeIDE のビルド設定」）
+- `App/` のソースとインクルードパスは `TORANEKO.Mk3/CMakeLists.txt` に追加する（手順は [CUBEMX_SETUP.md](CUBEMX_SETUP.md) の「CMake のビルド設定」）。`cmake/stm32cubemx/` は再生成で上書きされるので触らない
 
 ## 命名規則
 
@@ -143,7 +147,7 @@ sys（explore / mode / ...）
 
 | # | 内容 | 作るファイル | KOGUMA側の対応ファイル | 状態 |
 |---|---|---|---|---|
-| 0 | F411 用の空プロジェクト作成（CubeIDE、クロック設定） | `.ioc`, `Core/`, `App/app.c` | `KOGUMA.MkIIl.ioc` | 設定値決定済み（[CUBEMX_SETUP.md](CUBEMX_SETUP.md)）。プロジェクト作成待ち |
+| 0 | F411 用の空プロジェクト作成（CubeMX → CMake、クロック設定） | `.ioc`, `Core/`, `App/app.c`, `CMakeLists.txt` | `KOGUMA.MkIIl.ioc` | 設定値決定済み（[CUBEMX_SETUP.md](CUBEMX_SETUP.md)）。`software/ToraNeko.MK3/`（EWARM・設定未反映）は作り直して置き換える |
 | 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c` | `UI.c`, `syscalls.c` | 未着手 |
 | 2 | 2kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | 未着手 |
 | 3 | エンコーダ読み取り（AS5047P） | `drv/spi_bus.c`, `drv/encoder.c` | `PL_encoder.c` | 未着手 |

@@ -1,6 +1,6 @@
 # CubeMX 設定（ステップ0）
 
-STM32CubeIDE で `TORANEKO.Mk3` プロジェクトを新規作成するときの `.ioc` 設定値です。
+STM32CubeMX で `TORANEKO.Mk3` プロジェクトを新規作成するときの `.ioc` 設定値です。コードは CMake 形式で生成し、VS Code（STM32Cube for Visual Studio Code 拡張）でビルド・書き込み・デバッグします。
 ピン割り当ては [PIN_REQUIREMENTS.md](PIN_REQUIREMENTS.md) の確定表に従います。
 
 「KOGUMA」列は参考用に KOGUMA.MkIIl（F446, 180MHz）の設定を載せています。
@@ -12,7 +12,9 @@ STM32CubeIDE で `TORANEKO.Mk3` プロジェクトを新規作成するときの
 | MCU | STM32F411CEUx（UFQFPN48） |
 | Project Name | `TORANEKO.Mk3` |
 | 作成場所 | `software/main-controller/TORANEKO.Mk3/` |
-| Targeted Project Type | STM32Cube |
+| Project Manager → Project → **Toolchain / IDE** | **CMake**（EWARM・STM32CubeIDE は使わない） |
+| Project Manager → Project → Do not generate the main() | OFF |
+| Project Manager → Code Generator → STM32Cube MCU packages and embedded software packs | **Copy only the necessary library files**（`Drivers/` をプロジェクト内に置き、コミットする） |
 | Project Manager → Code Generator → Generate peripheral initialization as a pair of '.c/.h' files per peripheral | **ON**（`Core/Src/tim.c` などに分かれる。README のファイル構成どおり） |
 | Project Manager → Code Generator → Keep User Code when re-generating | ON |
 | Project Manager → Code Generator → Delete previously generated files when not re-generated | ON |
@@ -158,19 +160,40 @@ KOGUMA は両方ともデータシートの上限を超えるクロックで動�
 ## 9. 生成後にやること
 
 1. `Core/Src/main.c` の USER CODE 欄に `app_init();` と `app_loop();` の呼び出しだけを書く（README のファイル構成どおり）
-2. `App/` をビルド対象に加える（下の「CubeIDE のビルド設定」）
-3. ビルドが通ること、STLINK-V3MODS で書き込めることを確認する
-4. `software/main-controller/TORANEKO.Mk3/` をコミットする（`Debug/` などのビルド成果物は `.gitignore` で除外）
+2. `App/` をビルド対象に加える（下の「CMake のビルド設定」）
+3. `cmake --preset Debug && cmake --build --preset Debug` でビルドが通ること、STLINK-V3MODS で書き込めることを確認する
+4. `software/main-controller/TORANEKO.Mk3/` を `Drivers/` も含めてコミットする（`build/` は `.gitignore` で除外）
 
-## 10. CubeIDE のビルド設定
+## 10. CMake のビルド設定
 
-CubeIDE は `Core/` と `Drivers/` しか自動でビルドしません。`App/` を自分で追加します。設定は `.cproject` に保存されるので、コミットすれば他の環境でも同じになります。
+CubeMX が生成するファイルのうち、`cmake/stm32cubemx/CMakeLists.txt`（`Core/`・`Drivers/` のソース一覧）は再生成のたびに上書きされます。
+プロジェクト直下の `CMakeLists.txt` は初回だけ生成され、以後は上書きされないので、`App/` の追加はこちらに書きます。
 
-| 設定 | 場所 | 値 |
-|---|---|---|
-| ソースフォルダ | Project → Properties → C/C++ General → Paths and Symbols → **Source Location** → Add Folder | `App` |
-| インクルードパス | 同 → **Includes** → GNU C → Add（Add to all configurations にチェック） | `../App` |
+```cmake
+# Add sources to executable
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    # Add user sources here
+    App/app.c
+    # App/drv/*.c などはステップごとに追記する
+)
 
+# Add include paths
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+    # Add user defined include paths
+    App
+)
+```
+
+- ソースは `file(GLOB ...)` を使わず 1 ファイルずつ書く（ファイルを足したのに CMake を再実行し忘れてビルドされない、を防ぐ）
 - インクルードは `App/` を起点に書く（例: `#include "drv/encoder.h"`、`#include "config/robot_params.h"`）。各サブフォルダを個別にインクルードパスに足さない
-- Debug と Release の両方の構成に設定する（Configuration: [All configurations]）
-- PC 用のテスト（`software/main-controller/test/`）はプロジェクトの外に置くので、ビルド対象から除外する設定は不要
+- 警告は `target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -Wall -Wextra)` で `App/` を含めて有効にする
+- PC 用のテスト（`software/main-controller/test/`）はこのプロジェクトの外に置き、ホストの gcc でビルドする
+
+## 11. VS Code の設定
+
+| 項目 | 内容 |
+|---|---|
+| 拡張機能 | **STM32Cube for Visual Studio Code**（ST 公式。CMake Tools・Cortex-Debug 相当の機能を含む） |
+| 必要なツール | arm-none-eabi-gcc、CMake、Ninja、STM32CubeProgrammer（拡張機能の案内に従ってインストール） |
+| プロジェクトを開く | `software/main-controller/TORANEKO.Mk3/` を VS Code で開き、CMake のプリセット `Debug` を選ぶ |
+| 書き込み・デバッグ | 拡張機能が `.vscode/launch.json` を作る（ST-LINK GDB server 経由）。`.vscode/` は個人設定なのでコミットしない |

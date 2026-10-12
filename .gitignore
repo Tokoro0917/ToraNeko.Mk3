@@ -40,10 +40,8 @@ cmake-build-*/
 *.bin
 *.map
 
-# --- STM32CubeIDE ---
-software/main-controller/TORANEKO.Mk3/Debug/
-software/main-controller/TORANEKO.Mk3/Release/
-.metadata/
+# --- STM32 (CubeMX + CMake) ---
+# build/ は上の C/C++ 欄で除外済み。Drivers/ は CubeMX なしでビルドできるようにコミットする
 *.d
 *.su
 *.cyclo
@@ -66,4 +64,3 @@ venv/
 
 # --- Generated outputs ---
 hardware/kicad/**/production/
-software/ToraNeko.MK3/Drivers/
