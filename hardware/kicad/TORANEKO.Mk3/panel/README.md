@@ -4,7 +4,7 @@
 
 | 注文 | ファイル | PCBA |
 |---|---|---|
-| メイン基板 | `TORANEKO.Mk3_main_panel.kicad_pcb`（下記「メイン基板パネル」） | Standard PCBA（抵抗・コンデンサ・IC など 66 個） |
+| メイン基板 | `TORANEKO.Mk3_main_panel.kicad_pcb`（下記「メイン基板パネル」） | Standard PCBA（抵抗・コンデンサ・IC など 65 個） |
 | エンコーダ基板 ×6 ＋ 上部固定基板 | `TORANEKO.Mk3_panel.kicad_pcb` | なし（C26・C27 は手はんだ） |
 
 ## エンコーダ基板 ×6 ＋ 上部固定基板 ×1
@@ -81,7 +81,7 @@ Standard PCBA は 70×70mm 以上・レール・フィデューシャルが必�
 
 ### PCBA の部品（`BOM_JLC.csv` / `CPL_JLC.csv`）
 
-`make_jlc_files.py` の `PARTS` に書いた部品だけを実装する（19 種類 66 個）。IC6（STM32）・U1（LSM6DSRX）・IC1/IC2（MP6551）・IC3/IC4/IC8/IC9（NCR321PAS）も裏面パッドや LGA で手はんだが難しいため含める。MP6551 は JLCPCB にある -Z 品（回路図は -P）。LCSC 番号は 2026-10 に JLCPCB の部品検索で在庫を確認したもの。
+`make_jlc_files.py` の `PARTS` に書いた部品だけを実装する（19 種類 65 個）。IC6（STM32）・U1（LSM6DSRX）・IC1/IC2（MP6551）・IC3/IC4/IC8/IC9（NCR321PAS）も裏面パッドや LGA で手はんだが難しいため含める。MP6551 は JLCPCB にある -Z 品（回路図は -P）。LCSC 番号は 2026-10 に JLCPCB の部品検索で在庫を確認したもの。
 
 | 手はんだにする部品 | 理由 |
 |---|---|
