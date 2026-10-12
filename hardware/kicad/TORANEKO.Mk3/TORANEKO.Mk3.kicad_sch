@@ -17088,7 +17088,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "47u"
+		(property "Value" "22u"
 			(at 39.37 166.3699 0)
 			(effects
 				(font
@@ -21511,7 +21511,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "47u"
+		(property "Value" "22u"
 			(at 149.86 33.0199 0)
 			(effects
 				(font
@@ -21916,7 +21916,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "47u"
+		(property "Value" "22u"
 			(at 154.94 33.0199 0)
 			(effects
 				(font
@@ -22936,7 +22936,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "47u"
+		(property "Value" "22u"
 			(at 52.07 166.3699 0)
 			(effects
 				(font
@@ -23831,7 +23831,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "47u"
+		(property "Value" "22u"
 			(at 45.72 166.3699 0)
 			(effects
 				(font
@@ -24097,7 +24097,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "47u"
+		(property "Value" "22u"
 			(at 58.42 166.3699 0)
 			(effects
 				(font
