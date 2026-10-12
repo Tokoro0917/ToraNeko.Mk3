@@ -4,7 +4,7 @@
 
 | 注文 | ファイル | PCBA |
 |---|---|---|
-| メイン基板 | `TORANEKO.Mk3_main_panel.kicad_pcb`（下記「メイン基板パネル」） | Standard PCBA（抵抗・コンデンサなど 57 個） |
+| メイン基板 | `TORANEKO.Mk3_main_panel.kicad_pcb`（下記「メイン基板パネル」） | Standard PCBA（抵抗・コンデンサ・IC など 66 個） |
 | エンコーダ基板 ×6 ＋ 上部固定基板 | `TORANEKO.Mk3_panel.kicad_pcb` | なし（C26・C27 は手はんだ） |
 
 ## エンコーダ基板 ×6 ＋ 上部固定基板 ×1
@@ -81,11 +81,11 @@ Standard PCBA は 70×70mm 以上・レール・フィデューシャルが必�
 
 ### PCBA の部品（`BOM_JLC.csv` / `CPL_JLC.csv`）
 
-`make_jlc_files.py` の `PARTS` に書いた部品だけを実装する（15 種類 57 個）。LCSC 番号は 2026-10 に JLCPCB の部品検索で在庫を確認したもの。
+`make_jlc_files.py` の `PARTS` に書いた部品だけを実装する（19 種類 66 個）。IC6（STM32）・U1（LSM6DSRX）・IC1/IC2（MP6551）・IC3/IC4/IC8/IC9（NCR321PAS）も裏面パッドや LGA で手はんだが難しいため含める。MP6551 は JLCPCB にある -Z 品（回路図は -P）。LCSC 番号は 2026-10 に JLCPCB の部品検索で在庫を確認したもの。
 
 | 手はんだにする部品 | 理由 |
 |---|---|
-| IC 類（IC1〜IC4, IC6, IC8, IC9, U1, U2） | 自分で付ける方針 |
+| U2（LXDC55FAAA-203） | JLCPCB で扱いなし |
 | Y1（CSTNE10M0G52Z000R0）、SW1（SKRKAEE010） | JLCPCB に在庫なし |
 | C3, C6（VBAT の 10µF、0402） | 0402 で 16V 以上の 10µF がない。2 セル LiPo（最大 8.4V）に 6.3V 品は使えないので保留 |
 | J1〜J6、S1、THT の LED/受光素子（D7〜D10, D13〜D16） | コネクタ・スイッチ・THT |
@@ -101,4 +101,5 @@ python3 make_jlc_files.py    # BOM_JLC.csv と CPL_JLC.csv
 2. ガーバーとドリルを出力（原点はデフォルトのまま）
 3. JLCPCB: 厚さ 0.6mm、Panel by Customer、PCB Assembly → **Standard**、Top side
 4. BOM に `BOM_JLC.csv`、CPL に `CPL_JLC.csv` を指定
-5. 部品の向き（LED・ダイオード・電解コンデンサ・MOSFET）を JLCPCB のプレビューで必ず確認する
+5. 部品の向き（IC の 1 番ピン・LED・ダイオード・電解コンデンサ・MOSFET）を JLCPCB のプレビューで必ず確認する。特に自作ライブラリの IC（IC6, U1, IC1〜IC4, IC8, IC9）は JLCPCB 側の向きとずれることがある
+6. IC は在庫が少ない（2026-10 時点で LSM6DSRX 50 個、MP6551 11 個、NCR321PAS 80 個）ので、発注前に在庫を確認する

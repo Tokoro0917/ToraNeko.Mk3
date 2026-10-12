@@ -1,7 +1,7 @@
 """JLCPCB PCBA 用の BOM と CPL を、メイン基板パネル（TORANEKO.Mk3_main_panel.kicad_pcb）から作る。
 
-PCBA で実装するのは下の PARTS に書いた部品だけ（抵抗・コンデンサ・LED などの安い部品）。
-IC・コネクタ・THT 部品・在庫のない部品は手はんだ。
+PCBA で実装するのは下の PARTS に書いた部品だけ（抵抗・コンデンサ・LED などの安い部品と、手はんだが難しい IC）。
+U2・コネクタ・THT 部品・在庫のない部品は手はんだ。
 LCSC 番号は 2026-10 に JLCPCB の部品検索で在庫を確認したもの。
 """
 import csv
@@ -30,6 +30,10 @@ PARTS = [
     ('1N5819W Schottky 40V 1A', 'SOD-123F', 'C169540', 'D11'),
     ('IRLML6402 P-MOSFET', 'SOT-23', 'C2593', 'Q1'),
     ('IRLML6344 N-MOSFET', 'SOT-23', 'C53550', 'Q5'),
+    ('STM32F411CEU6', 'UFQFPN-48', 'C60420', 'IC6'),
+    ('LSM6DSRXTR', 'LGA-14', 'C2970339', 'U1'),
+    ('MP6551GQB-Z', 'QFN-14 2.5x3', 'C3681210', 'IC1 IC2'),
+    ('NCR321PASX', 'DFN2020-6', 'C3190647', 'IC3 IC4 IC8 IC9'),
 ]
 
 s = open(PCB).read()
