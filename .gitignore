@@ -63,3 +63,7 @@ venv/
 # --- Misc ---
 *.log
 *.tmp
+
+# --- Generated outputs ---
+hardware/kicad/**/production/
+software/ToraNeko.MK3/Drivers/

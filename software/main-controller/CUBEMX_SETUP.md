@@ -158,6 +158,19 @@ KOGUMA は両方ともデータシートの上限を超えるクロックで動�
 ## 9. 生成後にやること
 
 1. `Core/Src/main.c` の USER CODE 欄に `app_init();` と `app_loop();` の呼び出しだけを書く（README のファイル構成どおり）
-2. `App/` フォルダを作り、プロジェクトのインクルードパス・ソースフォルダに追加する
+2. `App/` をビルド対象に加える（下の「CubeIDE のビルド設定」）
 3. ビルドが通ること、STLINK-V3MODS で書き込めることを確認する
 4. `software/main-controller/TORANEKO.Mk3/` をコミットする（`Debug/` などのビルド成果物は `.gitignore` で除外）
+
+## 10. CubeIDE のビルド設定
+
+CubeIDE は `Core/` と `Drivers/` しか自動でビルドしません。`App/` を自分で追加します。設定は `.cproject` に保存されるので、コミットすれば他の環境でも同じになります。
+
+| 設定 | 場所 | 値 |
+|---|---|---|
+| ソースフォルダ | Project → Properties → C/C++ General → Paths and Symbols → **Source Location** → Add Folder | `App` |
+| インクルードパス | 同 → **Includes** → GNU C → Add（Add to all configurations にチェック） | `../App` |
+
+- インクルードは `App/` を起点に書く（例: `#include "drv/encoder.h"`、`#include "config/robot_params.h"`）。各サブフォルダを個別にインクルードパスに足さない
+- Debug と Release の両方の構成に設定する（Configuration: [All configurations]）
+- PC 用のテスト（`software/main-controller/test/`）はプロジェクトの外に置くので、ビルド対象から除外する設定は不要
