@@ -1235,7 +1235,7 @@
 		)
 		(pad "1" thru_hole circle
 			(at 0 0 290)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -1246,7 +1246,7 @@
 		)
 		(pad "2" thru_hole circle
 			(at 2.54 0 290)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -13984,7 +13984,7 @@
 		)
 		(pad "1" thru_hole circle
 			(at 0 0 290)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -13995,7 +13995,7 @@
 		)
 		(pad "2" thru_hole circle
 			(at 2.54 0 290)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -14435,7 +14435,7 @@
 		)
 		(pad "1" thru_hole circle
 			(at 0 0 10)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -14446,7 +14446,7 @@
 		)
 		(pad "2" thru_hole circle
 			(at 2.54 0 10)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -16260,7 +16260,7 @@
 		)
 		(pad "1" thru_hole circle
 			(at 0 0 10)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -16271,7 +16271,7 @@
 		)
 		(pad "2" thru_hole circle
 			(at 2.54 0 10)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -20874,7 +20874,7 @@
 		)
 		(pad "1" thru_hole circle
 			(at 0 0 70)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -20885,7 +20885,7 @@
 		)
 		(pad "2" thru_hole circle
 			(at 2.54 0 70)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -21921,7 +21921,7 @@
 		)
 		(pad "1" thru_hole circle
 			(at 0 0 70)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -21932,7 +21932,7 @@
 		)
 		(pad "2" thru_hole circle
 			(at 2.54 0 70)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -22757,7 +22757,7 @@
 		)
 		(pad "1" thru_hole rect
 			(at 0 0 350)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -22768,7 +22768,7 @@
 		)
 		(pad "2" thru_hole circle
 			(at 2.54 0 350)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -22995,7 +22995,7 @@
 		)
 		(pad "1" thru_hole rect
 			(at 0 0 350)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -23006,7 +23006,7 @@
 		)
 		(pad "2" thru_hole circle
 			(at 2.54 0 350)
-			(size 1.8 1.8)
+			(size 1.5 1.5)
 			(drill 0.9)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
@@ -143193,8 +143193,8 @@
 		(uuid "101a2f4f-d8ca-48f0-a1c7-9f098ac2e21a")
 	)
 	(gr_line
-		(start 82.524 93.0365)
-		(end 88.524 93.0365)
+		(start 82.524 93.0865)
+		(end 88.524 93.0865)
 		(stroke
 			(width 0.2)
 			(type default)
@@ -143411,8 +143411,8 @@
 		(uuid "65cb1c72-84b1-4bee-b243-b06ed20ea3f0")
 	)
 	(gr_line
-		(start 82.524 84.5365)
-		(end 82.524 93.0365)
+		(start 82.524 84.5865)
+		(end 82.524 93.0865)
 		(stroke
 			(width 0.2)
 			(type default)
@@ -143642,8 +143642,8 @@
 		(uuid "9fb4dee8-d198-4490-b165-4f9e1310e6bf")
 	)
 	(gr_line
-		(start 88.524 84.5365)
-		(end 82.524 84.5365)
+		(start 88.524 84.5865)
+		(end 82.524 84.5865)
 		(stroke
 			(width 0.2)
 			(type default)
@@ -143673,8 +143673,8 @@
 		(uuid "a7a04bf0-6587-454e-9719-30393e5b9994")
 	)
 	(gr_line
-		(start 88.524 93.0365)
-		(end 88.524 84.5365)
+		(start 88.524 93.0865)
+		(end 88.524 84.5865)
 		(stroke
 			(width 0.2)
 			(type default)
@@ -144445,7 +144445,7 @@
 		(uuid "a505f137-b56b-478a-b150-29756bc82e63")
 	)
 	(segment
-		(start 102.15 82.65)
+		(start 102.1 82.7)
 		(end 102.5 82.3)
 		(width 0.2)
 		(layer "F.Cu")
@@ -144518,7 +144518,7 @@
 	)
 	(segment
 		(start 102 82.8)
-		(end 102.15 82.65)
+		(end 102.1 82.7)
 		(width 0.2)
 		(layer "F.Cu")
 		(net 1)
@@ -144677,7 +144677,7 @@
 		(uuid "b76721fc-5cb8-444a-af61-a391aeba6fe2")
 	)
 	(via
-		(at 102.15 82.65)
+		(at 102.1 82.7)
 		(size 0.6)
 		(drill 0.3)
 		(layers "F.Cu" "B.Cu")
