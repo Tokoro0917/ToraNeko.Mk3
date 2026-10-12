@@ -95,7 +95,7 @@ CubeMX の具体的な設定値は [CUBEMX_SETUP.md](CUBEMX_SETUP.md) を参照�
 | 壁センサ ADC | PC0〜PC3 が存在しない。F411 の ADC 入力は PA0〜PA7, PB0, PB1 の10本のみ | 受光4ch＋バッテリ電圧1ch の計5本を PA0〜PA7/PB0/PB1 から確保。SPI1（PA5〜PA7）と取り合いになるので要検討 |
 | 壁センサ発光 | ToraNeko は NCR321PAS ×4 で1組ずつ点灯する計画（KOGUMA は2本で2組ずつ） | GPIO（またはPWM）4本を確保。`PL_sensor.c` の点灯シーケンスを4段に書き換える |
 | UI LED | 12本は48ピンでは厳しい | 本数を減らすか、LEDドライバ/シフトレジスタ等を検討。`UI.c` を合わせて修正 |
-| USB | ToraNeko では PA11/PA12 を USB に使う計画 | KOGUMA では未使用なので競合なし |
+| USB | 当初は PA11/PA12 を USB に使う計画だった | **不採用**。USB は使わず、ログは USART1 → STLINK-V3MODS の仮想COMポートで出す（README の決定事項）。PA11 は LED1、PA12 は SW_USER に転用 |
 | シリアル | USART2 PA2 | そのまま使える（PA2/PA3 は ADC 入力とも兼用なので取り合いに注意） |
 | 吸引ファン・ブザー | TIM2 CH1（PB8 は F411 では TIM4/TIM10）、TIM4 CH4（PB9） | F411 でも TIM4 CH4 = PB9 は使える。TIM2 CH1 は PA0/PA5/PA15 のいずれか |
 
