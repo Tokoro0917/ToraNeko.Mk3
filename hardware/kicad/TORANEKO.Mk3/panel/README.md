@@ -4,7 +4,7 @@
 
 | 注文 | ファイル | PCBA |
 |---|---|---|
-| メイン基板 | `TORANEKO.Mk3_main_panel.kicad_pcb`（下記「メイン基板パネル」） | Standard PCBA（抵抗・コンデンサ・IC など 67 個） |
+| メイン基板 | `TORANEKO.Mk3_main_panel.kicad_pcb`（下記「メイン基板パネル」） | Standard PCBA（抵抗・コンデンサ・IC など 65 個） |
 | エンコーダ基板 ×6 ＋ 上部固定基板 | `TORANEKO.Mk3_panel.kicad_pcb` | なし（C26・C27 は手はんだ） |
 
 ## エンコーダ基板 ×6 ＋ 上部固定基板 ×1
@@ -81,11 +81,12 @@ Standard PCBA は 70×70mm 以上・レール・フィデューシャルが必�
 
 ### PCBA の部品（`BOM_JLC.csv` / `CPL_JLC.csv`）
 
-`make_jlc_files.py` の `PARTS` に書いた部品だけを実装する（20 種類 67 個）。IC6（STM32）・U1（LSM6DSRX）・IC1/IC2（MP6551）・IC3/IC4/IC8/IC9（NCR321PAS）も裏面パッドや LGA で手はんだが難しいため含める。MP6551 は JLCPCB にある -Z 品（回路図は -P）。C3・C6（VBAT）は 0402 で 16V 以上の 10µF がないため 1µF 25V に変更（VBAT には C2 100µF もある）。LCSC 番号は 2026-10 に JLCPCB の部品検索で在庫を確認したもの。
+`make_jlc_files.py` の `PARTS` に書いた部品だけを実装する（18 種類 65 個）。IC6（STM32）・U1（LSM6DSRX）・IC1/IC2（MP6551）・IC3/IC4/IC8/IC9（NCR321PAS）も裏面パッドや LGA で手はんだが難しいため含める。MP6551 は JLCPCB にある -Z 品（回路図は -P）。C3・C6（VBAT）は 0402 で 16V 以上の 10µF がないため 1µF 25V に変更（VBAT には C2 100µF もある）。LCSC 番号は 2026-10 に JLCPCB の部品検索で在庫を確認したもの。
 
 | 手はんだにする部品 | 理由 |
 |---|---|
 | U2（LXDC55FAAA-203） | JLCPCB で扱いなし |
+| C2（100µF 16V 電解 6.3×5.4）、D11（ショットキー、SOD-123F） | 大きくて手はんだしやすい部品なので段取り費（1 種類 $1.5）を省く。D11 は秋月の SS2040FL（40V 2A、SOD-123FL、通販コード 102073）が使える |
 | Y1（CSTNE10M0G52Z000R0）、SW1（SKRKAEE010） | JLCPCB に在庫なし |
 | J1〜J6、S1、THT の LED/受光素子（D7〜D10, D13〜D16） | コネクタ・スイッチ・THT |
 

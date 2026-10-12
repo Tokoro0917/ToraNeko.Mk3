@@ -16660,7 +16660,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "IRLML6402"
+		(property "Value" "AO3401A"
 			(at 52.197 27.1022 0)
 			(effects
 				(font
@@ -17088,7 +17088,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "47u"
+		(property "Value" "22u"
 			(at 39.37 166.3699 0)
 			(effects
 				(font
@@ -21511,7 +21511,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "47u"
+		(property "Value" "22u"
 			(at 149.86 33.0199 0)
 			(effects
 				(font
@@ -21916,7 +21916,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "47u"
+		(property "Value" "22u"
 			(at 154.94 33.0199 0)
 			(effects
 				(font
@@ -22520,7 +22520,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "IRLML6344"
+		(property "Value" "AO3400A"
 			(at 125.857 71.5522 0)
 			(effects
 				(font
@@ -22936,7 +22936,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "47u"
+		(property "Value" "22u"
 			(at 52.07 166.3699 0)
 			(effects
 				(font
@@ -23831,7 +23831,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "47u"
+		(property "Value" "22u"
 			(at 45.72 166.3699 0)
 			(effects
 				(font
@@ -24097,7 +24097,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "47u"
+		(property "Value" "22u"
 			(at 58.42 166.3699 0)
 			(effects
 				(font
