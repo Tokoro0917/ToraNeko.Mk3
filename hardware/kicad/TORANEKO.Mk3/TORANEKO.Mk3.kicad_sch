@@ -16660,7 +16660,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "IRLML6402"
+		(property "Value" "AO3401A"
 			(at 52.197 27.1022 0)
 			(effects
 				(font
@@ -22520,7 +22520,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "IRLML6344"
+		(property "Value" "AO3400A"
 			(at 125.857 71.5522 0)
 			(effects
 				(font

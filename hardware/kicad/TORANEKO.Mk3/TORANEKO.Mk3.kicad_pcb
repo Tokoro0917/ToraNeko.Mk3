@@ -9754,7 +9754,7 @@
 				)
 			)
 		)
-		(property "Value" "IRLML6344"
+		(property "Value" "AO3400A"
 			(at 0 2.4 0)
 			(layer "F.Fab")
 			(uuid "25b99be1-2d5d-4e73-9871-7cb5bf429bf7")
@@ -10789,7 +10789,7 @@
 				)
 			)
 		)
-		(property "Value" "IRLML6402"
+		(property "Value" "AO3401A"
 			(at 0 2.4 0)
 			(layer "F.Fab")
 			(uuid "0302a6ad-2f0e-488b-8042-8bf2581ed237")
