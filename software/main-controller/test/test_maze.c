@@ -7,14 +7,17 @@
  * テストの内容:
  *   1. 壁の地図（maze_map）の基本動作
  *   2. 歩数マップ（search）の基本動作
- *   3. 探索のシミュレーション：テスト用の迷路（mazes フォルダの .txt）を、壁を知らない状態から
- *      足立法で スタート → ゴール → スタート と走り、ちゃんと帰ってこられるかを調べる
+ *   3. 既知区間の経路（path_make_known）：小さな迷路で、大回りへの変換が正しいか
+ *   4. 探索のシミュレーション：テスト用の迷路（mazes フォルダの .txt）を、壁を知らない状態から
+ *      足立法で スタート → ゴール → スタート と走り、ちゃんと帰ってこられるかを調べる。
+ *      既知区間の経路を使って走っても、1 区画ずつ走ったときと同じところに着くかも調べる
  */
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "maze/maze_map.h"
+#include "maze/path.h"
 #include "maze/search.h"
 
 /* ---------------------------------------------------------------------------
@@ -167,15 +170,260 @@ static void test_step_map(void)
 }
 
 /* ---------------------------------------------------------------------------
- * 3. 探索のシミュレーション
+ * 経路を読みやすく表示する（テストの結果を人が見るため）
+ * ------------------------------------------------------------------------- */
+
+static void print_path(const path_t *path)
+{
+  printf("  経路:");
+  for (int i = 0; i < path->count; i++) {
+    switch (path->steps[i].motion) {
+    case MOTION_STRAIGHT:           printf(" 直進%d", path->steps[i].half_count); break;
+    case MOTION_TURN_LEFT:          printf(" 左"); break;
+    case MOTION_TURN_RIGHT:         printf(" 右"); break;
+    case MOTION_UTURN:              printf(" Uターン"); break;
+    case MOTION_BIG_TURN_LEFT_90:   printf(" 大回り左90"); break;
+    case MOTION_BIG_TURN_RIGHT_90:  printf(" 大回り右90"); break;
+    case MOTION_BIG_TURN_LEFT_180:  printf(" 大回り左180"); break;
+    case MOTION_BIG_TURN_RIGHT_180: printf(" 大回り右180"); break;
+    }
+  }
+  printf("  （直進の数字は半区画）\n");
+}
+
+/* 経路の i 番目が、motion で長さ half_count の動きか */
+static bool step_is(const path_t *path, int i, motion_t motion, int half_count)
+{
+  if (i >= path->count) {
+    return false;
+  }
+  if (path->steps[i].motion != motion) {
+    return false;
+  }
+  if (path->steps[i].half_count != half_count) {
+    return false;
+  }
+  return true;
+}
+
+/* ---------------------------------------------------------------------------
+ * 3. 既知区間の経路のテスト
+ * ------------------------------------------------------------------------- */
+
+static void test_known_path(void)
+{
+  printf("[3] 既知区間の経路\n");
+  path_t path;
+
+  /* 例 1：北に 2 区画進んで右に曲がり、東に 2 区画で目的地
+   *   (0,2)→(1,2)→(2,2)→(3,2)=目的地
+   *     ↑
+   *   (0,1)
+   *     ↑
+   *   (0,0)=スタート
+   * 1 区画ずつだと「直進4 → 右 → 直進4」。大回りにすると「直進3 → 大回り右90 → 直進3」 */
+  maze_map_init();
+  maze_map_record_walls(0, 0, DIR_NORTH, false, true, true);
+  maze_map_record_walls(0, 1, DIR_NORTH, false, true, true);
+  maze_map_record_walls(0, 2, DIR_NORTH, true, true, false);
+  maze_map_record_walls(1, 2, DIR_EAST, false, true, true);
+  maze_map_record_walls(2, 2, DIR_EAST, false, true, true);
+  maze_map_record_walls(3, 2, DIR_EAST, true, true, true);
+  search_set_target(3, 2, 1, 1);
+  search_update_step_map();
+  path_make_known(0, 0, DIR_NORTH, &path);
+  print_path(&path);
+  check(path.count == 3, "例1：動きは 3 つ");
+  check(step_is(&path, 0, MOTION_STRAIGHT, 3), "例1：最初は直進 3 半区画");
+  check(step_is(&path, 1, MOTION_BIG_TURN_RIGHT_90, 0), "例1：次は大回り右 90°");
+  check(step_is(&path, 2, MOTION_STRAIGHT, 3), "例1：最後は直進 3 半区画");
+  check(path.end_x == 3 && path.end_y == 2 && path.end_dir == DIR_EAST, "例1：(3,2) で東向きに終わる");
+
+  /* 例 2：北に 2 区画、右、右で折り返して南に 1 区画で目的地
+   *   (0,2)→(1,2)
+   *     ↑     ↓
+   *   (0,1) (1,1)
+   *     ↑     ↓
+   *   (0,0) (1,0)=目的地
+   * 1 区画ずつだと「直進4 → 右 → 右 → 直進2」。大回りにすると「直進3 → 大回り右180 → 直進1」 */
+  maze_map_init();
+  maze_map_record_walls(0, 0, DIR_NORTH, false, true, true);
+  maze_map_record_walls(0, 1, DIR_NORTH, false, true, true);
+  maze_map_record_walls(0, 2, DIR_NORTH, true, true, false);
+  maze_map_record_walls(1, 2, DIR_EAST, true, true, false);
+  maze_map_record_walls(1, 1, DIR_SOUTH, false, true, true);
+  maze_map_record_walls(1, 0, DIR_SOUTH, true, true, true);
+  search_set_target(1, 0, 1, 1);
+  search_update_step_map();
+  path_make_known(0, 0, DIR_NORTH, &path);
+  print_path(&path);
+  check(path.count == 3, "例2：動きは 3 つ");
+  check(step_is(&path, 0, MOTION_STRAIGHT, 3), "例2：最初は直進 3 半区画");
+  check(step_is(&path, 1, MOTION_BIG_TURN_RIGHT_180, 0), "例2：次は大回り右 180°");
+  check(step_is(&path, 2, MOTION_STRAIGHT, 1), "例2：最後は直進 1 半区画");
+  check(path.end_x == 1 && path.end_y == 0 && path.end_dir == DIR_SOUTH, "例2：(1,0) で南向きに終わる");
+
+  /* 例 3：いきなり曲がるときは、前に直進がないので大回りにしない
+   * (0,1) で左に曲がろうとしても西は外周なので、(0,1) で右に曲がる。前の直進は (0,0) の 2 半区画 */
+  maze_map_init();
+  maze_map_record_walls(0, 0, DIR_NORTH, false, true, true);
+  search_set_target(0, 0, 1, 1);  /* 目的地が今いる区画なら、経路は空 */
+  search_update_step_map();
+  path_make_known(0, 0, DIR_NORTH, &path);
+  check(path.count == 0, "例3：目的地にいるなら経路は空");
+
+  /* 例 4：まだ見ていない区画に入るところで止まる */
+  maze_map_init();
+  maze_map_record_walls(0, 0, DIR_NORTH, false, true, true);
+  search_set_target(0, 5, 1, 1);
+  search_update_step_map();
+  path_make_known(0, 0, DIR_NORTH, &path);
+  check(path.count == 1 && step_is(&path, 0, MOTION_STRAIGHT, 2), "例4：見た区画 (0,0) だけ直進する");
+  check(path.end_x == 0 && path.end_y == 1, "例4：まだ見ていない (0,1) の入口で止まる");
+}
+
+/* ---------------------------------------------------------------------------
+ * 4. 探索のシミュレーション
  * ------------------------------------------------------------------------- */
 
 #define MOVE_LIMIT 5000  /* これだけ動いても着かなければ失敗とする */
 
-/* 今いる (x, y, dir) から、目的地に着くまで足立法で走る。
- * 動いた区画数を返す。着けなかったら -1。走り終わった位置と向きは x, y, dir に入る */
-static int run_to_target(int *x, int *y, direction_t *dir)
+/* 経路を、1 区画ずつの動き（直進・左・右・Uターン）に戻しながら本当の迷路の上で走らせ、
+ * 壁を通り抜けずに経路の終わりの位置まで行けるか調べる。行ければ true。
+ *
+ * 大回りは「半区画の直進 + ターン + 半区画の直進」に戻せる。直進の半区画を貯めておき、
+ * ターンの手前で 2 半区画ずつ 1 区画の直進にする（半区画が余ったら経路がおかしい） */
+static int s_pending_half = 0;     /* まだ走らせていない直進 [半区画] */
+static int s_replayed_cells = 0;  /* 経路を走らせて進んだ区画数（シミュレーションの集計用） */
+
+/* 1 区画ぶん走らせる。壁にぶつかったら false */
+static bool replay_one_cell(int *x, int *y, direction_t *dir, action_t action)
 {
+  if (action == ACTION_TURN_LEFT) {
+    *dir = maze_turn_left(*dir);
+  } else if (action == ACTION_TURN_RIGHT) {
+    *dir = maze_turn_right(*dir);
+  } else if (action == ACTION_UTURN) {
+    *dir = maze_turn_back(*dir);
+  }
+  if (s_true_wall[*x][*y][*dir]) {
+    return false;
+  }
+  *x = maze_next_x(*x, *dir);
+  *y = maze_next_y(*y, *dir);
+  s_replayed_cells = s_replayed_cells + 1;
+  return true;
+}
+
+/* 貯めていた直進を走らせる。半区画が余ったり壁にぶつかったら false */
+static bool replay_pending_straight(int *x, int *y, direction_t *dir)
+{
+  if (s_pending_half % 2 != 0) {
+    return false;  /* 奇数（2 で割り切れない）なら、半区画が余っている */
+  }
+  while (s_pending_half > 0) {
+    if (!replay_one_cell(x, y, dir, ACTION_FORWARD)) {
+      return false;
+    }
+    s_pending_half = s_pending_half - 2;
+  }
+  return true;
+}
+
+/* ターンを 1 つ走らせる（その前に貯めていた直進を走らせる） */
+static bool replay_turn(int *x, int *y, direction_t *dir, action_t action)
+{
+  if (!replay_pending_straight(x, y, dir)) {
+    return false;
+  }
+  return replay_one_cell(x, y, dir, action);
+}
+
+static bool replay_path(const path_t *path, int x, int y, direction_t dir)
+{
+  bool ok = true;
+  s_pending_half = 0;
+
+  for (int i = 0; i < path->count && ok; i++) {
+    switch (path->steps[i].motion) {
+    case MOTION_STRAIGHT:
+      s_pending_half = s_pending_half + path->steps[i].half_count;
+      break;
+    case MOTION_TURN_LEFT:
+      ok = replay_turn(&x, &y, &dir, ACTION_TURN_LEFT);
+      break;
+    case MOTION_TURN_RIGHT:
+      ok = replay_turn(&x, &y, &dir, ACTION_TURN_RIGHT);
+      break;
+    case MOTION_UTURN:
+      ok = replay_turn(&x, &y, &dir, ACTION_UTURN);
+      break;
+    case MOTION_BIG_TURN_LEFT_90:
+      s_pending_half = s_pending_half + 1;
+      ok = replay_turn(&x, &y, &dir, ACTION_TURN_LEFT);
+      s_pending_half = 1;
+      break;
+    case MOTION_BIG_TURN_RIGHT_90:
+      s_pending_half = s_pending_half + 1;
+      ok = replay_turn(&x, &y, &dir, ACTION_TURN_RIGHT);
+      s_pending_half = 1;
+      break;
+    case MOTION_BIG_TURN_LEFT_180:
+      s_pending_half = s_pending_half + 1;
+      ok = replay_turn(&x, &y, &dir, ACTION_TURN_LEFT);
+      if (ok) {
+        ok = replay_turn(&x, &y, &dir, ACTION_TURN_LEFT);
+      }
+      s_pending_half = 1;
+      break;
+    case MOTION_BIG_TURN_RIGHT_180:
+      s_pending_half = s_pending_half + 1;
+      ok = replay_turn(&x, &y, &dir, ACTION_TURN_RIGHT);
+      if (ok) {
+        ok = replay_turn(&x, &y, &dir, ACTION_TURN_RIGHT);
+      }
+      s_pending_half = 1;
+      break;
+    }
+  }
+  if (ok) {
+    ok = replay_pending_straight(&x, &y, &dir);
+  }
+  if (!ok) {
+    return false;
+  }
+  if (x != path->end_x || y != path->end_y || dir != path->end_dir) {
+    return false;
+  }
+  return true;
+}
+
+/* シミュレーションで数えるもの */
+static int s_known_path_count = 0;       /* 既知区間の経路でまとめて走った回数 */
+static int s_big_turn_count = 0;         /* そのうち大回りの数 */
+static int s_known_path_error_count = 0; /* 経路を走らせたら壁にぶつかった、または位置が合わなかった回数 */
+
+/* 経路の中の大回りを数える */
+static int count_big_turns(const path_t *path)
+{
+  int count = 0;
+  for (int i = 0; i < path->count; i++) {
+    motion_t motion = path->steps[i].motion;
+    if (motion == MOTION_BIG_TURN_LEFT_90 || motion == MOTION_BIG_TURN_RIGHT_90
+        || motion == MOTION_BIG_TURN_LEFT_180 || motion == MOTION_BIG_TURN_RIGHT_180) {
+      count = count + 1;
+    }
+  }
+  return count;
+}
+
+/* 今いる (x, y, dir) から、目的地に着くまで足立法で走る。
+ * use_known_path が true なら、見たことのある区画が続くところは既知区間の経路でまとめて走る。
+ * 進んだ区画数を返す（既知区間の経路でまとめて走った分は数えない）。着けなかったら -1。
+ * 走り終わった位置と向きは x, y, dir に入る */
+static int run_to_target(int *x, int *y, direction_t *dir, bool use_known_path)
+{
+  static path_t s_path;
   int move_count = 0;
 
   while (move_count < MOVE_LIMIT) {
@@ -190,6 +438,33 @@ static int run_to_target(int *x, int *y, direction_t *dir)
     }
 
     search_update_step_map();
+
+    if (use_known_path) {
+      path_make_known(*x, *y, *dir, &s_path);
+      /* 2 区画以上まとめて走れるときだけ使う（1 区画なら普通の探索と同じ） */
+      bool is_long = true;
+      if (s_path.count == 0) {
+        is_long = false;
+      }
+      if (s_path.count == 1 && s_path.steps[0].motion == MOTION_STRAIGHT && s_path.steps[0].half_count <= 2) {
+        is_long = false;
+      }
+      if (s_path.count == 1 && s_path.steps[0].motion != MOTION_STRAIGHT) {
+        is_long = false;
+      }
+      if (is_long) {
+        if (!replay_path(&s_path, *x, *y, *dir)) {
+          s_known_path_error_count = s_known_path_error_count + 1;
+        }
+        s_known_path_count = s_known_path_count + 1;
+        s_big_turn_count = s_big_turn_count + count_big_turns(&s_path);
+        *x = s_path.end_x;
+        *y = s_path.end_y;
+        *dir = s_path.end_dir;
+        continue;
+      }
+    }
+
     action_t action = search_decide_action(*x, *y, *dir);
 
     if (action == ACTION_STOP) {
@@ -238,15 +513,9 @@ static int count_wrong_walls(void)
   return wrong_count;
 }
 
-static void test_explore(const char *path)
+/* スタート → ゴール → スタート を走る。進んだ区画数を moves_to_goal, moves_to_start に入れる */
+static void explore_round_trip(bool use_known_path, int *moves_to_goal, int *moves_to_start)
 {
-  printf("[3] 探索のシミュレーション: %s\n", path);
-  if (!load_maze_file(path)) {
-    check(false, "迷路ファイルが読めない");
-    return;
-  }
-  printf("  ゴール: (%d,%d) から %dx%d 区画\n", s_goal_x, s_goal_y, s_goal_width, s_goal_height);
-
   maze_map_init();
   int x = 0;
   int y = 0;
@@ -254,18 +523,53 @@ static void test_explore(const char *path)
 
   /* 行き：スタート → ゴール */
   search_set_target(s_goal_x, s_goal_y, s_goal_width, s_goal_height);
-  int moves_to_goal = run_to_target(&x, &y, &dir);
-  check(moves_to_goal >= 0, "ゴールに着く");
-  printf("  行き: %d 区画でゴール (%d,%d) に着いた\n", moves_to_goal, x, y);
+  *moves_to_goal = run_to_target(&x, &y, &dir, use_known_path);
+  check(*moves_to_goal >= 0, "ゴールに着く");
 
   /* 帰り：ゴール → スタート */
   search_set_target(0, 0, 1, 1);
-  int moves_to_start = run_to_target(&x, &y, &dir);
-  check(moves_to_start >= 0, "スタートに戻る");
+  *moves_to_start = run_to_target(&x, &y, &dir, use_known_path);
+  check(*moves_to_start >= 0, "スタートに戻る");
   check(x == 0 && y == 0, "最後はスタートにいる");
-  printf("  帰り: %d 区画でスタートに戻った\n", moves_to_start);
 
   check(count_wrong_walls() == 0, "記録した壁が本当の迷路と同じ");
+}
+
+static void test_explore(const char *file_path)
+{
+  printf("[4] 探索のシミュレーション: %s\n", file_path);
+  if (!load_maze_file(file_path)) {
+    check(false, "迷路ファイルが読めない");
+    return;
+  }
+  printf("  ゴール: (%d,%d) から %dx%d 区画\n", s_goal_x, s_goal_y, s_goal_width, s_goal_height);
+
+  /* 1 区画ずつ探索する */
+  int goal_moves = 0;
+  int start_moves = 0;
+  explore_round_trip(false, &goal_moves, &start_moves);
+  printf("  1 区画ずつ:       行き %d 区画、帰り %d 区画\n", goal_moves, start_moves);
+
+  /* 既知区間の経路を使って探索する */
+  s_known_path_count = 0;
+  s_big_turn_count = 0;
+  s_known_path_error_count = 0;
+  s_replayed_cells = 0;
+  int goal_moves_known = 0;
+  int start_moves_known = 0;
+  explore_round_trip(true, &goal_moves_known, &start_moves_known);
+  printf("  既知区間を使う:   行き %d 区画、帰り %d 区画（このほかに既知区間を %d 回まとめて走った。大回り %d 回）\n",
+         goal_moves_known, start_moves_known, s_known_path_count, s_big_turn_count);
+
+  check(s_known_path_error_count == 0, "既知区間の経路が壁を通らず、経路の終わりの位置に着く");
+  check(s_known_path_count > 0, "既知区間の経路が使われている");
+
+  /* 見たことのある区画では新しい情報が増えないので、まとめて走っても 1 区画ずつ走っても
+   * 通る道は同じはず。進んだ区画数の合計が同じかで確かめる */
+  int total_one_by_one = goal_moves + start_moves;
+  int total_known = goal_moves_known + start_moves_known + s_replayed_cells;
+  printf("  進んだ区画数の合計: 1 区画ずつ %d、既知区間を使う %d\n", total_one_by_one, total_known);
+  check(total_one_by_one == total_known, "既知区間を使っても、1 区画ずつと同じ道を通る");
 }
 
 /* ---------------------------------------------------------------------------
@@ -276,6 +580,7 @@ int main(void)
 {
   test_maze_map();
   test_step_map();
+  test_known_path();
   test_explore("mazes/maze32_center2x2.txt");
   test_explore("mazes/maze32_offset3x3.txt");
 

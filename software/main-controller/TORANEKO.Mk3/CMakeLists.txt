@@ -50,6 +50,7 @@ set(APP_SOURCES
     App/drv/uart.c
     App/maze/maze_map.c
     App/maze/search.c
+    App/maze/path.c
 )
 
 # Add sources to executable

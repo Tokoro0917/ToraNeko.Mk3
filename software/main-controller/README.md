@@ -95,8 +95,8 @@ software/main-controller/
     │   │
     │   ├── maze/                 迷路（HAL に依存しない。PC でテストできる。ctrl を知らない）
     │   │   ├── maze_map.c/.h     壁の情報の保持・更新・保存
-    │   │   ├── search.c/.h       足立法・歩数マップ・既知区間の経路（行き止まり潰しは持ち込まない）
-    │   │   └── path.c/.h         最短経路（ダイクストラ）と、経路の圧縮・斜めへの変換
+    │   │   ├── search.c/.h       足立法・歩数マップ（行き止まり潰しは持ち込まない）
+    │   │   └── path.c/.h         経路（動きの並び）を作る：既知区間の経路と大回りへの変換、最短経路（ダイクストラ）と斜めへの変換
     │   │
     │   └── sys/                  全体の管理
     │       ├── scheduler.c/.h    制御周期（2kHz）の処理（センサ → 制御 → 出力の順に呼ぶ）
@@ -157,7 +157,7 @@ sys（explore / mode / ...）
 | 5 | モータ PWM | `drv/motor.c` | `motor.c`（出力部分） | 未着手 |
 | 6 | 壁センサ（2組ずつ点灯） | `drv/wall.c`, `ctrl/wall_ctrl.c` | `PL_sensor.c`, `Wallsensor.c` | 未着手 |
 | 7 | 速度・角度制御（PID、フィードフォワード） | `ctrl/odometry.c`, `ctrl/pid.c`, `ctrl/trajectory.c`, `ctrl/run.c` | `motor.c`, `Move.c` | 未着手 |
-| 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | 進行中：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）と PC テストまで完了。次は既知区間加速の経路、その次はダイクストラと斜め |
+| 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | 進行中：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）、既知区間の経路と大回り（`path.c`）と PC テストまで完了。次はダイクストラと斜め、未知壁探索 |
 | 9 | 探索走行、走行モード、ログ、フェイルセーフ、保存 | `sys/explore.c`, `sys/mode.c`, `sys/ui.c`, `sys/log.c`, `sys/failsafe.c`, `sys/flash.c` | `main.c`, `UI.c`, `LOG.c`, `Failsafe.c` | 未着手 |
 
 ### KOGUMA のファイルとの対応
