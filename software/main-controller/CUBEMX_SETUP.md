@@ -81,7 +81,7 @@ STM32CubeMX で `TORANEKO.Mk3` プロジェクトを新規作成するときの 
 
 | 用途 | タイマー | モード | PSC | ARR（Period） | 周波数 | 備考 |
 |---|---|---|---|---|---|---|
-| モータ PWM | **TIM4** CH1〜CH4 | PWM Generation CH1〜CH4 | 10-1 | 200-1 | **50 kHz** | 分解能 200 は KOGUMA と同じなので、`motor.c` の `200 - Motor_Voltage` の考え方がそのまま使える。MP6551 の入力 PWM 周波数の上限はステップ5で確認 |
+| モータ PWM | **TIM4** CH1〜CH4 | PWM Generation CH1〜CH4 | 10-1 | **100-1** | **100 kHz** | 分解能は 100（KOGUMA は 200）。`motor.c` の `200 - Motor_Voltage` は ARR に合わせて `100 - …` に読み替える（ステップ5で `drv/motor.c` は ARR を定数で持つ）。MP6551 の入力 PWM 周波数の上限はステップ5で確認 |
 | 吸引ファン PWM | **TIM2** CH2 | PWM Generation CH2 | 20-1 | 100-1 | **50 kHz** | KOGUMA と同じ周波数・分解能 |
 | 制御周期 | **TIM11** | Activated（内部クロック、ピン不使用） | 100-1 | **500-1** | **2 kHz** | NVIC: `TIM1_TRG_COM_TIM11_IRQn` を有効化。4kHz にする場合は ARR を 250-1 に |
 | 壁センサの順番制御 | **TIM3** | Activated（内部クロック、ピン不使用）、**One Pulse Mode** | 100-1 | 35-1 | 1回 35µs | Trigger Event Selection（TRGO）= **Update Event**。LED 点灯と同時に起動し、35µs 後に ADC を起動する。割り込みは不要 |

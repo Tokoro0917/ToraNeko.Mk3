@@ -105,5 +105,5 @@ CubeMX の具体的な設定値は [CUBEMX_SETUP.md](CUBEMX_SETUP.md) を参照�
 - [x] ADC 5ch が全て ADC 入力可能ピンか（PA2〜PA6 = IN2〜IN6）
 - [x] タイマーのチャンネルと AF 番号（TIM4 CH1〜4 = PB6〜PB9 AF2、TIM2 CH2 = PA1 AF1）
 - [x] SPI の CS ピン（IMU=PA15、エンコーダ左=PA8、右=PC15）
-- [ ] MP6551 の入力方式（IN1/IN2 PWM）とソフトの PWM 出し方（`motor.c` の `200 - Motor_Voltage`）が合っているか（ステップ5で MP6551 データシートと照合）
+- [ ] MP6551 の入力方式（IN1/IN2 PWM）とソフトの PWM 出し方（`motor.c` の `200 - Motor_Voltage`。ToraNeko は ARR=100 なので `100 - …`）が合っているか、100kHz が MP6551 の入力 PWM 周波数の範囲内か（ステップ5で MP6551 データシートと照合）
 - [x] HSE の周波数（10MHz セラミック発振子）
