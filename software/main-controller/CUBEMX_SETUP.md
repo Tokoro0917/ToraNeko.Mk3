@@ -153,6 +153,7 @@ KOGUMA は両方ともデータシートの上限を超えるクロックで動�
 | DMA2 Stream0（ADC1） | 1 | 壁センサの連鎖（次の LED へ進める）・バッテリの変換完了 |
 | TIM1_TRG_COM_TIM11 | 2 | 2kHz 制御周期 |
 | DMA2 Stream7（USART1_TX） | 5 | ログ送信完了 |
+| USART1 global interrupt | 5 | HAL の DMA 送信は、DMA 完了後に USART の送信完了割り込みで `HAL_UART_TxCpltCallback` を呼ぶので有効にする |
 | SysTick | CubeMX の既定値 | `HAL_Delay` 用。割り込み処理の中では `HAL_Delay` を使わない |
 
 壁センサの連鎖を制御周期より高い優先度にし、制御処理が長引いてもセンサ測定が遅れないようにします。
