@@ -1,40 +1,45 @@
+/*
+ * led.c
+ * 表示 LED（LED1〜LED7）の点灯・消灯
+ *
+ * ピン名（LED1_GPIO_Port、LED1_Pin など）は CubeMX で付けたラベルで、main.h に定義されている。
+ */
 #include "drv/led.h"
 
 #include "main.h"
 
-typedef struct {
-  GPIO_TypeDef *port;
-  uint16_t pin;
-} led_pin_t;
-
-/* 添字 0 = LED1。ピン名は .ioc のラベル（main.h） */
-static const led_pin_t s_leds[LED_COUNT] = {
-  { LED1_GPIO_Port, LED1_Pin },
-  { LED2_GPIO_Port, LED2_Pin },
-  { LED3_GPIO_Port, LED3_Pin },
-  { LED4_GPIO_Port, LED4_Pin },
-  { LED5_GPIO_Port, LED5_Pin },
-  { LED6_GPIO_Port, LED6_Pin },
-  { LED7_GPIO_Port, LED7_Pin },
-};
-
+/* 起動時に呼ぶ。全部消しておく */
 void led_init(void)
 {
-  led_set_mask(0);
+  led_all_off();
 }
 
+/* LED を 1 個点ける／消す。num は基板の LED 番号（1〜7）。on が true なら点灯 */
 void led_set(uint8_t num, bool on)
 {
-  if (num < 1 || num > LED_COUNT) {
-    return;
+  GPIO_PinState state;
+  if (on) {
+    state = GPIO_PIN_SET;
+  } else {
+    state = GPIO_PIN_RESET;
   }
-  const led_pin_t *led = &s_leds[num - 1];
-  HAL_GPIO_WritePin(led->port, led->pin, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+  switch (num) {
+  case 1: HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, state); break;
+  case 2: HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, state); break;
+  case 3: HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, state); break;
+  case 4: HAL_GPIO_WritePin(LED4_GPIO_Port, LED4_Pin, state); break;
+  case 5: HAL_GPIO_WritePin(LED5_GPIO_Port, LED5_Pin, state); break;
+  case 6: HAL_GPIO_WritePin(LED6_GPIO_Port, LED6_Pin, state); break;
+  case 7: HAL_GPIO_WritePin(LED7_GPIO_Port, LED7_Pin, state); break;
+  default: break;  /* 1〜7 以外は何もしない */
+  }
 }
 
-void led_set_mask(uint8_t mask)
+/* 全部の LED を消す */
+void led_all_off(void)
 {
-  for (uint8_t i = 0; i < LED_COUNT; i++) {
-    led_set(i + 1, (mask >> i) & 1U);
+  for (uint8_t num = 1; num <= LED_COUNT; num++) {
+    led_set(num, false);
   }
 }
