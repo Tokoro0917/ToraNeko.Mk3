@@ -136,15 +136,16 @@ KOGUMA は両方ともデータシートの上限を超えるクロックで動�
 
 | 項目 | 設定 | KOGUMA |
 |---|---|---|
-| Mode | Asynchronous | USART2 Single Wire (Half-Duplex) |
+| Mode | **Single Wire (Half-Duplex)**（Asynchronous は選べない。下の注記） | USART2 Single Wire (Half-Duplex) |
 | Baud Rate | 115200 bps（まずはこれで動作確認。ログ吸い出し用に後で 1〜2Mbps へ上げる） | 115200 bps |
 | Word Length / Parity / Stop | 8 bit / None / 1 | 同じ |
 | Data Direction | **Transmit Only** | - |
 | TX ピン | PA9 | PA2 |
 | DMA | USART1_TX → DMA2 Stream7（Memory to Peripheral、Byte、Normal） | なし |
 
-- Asynchronous にすると CubeMX が **PA10 を USART1_RX に自動で割り当てる**。PA10 は LED2 なので、PA10 をクリックして GPIO_Output に設定し直す
-- KOGUMA の半二重モードは TX ピンがオープンドレインになるため、STLINK-V3MODS 側にプルアップがないと信号が出ない可能性がある。ToraNeko では通常の非同期モード（TX のみ）にする
+- USART1_RX に使えるピン（PA10 / PB7 / PB3）は LED2・TIM4（モータ）・SPI1（IMU）で全て埋まっているため、CubeMX では Asynchronous が選べず Single Wire しか選べない
+- Single Wire だと TX ピンがオープンドレインで生成され、STLINK-V3MODS 側にプルアップがないと信号が出ない可能性がある。そこで `Core/Src/usart.c` の `USER CODE BEGIN USART1_MspInit 1` で **PA9 をプッシュプル（`GPIO_MODE_AF_PP`）に設定し直す**（USER CODE 欄なので再生成しても消えない）
+- 受信はしない（Transmit Only）ので、半二重モード（HDSEL）のままでも送信の動作は通常の非同期と同じ
 
 ## 8. NVIC（割り込み優先度の案）
 
