@@ -1,0 +1,29 @@
+name: firmware-build
+
+# メイン基板のファームウェア（CubeMX が生成した CMake プロジェクト）が ARM 向けにビルドできることを確認する。
+on:
+  push:
+    branches: [main]
+    paths: ['software/main-controller/TORANEKO.Mk3/**', '.github/workflows/firmware-build.yml']
+  pull_request:
+    paths: ['software/main-controller/TORANEKO.Mk3/**', '.github/workflows/firmware-build.yml']
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: software/main-controller/TORANEKO.Mk3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ツールチェーンのインストール
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi ninja-build
+
+      - name: ビルド (Debug)
+        run: |
+          cmake --preset Debug
+          cmake --build --preset Debug
+
+      - name: サイズ
+        run: arm-none-eabi-size build/Debug/TORANEKO.Mk3.elf

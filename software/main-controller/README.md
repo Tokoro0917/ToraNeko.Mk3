@@ -147,7 +147,7 @@ sys（explore / mode / ...）
 
 | # | 内容 | 作るファイル | KOGUMA側の対応ファイル | 状態 |
 |---|---|---|---|---|
-| 0 | F411 用の空プロジェクト作成（CubeMX → CMake、クロック設定） | `.ioc`, `Core/`, `App/app.c`, `CMakeLists.txt` | `KOGUMA.MkIIl.ioc` | 設定値決定済み（[CUBEMX_SETUP.md](CUBEMX_SETUP.md)）。`software/ToraNeko.MK3/`（EWARM・設定未反映）は作り直して置き換える |
+| 0 | F411 用の空プロジェクト作成（CubeMX → CMake、クロック設定） | `.ioc`, `Core/`, `App/app.c`, `CMakeLists.txt` | `KOGUMA.MkIIl.ioc` | **完了**。CubeMX で生成、`App/app.c` を `main.c` から呼ぶところまで。CI でビルドを確認 |
 | 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c` | `UI.c`, `syscalls.c` | 未着手 |
 | 2 | 2kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | 未着手 |
 | 3 | エンコーダ読み取り（AS5047P） | `drv/spi_bus.c`, `drv/encoder.c` | `PL_encoder.c` | 未着手 |

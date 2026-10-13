@@ -171,11 +171,16 @@ CubeMX が生成するファイルのうち、`cmake/stm32cubemx/CMakeLists.txt`
 プロジェクト直下の `CMakeLists.txt` は初回だけ生成され、以後は上書きされないので、`App/` の追加はこちらに書きます。
 
 ```cmake
+# User sources (App/). Add one file per line as each step is implemented
+set(APP_SOURCES
+    App/app.c
+    # App/drv/*.c などはステップごとに追記する
+)
+
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
-    App/app.c
-    # App/drv/*.c などはステップごとに追記する
+    ${APP_SOURCES}
 )
 
 # Add include paths
@@ -183,11 +188,15 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     App
 )
+
+# Warnings for user code only (App/); generated HAL code is left as is
+set_source_files_properties(${APP_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
 ```
 
 - ソースは `file(GLOB ...)` を使わず 1 ファイルずつ書く（ファイルを足したのに CMake を再実行し忘れてビルドされない、を防ぐ）
 - インクルードは `App/` を起点に書く（例: `#include "drv/encoder.h"`、`#include "config/robot_params.h"`）。各サブフォルダを個別にインクルードパスに足さない
-- 警告は `target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -Wall -Wextra)` で `App/` を含めて有効にする
+- 警告（`-Wall -Wextra`）は `APP_SOURCES` のファイルだけに付ける。生成コード（HAL）の警告は直せないので対象外にする
+- CI（`.github/workflows/firmware-build.yml`）で同じビルドを実行する
 - PC 用のテスト（`software/main-controller/test/`）はこのプロジェクトの外に置き、ホストの gcc でビルドする
 
 ## 11. VS Code の設定
