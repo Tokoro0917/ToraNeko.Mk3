@@ -39,6 +39,8 @@ void maze_map_record_walls(int x, int y, direction_t dir, bool wall_front, bool 
 bool maze_map_is_visited(int x, int y);
 
 bool maze_is_inside(int x, int y);
+bool maze_is_in_area(int x, int y, int area_x, int area_y, int width, int height);
+direction_t maze_direction_between(int from_x, int from_y, int to_x, int to_y);
 int maze_next_x(int x, direction_t dir);
 int maze_next_y(int y, direction_t dir);
 direction_t maze_turn_left(direction_t dir);

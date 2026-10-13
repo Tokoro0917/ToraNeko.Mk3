@@ -114,66 +114,72 @@ static int s_queue_write = 0;
 static uint8_t s_route_x[ROUTE_CELL_MAX];  /* 区画の座標は 0〜31 なので 1 バイトで足りる */
 static uint8_t s_route_y[ROUTE_CELL_MAX];
 static int s_route_length = 0;
-static int s_route_cost = 0;  /* 見つけた道のコストの合計 */
+static int s_route_cost = 0;  /* 見つけた道のコストの合計（見つからなかったら 0） */
 
 /* ===========================================================================
  * 状態の情報の読み書き（横の壁か縦の壁かで配列が違うので、ここでまとめて振り分ける）
  * ======================================================================== */
 
+/* 状態のコスト（ゴールの入口からその状態までの、かかる時間の目安）を読む */
 static uint16_t get_cost(state_t state)
 {
-  int i = crossing_index(state.crossing);
+  int crossing = crossing_index(state.crossing);  /* 北向き・東向きなら 0、南向き・西向きなら 1 */
   if (state.edge.is_row) {
-    return s_row_cost[state.edge.x][state.edge.y][i];
+    return s_row_cost[state.edge.x][state.edge.y][crossing];
   }
-  return s_col_cost[state.edge.x][state.edge.y][i];
+  return s_col_cost[state.edge.x][state.edge.y][crossing];
 }
 
+/* 状態のコストを書く */
 static void set_cost(state_t state, uint16_t cost)
 {
-  int i = crossing_index(state.crossing);
+  int crossing = crossing_index(state.crossing);  /* 北向き・東向きなら 0、南向き・西向きなら 1 */
   if (state.edge.is_row) {
-    s_row_cost[state.edge.x][state.edge.y][i] = cost;
+    s_row_cost[state.edge.x][state.edge.y][crossing] = cost;
   } else {
-    s_col_cost[state.edge.x][state.edge.y][i] = cost;
+    s_col_cost[state.edge.x][state.edge.y][crossing] = cost;
   }
 }
 
+/* その状態に来たときの向き（ゴール側から見て）を読む */
 static dir8_t get_dir(state_t state)
 {
-  int i = crossing_index(state.crossing);
+  int crossing = crossing_index(state.crossing);  /* 北向き・東向きなら 0、南向き・西向きなら 1 */
   if (state.edge.is_row) {
-    return s_row_dir[state.edge.x][state.edge.y][i];
+    return s_row_dir[state.edge.x][state.edge.y][crossing];
   }
-  return s_col_dir[state.edge.x][state.edge.y][i];
+  return s_col_dir[state.edge.x][state.edge.y][crossing];
 }
 
+/* その状態に来たときの向きを書く */
 static void set_dir(state_t state, dir8_t dir)
 {
-  int i = crossing_index(state.crossing);
+  int crossing = crossing_index(state.crossing);  /* 北向き・東向きなら 0、南向き・西向きなら 1 */
   if (state.edge.is_row) {
-    s_row_dir[state.edge.x][state.edge.y][i] = dir;
+    s_row_dir[state.edge.x][state.edge.y][crossing] = dir;
   } else {
-    s_col_dir[state.edge.x][state.edge.y][i] = dir;
+    s_col_dir[state.edge.x][state.edge.y][crossing] = dir;
   }
 }
 
+/* その状態が待ち行列に入っているかを読む */
 static bool get_in_queue(state_t state)
 {
-  int i = crossing_index(state.crossing);
+  int crossing = crossing_index(state.crossing);  /* 北向き・東向きなら 0、南向き・西向きなら 1 */
   if (state.edge.is_row) {
-    return s_row_in_queue[state.edge.x][state.edge.y][i];
+    return s_row_in_queue[state.edge.x][state.edge.y][crossing];
   }
-  return s_col_in_queue[state.edge.x][state.edge.y][i];
+  return s_col_in_queue[state.edge.x][state.edge.y][crossing];
 }
 
+/* その状態が待ち行列に入っているかを書く */
 static void set_in_queue(state_t state, bool in_queue)
 {
-  int i = crossing_index(state.crossing);
+  int crossing = crossing_index(state.crossing);  /* 北向き・東向きなら 0、南向き・西向きなら 1 */
   if (state.edge.is_row) {
-    s_row_in_queue[state.edge.x][state.edge.y][i] = in_queue;
+    s_row_in_queue[state.edge.x][state.edge.y][crossing] = in_queue;
   } else {
-    s_col_in_queue[state.edge.x][state.edge.y][i] = in_queue;
+    s_col_in_queue[state.edge.x][state.edge.y][crossing] = in_queue;
   }
 }
 
@@ -349,6 +355,18 @@ static bool is_orthogonal(dir8_t dir)
   return false;
 }
 
+/* 向き came_dir で来たあと、向き dir に 1 つ進むときのコスト */
+static uint16_t get_step_cost(dir8_t came_dir, dir8_t dir)
+{
+  if (dir == came_dir) {
+    return COST_CONTINUE;  /* 同じ向きが続く（速度が乗る） */
+  }
+  if (is_orthogonal(dir)) {
+    return COST_STRAIGHT;
+  }
+  return COST_DIAGONAL;
+}
+
 /* 点を crossing の向きに通り抜けているときに、向き dir に進めるか。
  * 進めるのは、通り抜けた先の区画を通る 3 本（直進と、左右の斜め）だけ。
  * 例：横の壁を北向きに通っているなら、北・北東・北西 */
@@ -428,24 +446,12 @@ static void reset_all(void)
   s_queue_write = 0;
 }
 
-/* 区画 (x, y) がゴールの範囲の中か */
-static bool is_goal_cell(int x, int y, int goal_x, int goal_y, int goal_width, int goal_height)
-{
-  if (x < goal_x || x >= goal_x + goal_width) {
-    return false;
-  }
-  if (y < goal_y || y >= goal_y + goal_height) {
-    return false;
-  }
-  return true;
-}
-
 /* ゴールの区画 (x, y) の dir 側の辺が、ゴールの外との境目で通れるなら、
  * そこを「ゴールから外へ向かって通り抜ける」状態としてコスト 0 にし、待ち行列に入れる */
 static void add_goal_entrance(int x, int y, direction_t dir, int goal_x, int goal_y, int goal_width, int goal_height,
                               bool unknown_as_wall)
 {
-  if (is_goal_cell(maze_next_x(x, dir), maze_next_y(y, dir), goal_x, goal_y, goal_width, goal_height)) {
+  if (maze_is_in_area(maze_next_x(x, dir), maze_next_y(y, dir), goal_x, goal_y, goal_width, goal_height)) {
     return;  /* 隣もゴール（ゴールの中の辺） */
   }
 
@@ -509,18 +515,8 @@ static void spread_costs(bool unknown_as_wall)
         continue;  /* 壁があって通れない */
       }
 
-      /* この向きに進むときのコスト */
-      uint16_t step_cost;
-      if (dir == get_dir(from)) {
-        step_cost = COST_CONTINUE;
-      } else if (is_orthogonal(dir)) {
-        step_cost = COST_STRAIGHT;
-      } else {
-        step_cost = COST_DIAGONAL;
-      }
-
       state_t to = make_state(to_edge, crossing_after(to_edge, dir));
-      uint16_t new_cost = get_cost(from) + step_cost;
+      uint16_t new_cost = get_cost(from) + get_step_cost(get_dir(from), dir);
       if (new_cost < get_cost(to)) {
         set_cost(to, new_cost);
         set_dir(to, dir);
@@ -547,6 +543,7 @@ static void route_add(int x, int y)
 bool dijkstra_find_route(int goal_x, int goal_y, int goal_width, int goal_height, bool unknown_as_wall)
 {
   s_route_length = 0;
+  s_route_cost = 0;
 
   reset_all();
   add_goal_entrances(goal_x, goal_y, goal_width, goal_height, unknown_as_wall);
@@ -559,7 +556,6 @@ bool dijkstra_find_route(int goal_x, int goal_y, int goal_width, int goal_height
     return false;  /* ゴールにたどり着けない */
   }
 
-  s_route_cost = get_cost(state);
   route_add(0, 0);
   dir8_t move_dir = DIR8_NORTH;  /* スタートの区画は北へ抜ける */
 
@@ -579,6 +575,11 @@ bool dijkstra_find_route(int goal_x, int goal_y, int goal_width, int goal_height
     route_add(cell_x, cell_y);
     /* 1 つ前（ゴール側）の状態。ゴール側から見ると、came_dir の向きで next_edge を通り抜けていた */
     state = make_state(next_edge, crossing_after(next_edge, came_dir));
+
+    /* 道のコストを足していく。get_cost(state) をそのまま使わないのは、探している途中で
+     * 状態の「来た向き」が書き換わり、記録したコストと実際にたどる道のコストがずれることがあるため
+     * （KOGUMA と同じ探し方なので、ずれは残る。ずれても道は必ず走れる） */
+    s_route_cost = s_route_cost + get_step_cost(get_dir(state), came_dir);
   }
 
   /* 最後の点（ゴールの入口）を通り抜けた先が、ゴールの最初の区画 */
@@ -595,7 +596,8 @@ int dijkstra_get_route_length(void)
   return s_route_length;
 }
 
-/* 見つけた道のコストの合計（スタートの区画の北の壁からゴールの入口まで）。道の速さを比べるのに使う */
+/* 見つけた道のコストの合計（スタートの区画の北の壁からゴールの入口まで、実際にたどった道で数えたもの）。
+ * 道の速さを比べるのに使う。道が見つからなかったときは 0 */
 int dijkstra_get_route_cost(void)
 {
   return s_route_cost;

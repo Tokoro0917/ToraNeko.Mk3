@@ -93,6 +93,13 @@ KOGUMA のモード表（[reference README](../reference/koguma-mkiil/README.md)
 | 迷路の大きさ | **32×32**（ハーフサイズ）。KOGUMA は 16×16 で、ゴールは中央 2×2 固定 |
 | ゴールの位置・大きさ | **機体の操作で選べるようにする**（大会ごとに違うため）。選んだ値は Flash に保存する。操作方法はステップ9（`sys/ui.c`）で決める。`maze/` はゴールの座標と大きさを引数で受け取る |
 
+### 壁の記録（`Maze_Wall_Update`）
+
+| KOGUMA | ToraNeko（`maze/maze_map.c`） |
+|---|---|
+| 壁はビットを足す（OR）だけで、消さない。一度「あり」になった壁は、あとで見えなくても「あり」のまま | 同じ（`maze_map_record_walls`）。見えなかった壁は、まだ見ていなかった壁だけ「なし」にする |
+| 外周とスタート区画の東の壁は、初めに「あり」にしておく | 同じ。さらに、この 2 つは何を書き込もうとしても「あり」のまま（`maze_map_set_wall` で守る） |
+
 ### 経路生成（`Maze.c`）
 
 | 機能 | 使っている場所 | 提案 | 判断 |
@@ -143,7 +150,7 @@ KOGUMA のモード表（[reference README](../reference/koguma-mkiil/README.md)
 |---|---|---|
 | 1 | 行き：スタート → ゴール（足立法、見た区画は既知区間でまとめて走る） | `search_set_target`、`search_update_step_map`、`search_decide_action`、`path_make_known` |
 | 2 | ゴールで止まって、未知壁探索の経路を計算する | `search_plan_unknown_walls` |
-| 3 | 覚えた経路を見直す（`search_check_unknown_walls`）<br>・見ていない壁がある → その手前の区画を目的地にして、壁を見るまで走る（止まらない）<br>・ふさがれた → 次の区画で止まり（前に壁があれば壁合わせ）、計算し直す<br>・途中で U ターンするときは、止まったついでに計算し直す<br>これを繰り返す | `search_check_unknown_walls`、`search_plan_unknown_walls` |
+| 3 | 覚えた経路を見直す（`search_check_unknown_walls`）<br>・見ていない壁がある → その手前の区画を目的地にして、壁を見るまで走る（止まらない）<br>・ふさがれた → 次の区画で止まり（前に壁があれば壁合わせ）、計算し直す<br>・途中で U ターンするときは、止まったついでに計算し直す<br>・経路がない（`UNKNOWN_WALL_NO_PLAN`。ゴールへの道が見つからなかった）→ 壁の読み間違いなどの異常。未知壁探索をやめて、止まってスタートへ戻る<br>これを繰り返す | `search_check_unknown_walls`、`search_plan_unknown_walls` |
 | 4 | **見に行く壁がなくなったら、その場で止まる。止まってから最短経路を計算する**（ここで迷路を Flash にも保存する） | `path_make_shortest` |
 | 5 | 帰り：スタートへ戻る（最短走行はスタートから始まるので）。帰りに壁を見ても、4 で計算した最短経路は変わらない | 1 と同じ |
 
