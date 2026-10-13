@@ -48,6 +48,8 @@ set(APP_SOURCES
     App/drv/led.c
     App/drv/timebase.c
     App/drv/uart.c
+    App/maze/maze_map.c
+    App/maze/search.c
 )
 
 # Add sources to executable

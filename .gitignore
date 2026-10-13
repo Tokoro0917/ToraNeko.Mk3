@@ -40,6 +40,9 @@ cmake-build-*/
 *.bin
 *.map
 
+# --- PC 上のテスト（software/main-controller/test/）---
+software/main-controller/test/test_maze
+
 # --- STM32 (CubeMX + CMake) ---
 # build/ は上の C/C++ 欄で除外済み。Drivers/ は CubeMX なしでビルドできるようにコミットする
 *.d

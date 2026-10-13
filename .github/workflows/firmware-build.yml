@@ -1,12 +1,13 @@
 name: firmware-build
 
-# メイン基板のファームウェア（CubeMX が生成した CMake プロジェクト）が ARM 向けにビルドできることを確認する。
+# メイン基板のファームウェア（CubeMX が生成した CMake プロジェクト）が ARM 向けにビルドできることと、
+# 迷路（App/maze/）の PC 上のテストが通ることを確認する。
 on:
   push:
     branches: [main]
-    paths: ['software/main-controller/TORANEKO.Mk3/**', '.github/workflows/firmware-build.yml']
+    paths: ['software/main-controller/TORANEKO.Mk3/**', 'software/main-controller/test/**', '.github/workflows/firmware-build.yml']
   pull_request:
-    paths: ['software/main-controller/TORANEKO.Mk3/**', '.github/workflows/firmware-build.yml']
+    paths: ['software/main-controller/TORANEKO.Mk3/**', 'software/main-controller/test/**', '.github/workflows/firmware-build.yml']
 
 jobs:
   build:
@@ -27,3 +28,14 @@ jobs:
 
       - name: サイズ
         run: arm-none-eabi-size build/Debug/TORANEKO.Mk3.elf
+
+  maze-test:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: software/main-controller/test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 迷路のテスト（PC 上）
+        run: make
