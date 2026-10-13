@@ -83,7 +83,8 @@ software/main-controller/
     │   │   ├── led.c/.h          UI 用 LED
     │   │   ├── buzzer.c/.h       ブザー
     │   │   ├── spi_bus.c/.h      SPI 転送と CS 制御の共通部分（imu / encoder から使う）
-    │   │   └── uart.c/.h         ログ送信（DMA 送信・リングバッファ）
+    │   │   ├── timebase.c/.h     経過時間（ms は SysTick、µs は TIM5）とシステムクロックの取得
+    │   │   └── uart.c/.h         ログ送信（DMA 送信・リングバッファ）。printf の出力先（`_write`）もここ
     │   │
     │   ├── ctrl/                 制御
     │   │   ├── odometry.c/.h     エンコーダと IMU から速度・距離・角度を求める
@@ -148,7 +149,7 @@ sys（explore / mode / ...）
 | # | 内容 | 作るファイル | KOGUMA側の対応ファイル | 状態 |
 |---|---|---|---|---|
 | 0 | F411 用の空プロジェクト作成（CubeMX → CMake、クロック設定） | `.ioc`, `Core/`, `App/app.c`, `CMakeLists.txt` | `KOGUMA.MkIIl.ioc` | **完了**。CubeMX で生成、`App/app.c` を `main.c` から呼ぶところまで。CI でビルドを確認 |
-| 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c` | `UI.c`, `syscalls.c` | 未着手 |
+| 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c`, `drv/timebase.c` | `UI.c`, `syscalls.c` | 実装済み・実機確認待ち（LED1→7 の順送り、1 秒ごとに経過時間を出力） |
 | 2 | 2kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | 未着手 |
 | 3 | エンコーダ読み取り（AS5047P） | `drv/spi_bus.c`, `drv/encoder.c` | `PL_encoder.c` | 未着手 |
 | 4 | IMU 読み取り（LSM6DSR） | `drv/imu.c` | `lsm6dsr.c` | 未着手 |
