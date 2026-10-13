@@ -10,7 +10,9 @@
  *
  * ■ 未知壁探索（KOGUMA のモード0 No.7）
  * ゴールに着いたあと、search_find_unknown_wall() で「最短経路の上にある、まだ見ていない壁」を探し、
- * その壁の手前の区画を目的地にして、壁を見るまで上と同じように走る。見ていない壁がなくなったら終わり。
+ * その壁の手前の区画を目的地にして、壁を見るまで上と同じように走る。
+ * 見ていない壁がなくなったら（search_find_unknown_wall() が false）、その場で止まり、
+ * 止まってから path_make_shortest() で最短経路を計算する。そのあとスタートに戻る。
  */
 #ifndef MAZE_SEARCH_H
 #define MAZE_SEARCH_H

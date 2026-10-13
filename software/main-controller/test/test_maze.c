@@ -8,8 +8,9 @@
  *   1. 壁の地図（maze_map）の基本動作
  *   2. 歩数マップ（search）の基本動作
  *   3. 既知区間の経路（path_make_known）：小さな迷路で、大回りへの変換が正しいか
- *   6. 未知壁探索（KOGUMA のモード0 No.7）：ゴールに着いたあと最短経路の上の見ていない壁を見に行き、
- *      最後に、全部の壁を知っているときと同じ速さの最短経路になるか
+ *   6. 未知壁探索（KOGUMA のモード0 No.7）：ゴールに着いたあと最短経路の上の見ていない壁を見に行く。
+ *      見に行く壁がなくなったらその場で止まって最短経路を計算し、全部の壁を知っているときと
+ *      同じ速さの最短経路になるか
  *   5. 最短経路（path_make_shortest）：何もない迷路と、探索したあとの迷路で、
  *      大回り・斜めを使った経路が壁を通らずにゴールに着くか
  *   4. 探索のシミュレーション：テスト用の迷路（mazes フォルダの .txt）を、壁を知らない状態から
@@ -861,16 +862,25 @@ static void test_unknown_wall_explore(const char *file_path)
     check(maze_map_get_wall(cell_x, cell_y, wall_dir) != WALL_UNKNOWN, "見に行った壁を見た");
   }
 
-  /* 3. 帰り：スタートへ */
+  /* 3. 見に行く壁がなくなったら、その場で止まって最短経路を計算する
+   *    （走りながら計算しない。計算が終わってから動き出す） */
+  printf("  見に行く壁がなくなった：(%d,%d) で止まって最短経路を計算する\n", x, y);
+  static path_t s_shortest;
+  bool found = path_make_shortest(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &s_shortest);
+  check(found, "止まった場所で最短経路を計算できる");
+  int cost_final = dijkstra_get_route_cost();
+
+  /* 4. 帰り：スタートへ（最短走行はスタートから始まるので） */
   search_set_target(0, 0, 1, 1);
   int moves_to_start = run_to_target(&x, &y, &dir, true);
   check(moves_to_start >= 0, "スタートに戻る");
   check(count_wrong_walls() == 0, "記録した壁が本当の迷路と同じ");
 
-  /* 結果：見た壁だけで作った最短経路が、全部の壁を知っているときと同じ速さか */
+  /* 結果：止まった場所で計算した最短経路が、全部の壁を知っているときと同じ速さか。
+   * 帰りに新しい壁を見ても、最短経路は変わらない（もう一度計算して確かめる） */
   dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
-  int cost_final = dijkstra_get_route_cost();
-  printf("  ゴールに着いた時点の最短経路のコスト %d → 未知壁探索のあと %d（全部の壁を知っているとき %d）\n",
+  check(dijkstra_get_route_cost() == cost_final, "帰りに壁を見ても、止まった場所で計算した最短経路は変わらない");
+  printf("  ゴールに着いた時点の最短経路のコスト %d → 止まった場所で計算 %d（全部の壁を知っているとき %d）\n",
          cost_after_goal, cost_final, best_cost);
   printf("  見に行った壁 %d 枚、そのために進んだ区画 %d（既知区間でまとめて走った分を除く）\n",
          wall_count, moves_for_walls);
