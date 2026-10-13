@@ -7,6 +7,10 @@
  *   2. search_is_in_target() で、目的地に着いたかを調べる
  *   3. search_update_step_map() で、歩数マップを作り直す
  *   4. search_decide_action() で、次の動き（直進・左・右・Uターン）を決める
+ *
+ * ■ 未知壁探索（KOGUMA のモード0 No.7）
+ * ゴールに着いたあと、search_find_unknown_wall() で「最短経路の上にある、まだ見ていない壁」を探し、
+ * その壁の手前の区画を目的地にして、壁を見るまで上と同じように走る。見ていない壁がなくなったら終わり。
  */
 #ifndef MAZE_SEARCH_H
 #define MAZE_SEARCH_H
@@ -32,5 +36,7 @@ bool search_is_in_target(int x, int y);
 void search_update_step_map(void);
 uint16_t search_get_step(int x, int y);
 action_t search_decide_action(int x, int y, direction_t dir);
+bool search_find_unknown_wall(int goal_x, int goal_y, int goal_width, int goal_height,
+                               int *cell_x, int *cell_y, direction_t *wall_dir);
 
 #endif /* MAZE_SEARCH_H */

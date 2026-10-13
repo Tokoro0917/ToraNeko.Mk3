@@ -81,6 +81,7 @@ static int s_queue_write = 0;
 static uint8_t s_route_x[ROUTE_CELL_MAX];  /* 区画の座標は 0〜31 なので 1 バイトで足りる */
 static uint8_t s_route_y[ROUTE_CELL_MAX];
 static int s_route_length = 0;
+static int s_route_cost = 0;  /* 見つけた道のコストの合計 */
 
 /* ===========================================================================
  * 点の情報の読み書き（横の壁か縦の壁かで配列が違うので、ここでまとめて振り分ける）
@@ -460,6 +461,7 @@ bool dijkstra_find_route(int goal_x, int goal_y, int goal_width, int goal_height
     return false;  /* ゴールにたどり着けない */
   }
 
+  s_route_cost = get_cost(edge);
   route_add(0, 0);
   dir8_t move_dir = DIR8_NORTH;  /* スタートの区画は北へ抜ける */
 
@@ -491,6 +493,12 @@ bool dijkstra_find_route(int goal_x, int goal_y, int goal_width, int goal_height
 int dijkstra_get_route_length(void)
 {
   return s_route_length;
+}
+
+/* 見つけた道のコストの合計（スタートの区画の北の壁からゴールの入口まで）。道の速さを比べるのに使う */
+int dijkstra_get_route_cost(void)
+{
+  return s_route_cost;
 }
 
 /* 見つけた道の index 番目（0 がスタート）の区画の x */

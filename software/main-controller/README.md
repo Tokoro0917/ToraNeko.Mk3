@@ -95,7 +95,7 @@ software/main-controller/
     │   │
     │   ├── maze/                 迷路（HAL に依存しない。PC でテストできる。ctrl を知らない）
     │   │   ├── maze_map.c/.h     壁の情報の保持・更新・保存
-    │   │   ├── search.c/.h       足立法・歩数マップ（行き止まり潰しは持ち込まない）
+    │   │   ├── search.c/.h       足立法・歩数マップ・未知壁探索で見に行く壁（行き止まり潰しは持ち込まない）
     │   │   ├── dijkstra.c/.h     ダイクストラ：スタートからゴールまでの速く走れる道（通る区画の並び）を探す
     │   │   └── path.c/.h         経路（動きの並び）を作る：既知区間の経路と大回りへの変換、最短経路の大回り・斜めへの変換
     │   │
@@ -158,7 +158,7 @@ sys（explore / mode / ...）
 | 5 | モータ PWM | `drv/motor.c` | `motor.c`（出力部分） | 未着手 |
 | 6 | 壁センサ（2組ずつ点灯） | `drv/wall.c`, `ctrl/wall_ctrl.c` | `PL_sensor.c`, `Wallsensor.c` | 未着手 |
 | 7 | 速度・角度制御（PID、フィードフォワード） | `ctrl/odometry.c`, `ctrl/pid.c`, `ctrl/trajectory.c`, `ctrl/run.c` | `motor.c`, `Move.c` | 未着手 |
-| 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | 進行中：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）、既知区間の経路と大回り（`path.c`）、ダイクストラ（`dijkstra.c`）と斜めへの変換、PC テストまで完了。次は未知壁探索（No.7） |
+| 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | **迷路の処理は完了**（PC テスト済み）：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）、既知区間の経路と大回り・最短経路の斜め（`path.c`）、ダイクストラ（`dijkstra.c`）、未知壁探索（`search_find_unknown_wall`）。走りながら呼び出す部分（`sys/explore.c`）はステップ9 |
 | 9 | 探索走行、走行モード、ログ、フェイルセーフ、保存 | `sys/explore.c`, `sys/mode.c`, `sys/ui.c`, `sys/log.c`, `sys/failsafe.c`, `sys/flash.c` | `main.c`, `UI.c`, `LOG.c`, `Failsafe.c` | 未着手 |
 
 ### KOGUMA のファイルとの対応

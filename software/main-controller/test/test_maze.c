@@ -8,6 +8,8 @@
  *   1. 壁の地図（maze_map）の基本動作
  *   2. 歩数マップ（search）の基本動作
  *   3. 既知区間の経路（path_make_known）：小さな迷路で、大回りへの変換が正しいか
+ *   6. 未知壁探索（KOGUMA のモード0 No.7）：ゴールに着いたあと最短経路の上の見ていない壁を見に行き、
+ *      最後に、全部の壁を知っているときと同じ速さの最短経路になるか
  *   5. 最短経路（path_make_shortest）：何もない迷路と、探索したあとの迷路で、
  *      大回り・斜めを使った経路が壁を通らずにゴールに着くか
  *   4. 探索のシミュレーション：テスト用の迷路（mazes フォルダの .txt）を、壁を知らない状態から
@@ -509,6 +511,12 @@ static int count_big_turns(const path_t *path)
   return count;
 }
 
+/* 未知壁探索で見に行く壁。s_watch_enabled が true なら、run_to_target() はこの壁を見た時点でも止まる */
+static bool s_watch_enabled = false;
+static int s_watch_x = 0;
+static int s_watch_y = 0;
+static direction_t s_watch_dir = DIR_NORTH;
+
 /* 今いる (x, y, dir) から、目的地に着くまで足立法で走る。
  * use_known_path が true なら、見たことのある区画が続くところは既知区間の経路でまとめて走る。
  * 進んだ区画数を返す（既知区間の経路でまとめて走った分は数えない）。着けなかったら -1。
@@ -527,6 +535,9 @@ static int run_to_target(int *x, int *y, direction_t *dir, bool use_known_path)
 
     if (search_is_in_target(*x, *y)) {
       return move_count;
+    }
+    if (s_watch_enabled && maze_map_get_wall(s_watch_x, s_watch_y, s_watch_dir) != WALL_UNKNOWN) {
+      return move_count;  /* 見に行く壁を見た */
     }
 
     search_update_step_map();
@@ -793,6 +804,80 @@ static void test_shortest_maze(const char *file_path)
 }
 
 /* ---------------------------------------------------------------------------
+ * 6. 未知壁探索のテスト
+ * ------------------------------------------------------------------------- */
+
+static void test_unknown_wall_explore(const char *file_path)
+{
+  printf("[6] 未知壁探索: %s\n", file_path);
+  if (!load_maze_file(file_path)) {
+    check(false, "迷路ファイルが読めない");
+    return;
+  }
+
+  /* 全部の壁を知っているときの最短経路のコスト（これが目標） */
+  copy_true_maze_to_map();
+  dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+  int best_cost = dijkstra_get_route_cost();
+
+  /* 1. 行き：スタート → ゴール */
+  maze_map_init();
+  int x = 0;
+  int y = 0;
+  direction_t dir = DIR_NORTH;
+  search_set_target(s_goal_x, s_goal_y, s_goal_width, s_goal_height);
+  int moves_to_goal = run_to_target(&x, &y, &dir, true);
+  check(moves_to_goal >= 0, "ゴールに着く");
+
+  dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+  int cost_after_goal = dijkstra_get_route_cost();
+
+  /* 2. 最短経路の上の見ていない壁を、なくなるまで見に行く */
+  int wall_count = 0;
+  int moves_for_walls = 0;
+  int cell_x;
+  int cell_y;
+  direction_t wall_dir;
+  while (search_find_unknown_wall(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &cell_x, &cell_y, &wall_dir)) {
+    if (wall_count >= 300) {
+      check(false, "見に行く壁が 300 枚を超えた（終わらない）");
+      break;
+    }
+    wall_count = wall_count + 1;
+
+    s_watch_enabled = true;
+    s_watch_x = cell_x;
+    s_watch_y = cell_y;
+    s_watch_dir = wall_dir;
+    search_set_target(cell_x, cell_y, 1, 1);
+    int moves = run_to_target(&x, &y, &dir, true);
+    s_watch_enabled = false;
+
+    check(moves >= 0, "見に行く壁の手前の区画に着く");
+    if (moves < 0) {
+      break;
+    }
+    moves_for_walls = moves_for_walls + moves;
+    check(maze_map_get_wall(cell_x, cell_y, wall_dir) != WALL_UNKNOWN, "見に行った壁を見た");
+  }
+
+  /* 3. 帰り：スタートへ */
+  search_set_target(0, 0, 1, 1);
+  int moves_to_start = run_to_target(&x, &y, &dir, true);
+  check(moves_to_start >= 0, "スタートに戻る");
+  check(count_wrong_walls() == 0, "記録した壁が本当の迷路と同じ");
+
+  /* 結果：見た壁だけで作った最短経路が、全部の壁を知っているときと同じ速さか */
+  dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+  int cost_final = dijkstra_get_route_cost();
+  printf("  ゴールに着いた時点の最短経路のコスト %d → 未知壁探索のあと %d（全部の壁を知っているとき %d）\n",
+         cost_after_goal, cost_final, best_cost);
+  printf("  見に行った壁 %d 枚、そのために進んだ区画 %d（既知区間でまとめて走った分を除く）\n",
+         wall_count, moves_for_walls);
+  check(cost_final == best_cost, "未知壁探索のあとの最短経路は、全部の壁を知っているときと同じ速さ");
+}
+
+/* ---------------------------------------------------------------------------
  * main
  * ------------------------------------------------------------------------- */
 
@@ -806,6 +891,8 @@ int main(void)
   test_shortest_open();
   test_shortest_maze("mazes/maze32_center2x2.txt");
   test_shortest_maze("mazes/maze32_offset3x3.txt");
+  test_unknown_wall_explore("mazes/maze32_center2x2.txt");
+  test_unknown_wall_explore("mazes/maze32_offset3x3.txt");
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

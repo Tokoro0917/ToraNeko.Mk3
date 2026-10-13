@@ -16,6 +16,7 @@
 
 bool dijkstra_find_route(int goal_x, int goal_y, int goal_width, int goal_height, bool unknown_as_wall);
 int dijkstra_get_route_length(void);
+int dijkstra_get_route_cost(void);
 int dijkstra_get_route_x(int index);
 int dijkstra_get_route_y(int index);
 

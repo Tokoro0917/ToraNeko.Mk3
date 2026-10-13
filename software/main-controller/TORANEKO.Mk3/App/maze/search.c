@@ -13,6 +13,8 @@
  */
 #include "maze/search.h"
 
+#include "maze/dijkstra.h"
+
 /* 目的地（長方形の範囲）。(左下の x, 左下の y) と 幅・高さ [区画] */
 static int s_target_x = 0;
 static int s_target_y = 0;
@@ -160,4 +162,50 @@ action_t search_decide_action(int x, int y, direction_t dir)
     return ACTION_TURN_RIGHT;
   }
   return ACTION_UTURN;
+}
+
+/* 未知壁探索：最短経路の上にある、まだ見ていない壁を 1 つ探す（KOGUMA の Maze_Unknown_Wall_Scan）。
+ *
+ * まだ見ていない壁を「ない」とみなしてダイクストラで最短経路を探し、スタート側から順に、
+ * 区画と次の区画の間の壁を調べる。最初に見つかった「まだ見ていない壁」について、
+ * スタート側の区画を (cell_x, cell_y) に、その区画から見た壁の向きを wall_dir に入れて true を返す。
+ * その区画まで行けば、センサでその壁を見られる。
+ *
+ * 経路の上に見ていない壁がなければ false。このときの経路は全部の壁を見てあるので、
+ * 迷路の本当の最短経路になっている（見ていない壁を「ない」とみなす、いちばん都合のいい
+ * 考え方でもこれより速い道はないので、本当の迷路でもこれより速い道はない）。 */
+bool search_find_unknown_wall(int goal_x, int goal_y, int goal_width, int goal_height,
+                              int *cell_x, int *cell_y, direction_t *wall_dir)
+{
+  if (!dijkstra_find_route(goal_x, goal_y, goal_width, goal_height, false)) {
+    return false;  /* ゴールへの道がない（普通は起きない） */
+  }
+
+  int length = dijkstra_get_route_length();
+  for (int i = 0; i + 1 < length; i++) {
+    int x = dijkstra_get_route_x(i);
+    int y = dijkstra_get_route_y(i);
+    int next_x = dijkstra_get_route_x(i + 1);
+    int next_y = dijkstra_get_route_y(i + 1);
+
+    /* 区画 (x, y) から次の区画へ向かう向き */
+    direction_t dir;
+    if (next_y > y) {
+      dir = DIR_NORTH;
+    } else if (next_y < y) {
+      dir = DIR_SOUTH;
+    } else if (next_x > x) {
+      dir = DIR_EAST;
+    } else {
+      dir = DIR_WEST;
+    }
+
+    if (maze_map_get_wall(x, y, dir) == WALL_UNKNOWN) {
+      *cell_x = x;
+      *cell_y = y;
+      *wall_dir = dir;
+      return true;
+    }
+  }
+  return false;
 }
