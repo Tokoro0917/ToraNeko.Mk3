@@ -22,9 +22,10 @@ static int s_target_height = 1;
 static uint16_t s_step_map[MAZE_SIZE][MAZE_SIZE];
 
 /* 歩数マップを作るときの「次に調べる区画」の列（待ち行列）。
- * 1 つの区画は 1 回しか入らないので、大きさは区画の数あれば足りる */
-static int s_queue_x[MAZE_SIZE * MAZE_SIZE];
-static int s_queue_y[MAZE_SIZE * MAZE_SIZE];
+ * 1 つの区画は 1 回しか入らないので、大きさは区画の数あれば足りる。
+ * 座標は 0〜31 なので、メモリを節約するため 1 バイトの整数にする */
+static uint8_t s_queue_x[MAZE_SIZE * MAZE_SIZE];
+static uint8_t s_queue_y[MAZE_SIZE * MAZE_SIZE];
 
 /* 目的地を決める。ゴールなら大会のゴールの範囲、帰りならスタート (0, 0, 1, 1) を渡す */
 void search_set_target(int x, int y, int width, int height)
@@ -68,8 +69,8 @@ void search_update_step_map(void)
     for (int y = 0; y < MAZE_SIZE; y++) {
       if (search_is_in_target(x, y)) {
         s_step_map[x][y] = 0;
-        s_queue_x[queue_write] = x;
-        s_queue_y[queue_write] = y;
+        s_queue_x[queue_write] = (uint8_t)x;
+        s_queue_y[queue_write] = (uint8_t)y;
         queue_write = queue_write + 1;
       } else {
         s_step_map[x][y] = STEP_MAX;
@@ -98,8 +99,8 @@ void search_update_step_map(void)
         continue;  /* もう歩数が決まっている（もっと近い道がある） */
       }
       s_step_map[next_x][next_y] = s_step_map[x][y] + 1;
-      s_queue_x[queue_write] = next_x;
-      s_queue_y[queue_write] = next_y;
+      s_queue_x[queue_write] = (uint8_t)next_x;
+      s_queue_y[queue_write] = (uint8_t)next_y;
       queue_write = queue_write + 1;
     }
   }

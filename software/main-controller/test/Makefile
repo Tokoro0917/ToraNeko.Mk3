@@ -9,7 +9,8 @@ CFLAGS = -std=c11 -Wall -Wextra -Werror -g -I$(APP_DIR)
 MAZE_SOURCES = \
 	$(APP_DIR)/maze/maze_map.c \
 	$(APP_DIR)/maze/search.c \
-	$(APP_DIR)/maze/path.c
+	$(APP_DIR)/maze/path.c \
+	$(APP_DIR)/maze/dijkstra.c
 
 test: test_maze
 	./test_maze

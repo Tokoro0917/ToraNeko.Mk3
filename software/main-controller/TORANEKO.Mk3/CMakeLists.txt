@@ -51,6 +51,7 @@ set(APP_SOURCES
     App/maze/maze_map.c
     App/maze/search.c
     App/maze/path.c
+    App/maze/dijkstra.c
 )
 
 # Add sources to executable

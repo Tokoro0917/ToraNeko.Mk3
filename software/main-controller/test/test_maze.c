@@ -8,6 +8,8 @@
  *   1. 壁の地図（maze_map）の基本動作
  *   2. 歩数マップ（search）の基本動作
  *   3. 既知区間の経路（path_make_known）：小さな迷路で、大回りへの変換が正しいか
+ *   5. 最短経路（path_make_shortest）：何もない迷路と、探索したあとの迷路で、
+ *      大回り・斜めを使った経路が壁を通らずにゴールに着くか
  *   4. 探索のシミュレーション：テスト用の迷路（mazes フォルダの .txt）を、壁を知らない状態から
  *      足立法で スタート → ゴール → スタート と走り、ちゃんと帰ってこられるかを調べる。
  *      既知区間の経路を使って走っても、1 区画ずつ走ったときと同じところに着くかも調べる
@@ -16,6 +18,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "maze/dijkstra.h"
 #include "maze/maze_map.h"
 #include "maze/path.h"
 #include "maze/search.h"
@@ -186,9 +189,20 @@ static void print_path(const path_t *path)
     case MOTION_BIG_TURN_RIGHT_90:  printf(" 大回り右90"); break;
     case MOTION_BIG_TURN_LEFT_180:  printf(" 大回り左180"); break;
     case MOTION_BIG_TURN_RIGHT_180: printf(" 大回り右180"); break;
+    case MOTION_DIAG_IN45_LEFT:     printf(" 斜め入り左45"); break;
+    case MOTION_DIAG_IN45_RIGHT:    printf(" 斜め入り右45"); break;
+    case MOTION_DIAG_IN135_LEFT:    printf(" 斜め入り左135"); break;
+    case MOTION_DIAG_IN135_RIGHT:   printf(" 斜め入り右135"); break;
+    case MOTION_DIAG_STRAIGHT:      printf(" 斜め直進%d", path->steps[i].half_count); break;
+    case MOTION_DIAG_V90_LEFT:      printf(" V90左"); break;
+    case MOTION_DIAG_V90_RIGHT:     printf(" V90右"); break;
+    case MOTION_DIAG_OUT45_LEFT:    printf(" 斜め出左45"); break;
+    case MOTION_DIAG_OUT45_RIGHT:   printf(" 斜め出右45"); break;
+    case MOTION_DIAG_OUT135_LEFT:   printf(" 斜め出左135"); break;
+    case MOTION_DIAG_OUT135_RIGHT:  printf(" 斜め出右135"); break;
     }
   }
-  printf("  （直進の数字は半区画）\n");
+  printf("\n");
 }
 
 /* 経路の i 番目が、motion で長さ half_count の動きか */
@@ -339,51 +353,129 @@ static bool replay_turn(int *x, int *y, direction_t *dir, action_t action)
   return replay_one_cell(x, y, dir, action);
 }
 
-static bool replay_path(const path_t *path, int x, int y, direction_t dir)
+/* 動きが左向きのものか */
+static bool is_left_motion(motion_t motion)
+{
+  switch (motion) {
+  case MOTION_TURN_LEFT:
+  case MOTION_BIG_TURN_LEFT_90:
+  case MOTION_BIG_TURN_LEFT_180:
+  case MOTION_DIAG_IN45_LEFT:
+  case MOTION_DIAG_IN135_LEFT:
+  case MOTION_DIAG_V90_LEFT:
+  case MOTION_DIAG_OUT45_LEFT:
+  case MOTION_DIAG_OUT135_LEFT:
+    return true;
+  default:
+    return false;
+  }
+}
+
+/* 経路を本当の迷路の上で走らせる。壁を通らずに経路の終わりの位置まで行ければ true。
+ * ends_at_cell_center：最短経路のように、最後に区画の真ん中まで半区画進んで終わる経路か
+ *
+ * 各動きを、1 区画ずつの動き（直進・左・右・Uターン）に戻して走らせる。
+ *   大回り 90°      = 半区画 + ターン + 半区画
+ *   大回り 180°     = 半区画 + ターン + 同じターン + 半区画
+ *   斜め入り 45°    = 半区画 + ターン（このあと斜めの中は、左右が交互のターンが続く）
+ *   斜め入り 135°   = 半区画 + ターン + 同じターン
+ *   斜めの直進 n    = 左右交互のターン n 個（前のターンの反対から始まる）
+ *   V90             = ターン + 同じターン
+ *   斜め出 45°      = ターン + 半区画
+ *   斜め出 135°     = ターン + 同じターン + 半区画 */
+static bool replay_path(const path_t *path, int x, int y, direction_t dir, bool ends_at_cell_center)
 {
   bool ok = true;
+  bool last_turn_left = false;  /* 最後のターンが左だったか（斜めの直進で交互にするため） */
   s_pending_half = 0;
 
   for (int i = 0; i < path->count && ok; i++) {
-    switch (path->steps[i].motion) {
+    motion_t motion = path->steps[i].motion;
+    action_t turn = ACTION_TURN_RIGHT;
+    if (is_left_motion(motion)) {
+      turn = ACTION_TURN_LEFT;
+    }
+
+    switch (motion) {
     case MOTION_STRAIGHT:
       s_pending_half = s_pending_half + path->steps[i].half_count;
       break;
     case MOTION_TURN_LEFT:
-      ok = replay_turn(&x, &y, &dir, ACTION_TURN_LEFT);
-      break;
     case MOTION_TURN_RIGHT:
-      ok = replay_turn(&x, &y, &dir, ACTION_TURN_RIGHT);
+      ok = replay_turn(&x, &y, &dir, turn);
       break;
     case MOTION_UTURN:
       ok = replay_turn(&x, &y, &dir, ACTION_UTURN);
       break;
     case MOTION_BIG_TURN_LEFT_90:
-      s_pending_half = s_pending_half + 1;
-      ok = replay_turn(&x, &y, &dir, ACTION_TURN_LEFT);
-      s_pending_half = 1;
-      break;
     case MOTION_BIG_TURN_RIGHT_90:
       s_pending_half = s_pending_half + 1;
-      ok = replay_turn(&x, &y, &dir, ACTION_TURN_RIGHT);
+      ok = replay_turn(&x, &y, &dir, turn);
       s_pending_half = 1;
       break;
     case MOTION_BIG_TURN_LEFT_180:
-      s_pending_half = s_pending_half + 1;
-      ok = replay_turn(&x, &y, &dir, ACTION_TURN_LEFT);
-      if (ok) {
-        ok = replay_turn(&x, &y, &dir, ACTION_TURN_LEFT);
-      }
-      s_pending_half = 1;
-      break;
     case MOTION_BIG_TURN_RIGHT_180:
       s_pending_half = s_pending_half + 1;
-      ok = replay_turn(&x, &y, &dir, ACTION_TURN_RIGHT);
+      ok = replay_turn(&x, &y, &dir, turn);
       if (ok) {
-        ok = replay_turn(&x, &y, &dir, ACTION_TURN_RIGHT);
+        ok = replay_turn(&x, &y, &dir, turn);
       }
       s_pending_half = 1;
       break;
+    case MOTION_DIAG_IN45_LEFT:
+    case MOTION_DIAG_IN45_RIGHT:
+      s_pending_half = s_pending_half + 1;
+      ok = replay_turn(&x, &y, &dir, turn);
+      break;
+    case MOTION_DIAG_IN135_LEFT:
+    case MOTION_DIAG_IN135_RIGHT:
+    case MOTION_DIAG_V90_LEFT:
+    case MOTION_DIAG_V90_RIGHT:
+      if (motion == MOTION_DIAG_IN135_LEFT || motion == MOTION_DIAG_IN135_RIGHT) {
+        s_pending_half = s_pending_half + 1;
+      }
+      ok = replay_turn(&x, &y, &dir, turn);
+      if (ok) {
+        ok = replay_turn(&x, &y, &dir, turn);
+      }
+      break;
+    case MOTION_DIAG_STRAIGHT:
+      for (int k = 0; k < path->steps[i].half_count && ok; k++) {
+        if (last_turn_left) {
+          ok = replay_turn(&x, &y, &dir, ACTION_TURN_RIGHT);
+          last_turn_left = false;
+        } else {
+          ok = replay_turn(&x, &y, &dir, ACTION_TURN_LEFT);
+          last_turn_left = true;
+        }
+      }
+      break;
+    case MOTION_DIAG_OUT45_LEFT:
+    case MOTION_DIAG_OUT45_RIGHT:
+      ok = replay_turn(&x, &y, &dir, turn);
+      s_pending_half = 1;
+      break;
+    case MOTION_DIAG_OUT135_LEFT:
+    case MOTION_DIAG_OUT135_RIGHT:
+      ok = replay_turn(&x, &y, &dir, turn);
+      if (ok) {
+        ok = replay_turn(&x, &y, &dir, turn);
+      }
+      s_pending_half = 1;
+      break;
+    }
+
+    if (motion != MOTION_STRAIGHT && motion != MOTION_DIAG_STRAIGHT && motion != MOTION_UTURN) {
+      last_turn_left = is_left_motion(motion);
+    }
+  }
+
+  /* 最後に区画の真ん中まで進む経路なら、半区画が 1 つ余るのが正しい */
+  if (ok && ends_at_cell_center) {
+    if (s_pending_half % 2 == 1) {
+      s_pending_half = s_pending_half - 1;
+    } else {
+      ok = false;
     }
   }
   if (ok) {
@@ -453,7 +545,7 @@ static int run_to_target(int *x, int *y, direction_t *dir, bool use_known_path)
         is_long = false;
       }
       if (is_long) {
-        if (!replay_path(&s_path, *x, *y, *dir)) {
+        if (!replay_path(&s_path, *x, *y, *dir, false)) {
           s_known_path_error_count = s_known_path_error_count + 1;
         }
         s_known_path_count = s_known_path_count + 1;
@@ -573,6 +665,134 @@ static void test_explore(const char *file_path)
 }
 
 /* ---------------------------------------------------------------------------
+ * 5. 最短経路のテスト
+ * ------------------------------------------------------------------------- */
+
+/* 経路の中に motion があるか */
+static bool path_has(const path_t *path, motion_t motion)
+{
+  for (int i = 0; i < path->count; i++) {
+    if (path->steps[i].motion == motion) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/* 経路の中に斜めの動きがあるか */
+static bool path_has_diagonal(const path_t *path)
+{
+  if (path_has(path, MOTION_DIAG_IN45_LEFT) || path_has(path, MOTION_DIAG_IN45_RIGHT)) {
+    return true;
+  }
+  if (path_has(path, MOTION_DIAG_IN135_LEFT) || path_has(path, MOTION_DIAG_IN135_RIGHT)) {
+    return true;
+  }
+  return false;
+}
+
+/* 区画 (x, y) がゴールの中か */
+static bool is_in_goal(int x, int y)
+{
+  if (x < s_goal_x || x >= s_goal_x + s_goal_width) {
+    return false;
+  }
+  if (y < s_goal_y || y >= s_goal_y + s_goal_height) {
+    return false;
+  }
+  return true;
+}
+
+/* 本当の迷路の壁を、全部「見た」ことにして地図に写す */
+static void copy_true_maze_to_map(void)
+{
+  maze_map_init();
+  for (int x = 0; x < MAZE_SIZE; x++) {
+    for (int y = 0; y < MAZE_SIZE; y++) {
+      for (int i = 0; i < 4; i++) {
+        direction_t dir = (direction_t)i;
+        if (s_true_wall[x][y][dir]) {
+          maze_map_set_wall(x, y, dir, WALL_EXIST);
+        } else {
+          maze_map_set_wall(x, y, dir, WALL_NONE);
+        }
+      }
+    }
+  }
+}
+
+/* 中に壁が 1 枚もない迷路（スタートの東の壁だけある）を、本当の迷路にする */
+static void make_open_true_maze(void)
+{
+  for (int x = 0; x < MAZE_SIZE; x++) {
+    for (int y = 0; y < MAZE_SIZE; y++) {
+      s_true_wall[x][y][DIR_NORTH] = (y == MAZE_SIZE - 1);
+      s_true_wall[x][y][DIR_SOUTH] = (y == 0);
+      s_true_wall[x][y][DIR_EAST] = (x == MAZE_SIZE - 1);
+      s_true_wall[x][y][DIR_WEST] = (x == 0);
+    }
+  }
+  s_true_wall[0][0][DIR_EAST] = true;
+  s_true_wall[1][0][DIR_WEST] = true;
+}
+
+/* 最短経路を作って、本当の迷路の上で走らせて確かめる */
+static void check_shortest(const char *name)
+{
+  static path_t s_path;
+  bool found = path_make_shortest(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &s_path);
+  check(found, "最短経路が見つかる");
+  if (!found) {
+    return;
+  }
+  printf("  %s: 区画 %d 個を通る、動き %d 個\n", name, dijkstra_get_route_length(), s_path.count);
+  print_path(&s_path);
+  check(replay_path(&s_path, 0, 0, DIR_NORTH, true), "最短経路が壁を通らず、経路の終わりの位置に着く");
+  check(is_in_goal(s_path.end_x, s_path.end_y), "最短経路の終わりはゴールの中");
+}
+
+static void test_shortest_open(void)
+{
+  printf("[5] 最短経路：中に壁がない迷路で、(0,0) → (6,6)\n");
+  make_open_true_maze();
+  copy_true_maze_to_map();
+  s_goal_x = 6;
+  s_goal_y = 6;
+  s_goal_width = 1;
+  s_goal_height = 1;
+  check_shortest("壁なし");
+
+  static path_t s_path;
+  path_make_shortest(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &s_path);
+  check(path_has_diagonal(&s_path), "壁がなければ斜めに走る");
+  check(path_has(&s_path, MOTION_DIAG_STRAIGHT), "斜めの直進がある");
+
+  /* まだ見ていない壁は「ある」とみなすので、何も見ていなければ道はない */
+  maze_map_init();
+  check(!path_make_shortest(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &s_path),
+        "何も見ていない迷路では最短経路は見つからない");
+}
+
+static void test_shortest_maze(const char *file_path)
+{
+  printf("[5] 最短経路: %s\n", file_path);
+  if (!load_maze_file(file_path)) {
+    check(false, "迷路ファイルが読めない");
+    return;
+  }
+
+  /* 探索（行き・帰り）で見た壁だけを使う */
+  int goal_moves = 0;
+  int start_moves = 0;
+  explore_round_trip(true, &goal_moves, &start_moves);
+  check_shortest("探索のあと");
+
+  /* 迷路の壁を全部知っているとき */
+  copy_true_maze_to_map();
+  check_shortest("全部の壁を知っているとき");
+}
+
+/* ---------------------------------------------------------------------------
  * main
  * ------------------------------------------------------------------------- */
 
@@ -583,6 +803,9 @@ int main(void)
   test_known_path();
   test_explore("mazes/maze32_center2x2.txt");
   test_explore("mazes/maze32_offset3x3.txt");
+  test_shortest_open();
+  test_shortest_maze("mazes/maze32_center2x2.txt");
+  test_shortest_maze("mazes/maze32_offset3x3.txt");
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

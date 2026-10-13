@@ -96,7 +96,8 @@ software/main-controller/
     │   ├── maze/                 迷路（HAL に依存しない。PC でテストできる。ctrl を知らない）
     │   │   ├── maze_map.c/.h     壁の情報の保持・更新・保存
     │   │   ├── search.c/.h       足立法・歩数マップ（行き止まり潰しは持ち込まない）
-    │   │   └── path.c/.h         経路（動きの並び）を作る：既知区間の経路と大回りへの変換、最短経路（ダイクストラ）と斜めへの変換
+    │   │   ├── dijkstra.c/.h     ダイクストラ：スタートからゴールまでの速く走れる道（通る区画の並び）を探す
+    │   │   └── path.c/.h         経路（動きの並び）を作る：既知区間の経路と大回りへの変換、最短経路の大回り・斜めへの変換
     │   │
     │   └── sys/                  全体の管理
     │       ├── scheduler.c/.h    制御周期（2kHz）の処理（センサ → 制御 → 出力の順に呼ぶ）
@@ -157,7 +158,7 @@ sys（explore / mode / ...）
 | 5 | モータ PWM | `drv/motor.c` | `motor.c`（出力部分） | 未着手 |
 | 6 | 壁センサ（2組ずつ点灯） | `drv/wall.c`, `ctrl/wall_ctrl.c` | `PL_sensor.c`, `Wallsensor.c` | 未着手 |
 | 7 | 速度・角度制御（PID、フィードフォワード） | `ctrl/odometry.c`, `ctrl/pid.c`, `ctrl/trajectory.c`, `ctrl/run.c` | `motor.c`, `Move.c` | 未着手 |
-| 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | 進行中：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）、既知区間の経路と大回り（`path.c`）と PC テストまで完了。次はダイクストラと斜め、未知壁探索 |
+| 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | 進行中：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）、既知区間の経路と大回り（`path.c`）、ダイクストラ（`dijkstra.c`）と斜めへの変換、PC テストまで完了。次は未知壁探索（No.7） |
 | 9 | 探索走行、走行モード、ログ、フェイルセーフ、保存 | `sys/explore.c`, `sys/mode.c`, `sys/ui.c`, `sys/log.c`, `sys/failsafe.c`, `sys/flash.c` | `main.c`, `UI.c`, `LOG.c`, `Failsafe.c` | 未着手 |
 
 ### KOGUMA のファイルとの対応
@@ -170,7 +171,7 @@ sys（explore / mode / ...）
 | `Wallsensor.c` | `ctrl/wall_ctrl.c` |
 | `motor.c` | `drv/motor.c`（PWM出力）、`ctrl/pid.c`、`ctrl/odometry.c`、`drv/fan.c` |
 | `Move.c` | `ctrl/trajectory.c`、`ctrl/run.c`（動作）、`sys/explore.c`（`Robot_Maze_*_Action` の迷路判断部分） |
-| `Maze.c` | `maze/maze_map.c`、`maze/search.c`、`maze/path.c` |
+| `Maze.c` | `maze/maze_map.c`、`maze/search.c`、`maze/path.c`、`maze/dijkstra.c` |
 | `PL_timer.c` | `sys/scheduler.c` |
 | `main.c`（モード選択部分） | `sys/mode.c`、`sys/explore.c` |
 | `UI.c` | `sys/ui.c`、`drv/led.c`、`drv/buzzer.c` |
