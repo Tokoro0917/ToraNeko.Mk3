@@ -103,6 +103,11 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     HAL_NVIC_SetPriority(USART1_IRQn, 5, 0);
     HAL_NVIC_EnableIRQ(USART1_IRQn);
   /* USER CODE BEGIN USART1_MspInit 1 */
+    /* USART1 の RX に使えるピン（PA10/PB7/PB3）が全て他の用途で埋まっているため、CubeMX では
+       Single Wire (Half-Duplex) しか選べず、TX がオープンドレインで生成される。受信はしない（Transmit Only）ので、
+       プルアップなしでも信号が出るように PA9 をプッシュプルに設定し直す */
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE END USART1_MspInit 1 */
   }

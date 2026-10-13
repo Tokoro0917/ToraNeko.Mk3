@@ -87,6 +87,7 @@ void Maze_Step_Calculate();
 
 int Maze_Unknown_Wall_Scan(void);
 int Maze_Unknown_Wall_Still_Unknown(void);
+int Maze_Unknown_Wall_Is_Wall(void);
 void Maze_Unknown_Target_ModeSet(int, int);
 
 void Known_Pass_Generation();
@@ -105,3 +106,5 @@ void Pass_zero_act();
 
 void  Maze_Dijkstra_Calculation();
 void Maze_Dijkstra_Mapping();
+void Maze_Neighbor_Update(void);	//今いる区画の前後左右の歩数を G_Maze_Flont 等に入れる(移動しない)
+void Maze_Debug_Dump(void);	//保存済みの迷路と最短経路の命令列をシリアルに出す(モード3 No.0)

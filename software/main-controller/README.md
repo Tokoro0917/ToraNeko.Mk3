@@ -16,7 +16,8 @@ KOGUMA.MkIIl のコード（[../reference/koguma-mkiil/](../reference/koguma-mki
 | 書き込み・デバッグ | STLINK-V3MODS（SWD） | SWDIO=PA13, SWCLK=PA14, NRST。SWO（PB3）は任意 |
 | PCとの通信・printf | UART → STLINK-V3MODS の仮想COMポート | 書き込みとログがケーブル1本で済む。**USBは使わない**（PA11/PA12 を他用途に回せる） |
 | UART | USART1（PA9 TX / PA10 RX）を推奨 | APB2 側なので高速化しやすい。PA2/PA3（USART2）は ADC 入力と取り合いになるため避ける |
-| 開発環境 | STM32CubeIDE | KOGUMA と同じ。ピン・クロック設定は `.ioc`（CubeMX）で管理 |
+| 開発環境 | **STM32CubeMX（コード生成、Toolchain = CMake）＋ VS Code（STM32Cube for Visual Studio Code 拡張）** | ピン・クロック設定は `.ioc`（CubeMX）で管理。ビルドは CMake + Ninja + arm-none-eabi-gcc なのでコマンドラインだけでビルドでき、CI や Claude の環境でもファームのビルドを確認できる。CubeIDE は使わない |
+| ビルド | `cmake --preset Debug && cmake --build --preset Debug` | CubeMX が生成する `CMakePresets.json` をそのまま使う。成果物は `build/Debug/TORANEKO.Mk3.elf` |
 | ライブラリ | STM32 HAL | 制御周期の割り込み内で重い箇所は、必要になったら LL/レジスタ直接に置き換える |
 | プロジェクト名 | `TORANEKO.Mk3` | KiCad プロジェクトと揃える |
 | クロック | HSE 水晶 10MHz → SYSCLK 100MHz | PLL: M=5, N=200, P=4（VCO 400MHz）。APB1=50MHz、APB2=100MHz、タイマークロックは全て100MHz。USBを使わないので48MHzは不要 |
@@ -38,10 +39,15 @@ software/main-controller/
 ├── CUBEMX_SETUP.md               .ioc の設定値
 ├── KOGUMA_PORTING.md             KOGUMA コードの棚卸しと移植判断
 │
-└── TORANEKO.Mk3/                 CubeIDE プロジェクト
+└── TORANEKO.Mk3/                 CubeMX（CMake）プロジェクト
     ├── TORANEKO.Mk3.ioc          CubeMX 設定（ピン・クロック・周辺機能）
-    ├── .project / .cproject      CubeIDE のプロジェクト設定（生成）
-    ├── STM32F411CEUX_FLASH.ld    リンカスクリプト（生成）
+    ├── CMakeLists.txt            ビルド設定（初回だけ生成。App/ の追加はここに書く）
+    ├── CMakePresets.json         Debug / Release のプリセット（生成）
+    ├── cmake/
+    │   ├── gcc-arm-none-eabi.cmake   ツールチェーン設定（生成）
+    │   └── stm32cubemx/CMakeLists.txt  Core/・Drivers/ のソース一覧（再生成のたびに上書き。編集しない）
+    ├── startup_stm32f411xe.s     スタートアップ（生成）
+    ├── STM32F411XX_FLASH.ld      リンカスクリプト（生成）
     │
     ├── Core/                     ── CubeMX が生成。USER CODE 欄以外は編集しない
     │   ├── Inc/
@@ -57,10 +63,8 @@ software/main-controller/
     │   │   ├── system_stm32f4xx.c
     │   │   ├── syscalls.c        printf の出力先を UART に向ける
     │   │   └── sysmem.c
-    │   └── Startup/
-    │       └── startup_stm32f411ceux.s
     │
-    ├── Drivers/                  ── HAL / CMSIS（生成・編集しない）
+    ├── Drivers/                  ── HAL / CMSIS（生成・編集しない。CubeMX なしでビルドできるようにコミットする）
     │
     ├── App/                      ── 自作コードはすべてここ
     │   ├── app.c / app.h         app_init()、app_loop()。全体の入口
@@ -79,7 +83,8 @@ software/main-controller/
     │   │   ├── led.c/.h          UI 用 LED
     │   │   ├── buzzer.c/.h       ブザー
     │   │   ├── spi_bus.c/.h      SPI 転送と CS 制御の共通部分（imu / encoder から使う）
-    │   │   └── uart.c/.h         ログ送信（DMA 送信・リングバッファ）
+    │   │   ├── timebase.c/.h     経過時間（ms は SysTick、µs は TIM5）とシステムクロックの取得
+    │   │   └── uart.c/.h         ログ送信（DMA 送信・リングバッファ）。printf の出力先（`_write`）もここ
     │   │
     │   ├── ctrl/                 制御
     │   │   ├── odometry.c/.h     エンコーダと IMU から速度・距離・角度を求める
@@ -90,8 +95,9 @@ software/main-controller/
     │   │
     │   ├── maze/                 迷路（HAL に依存しない。PC でテストできる。ctrl を知らない）
     │   │   ├── maze_map.c/.h     壁の情報の保持・更新・保存
-    │   │   ├── search.c/.h       足立法・歩数マップ・行き止まり潰し
-    │   │   └── path.c/.h         最短経路（ダイクストラ）と、経路の圧縮・斜めへの変換
+    │   │   ├── search.c/.h       足立法・歩数マップ・未知壁探索で見に行く壁（行き止まり潰しは持ち込まない）
+    │   │   ├── dijkstra.c/.h     ダイクストラ：スタートからゴールまでの速く走れる道（通る区画の並び）を探す
+    │   │   └── path.c/.h         経路（動きの並び）を作る：既知区間の経路と大回りへの変換、最短経路の大回り・斜めへの変換
     │   │
     │   └── sys/                  全体の管理
     │       ├── scheduler.c/.h    制御周期（2kHz）の処理（センサ → 制御 → 出力の順に呼ぶ）
@@ -102,11 +108,12 @@ software/main-controller/
     │       ├── failsafe.c/.h     異常の検知（衝突、電圧低下など）と停止
     │       └── flash.c/.h        迷路・パラメータの Flash への保存
     │
-    └── （test/ は置かない。CubeIDE が ARM 向けにビルドしようとするため）
+    └── （build/ はビルド成果物。.gitignore で除外）
 
-software/main-controller/test/    ── PC 上で動かすテスト（CI で実行）。CubeIDE プロジェクトの外
-    ├── test_maze.c               迷路探索・最短経路のテスト（../TORANEKO.Mk3/App/maze/*.c をリンク）
-    └── Makefile
+software/main-controller/test/    ── PC 上で動かすテスト（CI で実行）。ホストの gcc でビルドするので、ARM 向けの CMake プロジェクトとは分ける
+    ├── test_maze.c               迷路探索・最短経路のテスト（../TORANEKO.Mk3/App/maze/*.c をリンク）。`make` で実行
+    ├── Makefile
+    └── mazes/                    テスト用の迷路（32×32 のテキスト。開けば迷路の形が見える）と、それを作る gen_maze.py
 ```
 
 ### 層の依存関係
@@ -123,7 +130,7 @@ sys（explore / mode / ...）
 - HAL を直接呼ぶのは `drv/` と `sys/scheduler.c`（タイマー割り込みの起動）だけ
 - `maze/` は `drv` も HAL も使わない。PC 上でそのままテストできる
 - `Core/` 側の生成コードには、USER CODE 欄に `App/` の関数呼び出しを1行書くだけにする（CubeMX で再生成しても自作コードが消えないように）
-- CubeIDE は `Core/` と `Drivers/` しか自動でビルドしないので、`App/` をソースフォルダ・インクルードパスに追加する（手順は [CUBEMX_SETUP.md](CUBEMX_SETUP.md) の「CubeIDE のビルド設定」）
+- `App/` のソースとインクルードパスは `TORANEKO.Mk3/CMakeLists.txt` に追加する（手順は [CUBEMX_SETUP.md](CUBEMX_SETUP.md) の「CMake のビルド設定」）。`cmake/stm32cubemx/` は再生成で上書きされるので触らない
 
 ## 命名規則
 
@@ -143,15 +150,15 @@ sys（explore / mode / ...）
 
 | # | 内容 | 作るファイル | KOGUMA側の対応ファイル | 状態 |
 |---|---|---|---|---|
-| 0 | F411 用の空プロジェクト作成（CubeIDE、クロック設定） | `.ioc`, `Core/`, `App/app.c` | `KOGUMA.MkIIl.ioc` | 設定値決定済み（[CUBEMX_SETUP.md](CUBEMX_SETUP.md)）。プロジェクト作成待ち |
-| 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c` | `UI.c`, `syscalls.c` | 未着手 |
+| 0 | F411 用の空プロジェクト作成（CubeMX → CMake、クロック設定） | `.ioc`, `Core/`, `App/app.c`, `CMakeLists.txt` | `KOGUMA.MkIIl.ioc` | **完了**。CubeMX で生成、`App/app.c` を `main.c` から呼ぶところまで。CI でビルドを確認 |
+| 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c`, `drv/timebase.c` | `UI.c`, `syscalls.c` | 実装済み・実機確認待ち（LED1→7 の順送り、1 秒ごとに経過時間を出力） |
 | 2 | 2kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | 未着手 |
 | 3 | エンコーダ読み取り（AS5047P） | `drv/spi_bus.c`, `drv/encoder.c` | `PL_encoder.c` | 未着手 |
 | 4 | IMU 読み取り（LSM6DSR） | `drv/imu.c` | `lsm6dsr.c` | 未着手 |
 | 5 | モータ PWM | `drv/motor.c` | `motor.c`（出力部分） | 未着手 |
 | 6 | 壁センサ（2組ずつ点灯） | `drv/wall.c`, `ctrl/wall_ctrl.c` | `PL_sensor.c`, `Wallsensor.c` | 未着手 |
 | 7 | 速度・角度制御（PID、フィードフォワード） | `ctrl/odometry.c`, `ctrl/pid.c`, `ctrl/trajectory.c`, `ctrl/run.c` | `motor.c`, `Move.c` | 未着手 |
-| 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | 未着手（PCでテスト可） |
+| 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | **迷路の処理は完了**（PC テスト済み）：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）、既知区間の経路と大回り・最短経路の斜め（`path.c`）、ダイクストラ（`dijkstra.c`）、未知壁探索（`search_plan_unknown_walls` / `search_check_unknown_walls`）。2026-10-13 に KOGUMA の最新版（ダイクストラの不具合修正、既知区間は小回りだけ、ダイクストラは止まっているときだけ計算）に合わせた。走りながら呼び出す部分（`sys/explore.c`）はステップ9 |
 | 9 | 探索走行、走行モード、ログ、フェイルセーフ、保存 | `sys/explore.c`, `sys/mode.c`, `sys/ui.c`, `sys/log.c`, `sys/failsafe.c`, `sys/flash.c` | `main.c`, `UI.c`, `LOG.c`, `Failsafe.c` | 未着手 |
 
 ### KOGUMA のファイルとの対応
@@ -164,7 +171,7 @@ sys（explore / mode / ...）
 | `Wallsensor.c` | `ctrl/wall_ctrl.c` |
 | `motor.c` | `drv/motor.c`（PWM出力）、`ctrl/pid.c`、`ctrl/odometry.c`、`drv/fan.c` |
 | `Move.c` | `ctrl/trajectory.c`、`ctrl/run.c`（動作）、`sys/explore.c`（`Robot_Maze_*_Action` の迷路判断部分） |
-| `Maze.c` | `maze/maze_map.c`、`maze/search.c`、`maze/path.c` |
+| `Maze.c` | `maze/maze_map.c`、`maze/search.c`、`maze/path.c`、`maze/dijkstra.c` |
 | `PL_timer.c` | `sys/scheduler.c` |
 | `main.c`（モード選択部分） | `sys/mode.c`、`sys/explore.c` |
 | `UI.c` | `sys/ui.c`、`drv/led.c`、`drv/buzzer.c` |

@@ -1,6 +1,6 @@
 # CubeMX 設定（ステップ0）
 
-STM32CubeIDE で `TORANEKO.Mk3` プロジェクトを新規作成するときの `.ioc` 設定値です。
+STM32CubeMX で `TORANEKO.Mk3` プロジェクトを新規作成するときの `.ioc` 設定値です。コードは CMake 形式で生成し、VS Code（STM32Cube for Visual Studio Code 拡張）でビルド・書き込み・デバッグします。
 ピン割り当ては [PIN_REQUIREMENTS.md](PIN_REQUIREMENTS.md) の確定表に従います。
 
 「KOGUMA」列は参考用に KOGUMA.MkIIl（F446, 180MHz）の設定を載せています。
@@ -12,7 +12,9 @@ STM32CubeIDE で `TORANEKO.Mk3` プロジェクトを新規作成するときの
 | MCU | STM32F411CEUx（UFQFPN48） |
 | Project Name | `TORANEKO.Mk3` |
 | 作成場所 | `software/main-controller/TORANEKO.Mk3/` |
-| Targeted Project Type | STM32Cube |
+| Project Manager → Project → **Toolchain / IDE** | **CMake**（EWARM・STM32CubeIDE は使わない） |
+| Project Manager → Project → Do not generate the main() | OFF |
+| Project Manager → Code Generator → STM32Cube MCU packages and embedded software packs | **Copy only the necessary library files**（`Drivers/` をプロジェクト内に置き、コミットする） |
 | Project Manager → Code Generator → Generate peripheral initialization as a pair of '.c/.h' files per peripheral | **ON**（`Core/Src/tim.c` などに分かれる。README のファイル構成どおり） |
 | Project Manager → Code Generator → Keep User Code when re-generating | ON |
 | Project Manager → Code Generator → Delete previously generated files when not re-generated | ON |
@@ -79,7 +81,7 @@ STM32CubeIDE で `TORANEKO.Mk3` プロジェクトを新規作成するときの
 
 | 用途 | タイマー | モード | PSC | ARR（Period） | 周波数 | 備考 |
 |---|---|---|---|---|---|---|
-| モータ PWM | **TIM4** CH1〜CH4 | PWM Generation CH1〜CH4 | 10-1 | 200-1 | **50 kHz** | 分解能 200 は KOGUMA と同じなので、`motor.c` の `200 - Motor_Voltage` の考え方がそのまま使える。MP6551 の入力 PWM 周波数の上限はステップ5で確認 |
+| モータ PWM | **TIM4** CH1〜CH4 | PWM Generation CH1〜CH4 | 10-1 | **100-1** | **100 kHz** | 分解能は 100（KOGUMA は 200）。`motor.c` の `200 - Motor_Voltage` は ARR に合わせて `100 - …` に読み替える（ステップ5で `drv/motor.c` は ARR を定数で持つ）。MP6551 の入力 PWM 周波数の上限はステップ5で確認 |
 | 吸引ファン PWM | **TIM2** CH2 | PWM Generation CH2 | 20-1 | 100-1 | **50 kHz** | KOGUMA と同じ周波数・分解能 |
 | 制御周期 | **TIM11** | Activated（内部クロック、ピン不使用） | 100-1 | **500-1** | **2 kHz** | NVIC: `TIM1_TRG_COM_TIM11_IRQn` を有効化。4kHz にする場合は ARR を 250-1 に |
 | 壁センサの順番制御 | **TIM3** | Activated（内部クロック、ピン不使用）、**One Pulse Mode** | 100-1 | 35-1 | 1回 35µs | Trigger Event Selection（TRGO）= **Update Event**。LED 点灯と同時に起動し、35µs 後に ADC を起動する。割り込みは不要 |
@@ -134,15 +136,16 @@ KOGUMA は両方ともデータシートの上限を超えるクロックで動�
 
 | 項目 | 設定 | KOGUMA |
 |---|---|---|
-| Mode | Asynchronous | USART2 Single Wire (Half-Duplex) |
+| Mode | **Single Wire (Half-Duplex)**（Asynchronous は選べない。下の注記） | USART2 Single Wire (Half-Duplex) |
 | Baud Rate | 115200 bps（まずはこれで動作確認。ログ吸い出し用に後で 1〜2Mbps へ上げる） | 115200 bps |
 | Word Length / Parity / Stop | 8 bit / None / 1 | 同じ |
 | Data Direction | **Transmit Only** | - |
 | TX ピン | PA9 | PA2 |
 | DMA | USART1_TX → DMA2 Stream7（Memory to Peripheral、Byte、Normal） | なし |
 
-- Asynchronous にすると CubeMX が **PA10 を USART1_RX に自動で割り当てる**。PA10 は LED2 なので、PA10 をクリックして GPIO_Output に設定し直す
-- KOGUMA の半二重モードは TX ピンがオープンドレインになるため、STLINK-V3MODS 側にプルアップがないと信号が出ない可能性がある。ToraNeko では通常の非同期モード（TX のみ）にする
+- USART1_RX に使えるピン（PA10 / PB7 / PB3）は LED2・TIM4（モータ）・SPI1（IMU）で全て埋まっているため、CubeMX では Asynchronous が選べず Single Wire しか選べない
+- Single Wire だと TX ピンがオープンドレインで生成され、STLINK-V3MODS 側にプルアップがないと信号が出ない可能性がある。そこで `Core/Src/usart.c` の `USER CODE BEGIN USART1_MspInit 1` で **PA9 をプッシュプル（`GPIO_MODE_AF_PP`）に設定し直す**（USER CODE 欄なので再生成しても消えない）
+- 受信はしない（Transmit Only）ので、半二重モード（HDSEL）のままでも送信の動作は通常の非同期と同じ
 
 ## 8. NVIC（割り込み優先度の案）
 
@@ -151,6 +154,7 @@ KOGUMA は両方ともデータシートの上限を超えるクロックで動�
 | DMA2 Stream0（ADC1） | 1 | 壁センサの連鎖（次の LED へ進める）・バッテリの変換完了 |
 | TIM1_TRG_COM_TIM11 | 2 | 2kHz 制御周期 |
 | DMA2 Stream7（USART1_TX） | 5 | ログ送信完了 |
+| USART1 global interrupt | 5 | HAL の DMA 送信は、DMA 完了後に USART の送信完了割り込みで `HAL_UART_TxCpltCallback` を呼ぶので有効にする |
 | SysTick | CubeMX の既定値 | `HAL_Delay` 用。割り込み処理の中では `HAL_Delay` を使わない |
 
 壁センサの連鎖を制御周期より高い優先度にし、制御処理が長引いてもセンサ測定が遅れないようにします。
@@ -158,19 +162,49 @@ KOGUMA は両方ともデータシートの上限を超えるクロックで動�
 ## 9. 生成後にやること
 
 1. `Core/Src/main.c` の USER CODE 欄に `app_init();` と `app_loop();` の呼び出しだけを書く（README のファイル構成どおり）
-2. `App/` をビルド対象に加える（下の「CubeIDE のビルド設定」）
-3. ビルドが通ること、STLINK-V3MODS で書き込めることを確認する
-4. `software/main-controller/TORANEKO.Mk3/` をコミットする（`Debug/` などのビルド成果物は `.gitignore` で除外）
+2. `App/` をビルド対象に加える（下の「CMake のビルド設定」）
+3. `cmake --preset Debug && cmake --build --preset Debug` でビルドが通ること、STLINK-V3MODS で書き込めることを確認する
+4. `software/main-controller/TORANEKO.Mk3/` を `Drivers/` も含めてコミットする（`build/` は `.gitignore` で除外）
 
-## 10. CubeIDE のビルド設定
+## 10. CMake のビルド設定
 
-CubeIDE は `Core/` と `Drivers/` しか自動でビルドしません。`App/` を自分で追加します。設定は `.cproject` に保存されるので、コミットすれば他の環境でも同じになります。
+CubeMX が生成するファイルのうち、`cmake/stm32cubemx/CMakeLists.txt`（`Core/`・`Drivers/` のソース一覧）は再生成のたびに上書きされます。
+プロジェクト直下の `CMakeLists.txt` は初回だけ生成され、以後は上書きされないので、`App/` の追加はこちらに書きます。
 
-| 設定 | 場所 | 値 |
-|---|---|---|
-| ソースフォルダ | Project → Properties → C/C++ General → Paths and Symbols → **Source Location** → Add Folder | `App` |
-| インクルードパス | 同 → **Includes** → GNU C → Add（Add to all configurations にチェック） | `../App` |
+```cmake
+# User sources (App/). Add one file per line as each step is implemented
+set(APP_SOURCES
+    App/app.c
+    # App/drv/*.c などはステップごとに追記する
+)
 
+# Add sources to executable
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    # Add user sources here
+    ${APP_SOURCES}
+)
+
+# Add include paths
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+    # Add user defined include paths
+    App
+)
+
+# Warnings for user code only (App/); generated HAL code is left as is
+set_source_files_properties(${APP_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
+```
+
+- ソースは `file(GLOB ...)` を使わず 1 ファイルずつ書く（ファイルを足したのに CMake を再実行し忘れてビルドされない、を防ぐ）
 - インクルードは `App/` を起点に書く（例: `#include "drv/encoder.h"`、`#include "config/robot_params.h"`）。各サブフォルダを個別にインクルードパスに足さない
-- Debug と Release の両方の構成に設定する（Configuration: [All configurations]）
-- PC 用のテスト（`software/main-controller/test/`）はプロジェクトの外に置くので、ビルド対象から除外する設定は不要
+- 警告（`-Wall -Wextra`）は `APP_SOURCES` のファイルだけに付ける。生成コード（HAL）の警告は直せないので対象外にする
+- CI（`.github/workflows/firmware-build.yml`）で同じビルドを実行する
+- PC 用のテスト（`software/main-controller/test/`）はこのプロジェクトの外に置き、ホストの gcc でビルドする
+
+## 11. VS Code の設定
+
+| 項目 | 内容 |
+|---|---|
+| 拡張機能 | **STM32Cube for Visual Studio Code**（ST 公式。CMake Tools・Cortex-Debug 相当の機能を含む） |
+| 必要なツール | arm-none-eabi-gcc、CMake、Ninja、STM32CubeProgrammer（拡張機能の案内に従ってインストール） |
+| プロジェクトを開く | `software/main-controller/TORANEKO.Mk3/` を VS Code で開き、CMake のプリセット `Debug` を選ぶ |
+| 書き込み・デバッグ | 拡張機能が `.vscode/launch.json` を作る（ST-LINK GDB server 経由）。`.vscode/` は個人設定なのでコミットしない |

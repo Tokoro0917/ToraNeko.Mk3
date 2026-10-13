@@ -24,7 +24,7 @@
 #define MAX_STEP (MAZE_SIZE * MAZE_SIZE)
 
 
-#define TIREDIAMETER 23.5 //23.3mm
+#define TIREDIAMETER 23.1 //23.5mm
 #define TIREBETWEEN 55
 #define PI 3.1415
 #define LIMITBATT 15.6
