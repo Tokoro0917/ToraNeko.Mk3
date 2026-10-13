@@ -164,48 +164,75 @@ action_t search_decide_action(int x, int y, direction_t dir)
   return ACTION_UTURN;
 }
 
-/* 未知壁探索：最短経路の上にある、まだ見ていない壁を 1 つ探す（KOGUMA の Maze_Unknown_Wall_Scan）。
+/* 未知壁探索で使う経路（ダイクストラで計算した、スタートからゴールまでの区画の並び）。
+ * 座標は 0〜31 なので、メモリを節約するため 1 バイトの整数にする */
+static uint8_t s_plan_x[MAZE_SIZE * MAZE_SIZE];
+static uint8_t s_plan_y[MAZE_SIZE * MAZE_SIZE];
+static int s_plan_length = 0;
+
+/* 未知壁探索の経路を計算して覚える（KOGUMA の Maze_Unknown_Walls_Plan）。重いので、止まっているときに呼ぶ。
  *
- * まだ見ていない壁を「ない」とみなしてダイクストラで最短経路を探し、スタート側から順に、
- * 区画と次の区画の間の壁を調べる。最初に見つかった「まだ見ていない壁」について、
- * スタート側の区画を (cell_x, cell_y) に、その区画から見た壁の向きを wall_dir に入れて true を返す。
- * その区画まで行けば、センサでその壁を見られる。
- *
- * 経路の上に見ていない壁がなければ false。このときの経路は全部の壁を見てあるので、
- * 迷路の本当の最短経路になっている（見ていない壁を「ない」とみなす、いちばん都合のいい
- * 考え方でもこれより速い道はないので、本当の迷路でもこれより速い道はない）。 */
-bool search_find_unknown_wall(int goal_x, int goal_y, int goal_width, int goal_height,
-                              int *cell_x, int *cell_y, direction_t *wall_dir)
+ * まだ見ていない壁を「ない」とみなしてダイクストラで最短経路を探す。
+ * 見ていない壁は通れるとみなす、いちばん都合のいい考え方なので、この経路の壁を全部見て
+ * 全部なかったら、本当の迷路でもこれより速い道はない。
+ * ゴールへの道がなければ false（普通は起きない）。 */
+bool search_plan_unknown_walls(int goal_x, int goal_y, int goal_width, int goal_height)
 {
+  s_plan_length = 0;
   if (!dijkstra_find_route(goal_x, goal_y, goal_width, goal_height, false)) {
-    return false;  /* ゴールへの道がない（普通は起きない） */
+    return false;
   }
-
   int length = dijkstra_get_route_length();
-  for (int i = 0; i + 1 < length; i++) {
-    int x = dijkstra_get_route_x(i);
-    int y = dijkstra_get_route_y(i);
-    int next_x = dijkstra_get_route_x(i + 1);
-    int next_y = dijkstra_get_route_y(i + 1);
+  for (int i = 0; i < length; i++) {
+    s_plan_x[i] = (uint8_t)dijkstra_get_route_x(i);
+    s_plan_y[i] = (uint8_t)dijkstra_get_route_y(i);
+  }
+  s_plan_length = length;
+  return true;
+}
 
-    /* 区画 (x, y) から次の区画へ向かう向き */
-    direction_t dir;
-    if (next_y > y) {
-      dir = DIR_NORTH;
-    } else if (next_y < y) {
-      dir = DIR_SOUTH;
-    } else if (next_x > x) {
-      dir = DIR_EAST;
-    } else {
-      dir = DIR_WEST;
-    }
+/* 覚えた経路の i 番目の区画から i+1 番目の区画へ向かう向き */
+static direction_t plan_direction(int i)
+{
+  if (s_plan_y[i + 1] > s_plan_y[i]) {
+    return DIR_NORTH;
+  }
+  if (s_plan_y[i + 1] < s_plan_y[i]) {
+    return DIR_SOUTH;
+  }
+  if (s_plan_x[i + 1] > s_plan_x[i]) {
+    return DIR_EAST;
+  }
+  return DIR_WEST;
+}
 
-    if (maze_map_get_wall(x, y, dir) == WALL_UNKNOWN) {
-      *cell_x = x;
-      *cell_y = y;
-      *wall_dir = dir;
-      return true;
+/* 覚えた経路の壁を見直す（KOGUMA の Maze_Unknown_Wall_Scan と Maze_Unknown_Wall_Is_Wall）。軽いので、走りながら呼んでよい。
+ *
+ *   1. 経路の上の壁に「ある」ものが 1 枚でもあれば UNKNOWN_WALL_BLOCKED（止まって計算し直す）。
+ *      見に行った壁だけでなく、途中で見えた経路の上の壁も調べる
+ *   2. そうでなく、「まだ見ていない」壁があれば UNKNOWN_WALL_FOUND。スタート側から見て最初の 1 枚について、
+ *      手前の区画を (cell_x, cell_y) に、その区画から見た壁の向きを wall_dir に入れる。
+ *      その区画まで行けば、センサでその壁を見られる（まだ入ったことのない区画なので、入ると前・左・右の壁を見る）
+ *   3. どちらでもなければ UNKNOWN_WALL_NONE（経路の壁は全部見てあり、全部なかった）。 */
+unknown_wall_result_t search_check_unknown_walls(int *cell_x, int *cell_y, direction_t *wall_dir)
+{
+  /* 1. ふさがれていないか */
+  for (int i = 0; i + 1 < s_plan_length; i++) {
+    if (maze_map_get_wall(s_plan_x[i], s_plan_y[i], plan_direction(i)) == WALL_EXIST) {
+      return UNKNOWN_WALL_BLOCKED;
     }
   }
-  return false;
+
+  /* 2. まだ見ていない壁 */
+  for (int i = 0; i + 1 < s_plan_length; i++) {
+    direction_t dir = plan_direction(i);
+    if (maze_map_get_wall(s_plan_x[i], s_plan_y[i], dir) == WALL_UNKNOWN) {
+      *cell_x = s_plan_x[i];
+      *cell_y = s_plan_y[i];
+      *wall_dir = dir;
+      return UNKNOWN_WALL_FOUND;
+    }
+  }
+
+  return UNKNOWN_WALL_NONE;
 }

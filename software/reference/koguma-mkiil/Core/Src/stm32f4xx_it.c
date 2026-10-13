@@ -242,6 +242,7 @@ void TIM6_DAC_IRQHandler(void)
 	G_Motor_Count = G_Motor_Count + INTERRUPTTIME;
 	G_Motor_X = G_Motor_X
 			+ ((G_Tire_Speed_L + G_Tire_Speed_R) / 2) * INTERRUPTTIME;
+	G_Odo_X = G_Odo_X + ((G_Tire_Speed_L + G_Tire_Speed_R) / 2) * INTERRUPTTIME;
 	G_Motor_Angle = G_Motor_Angle + G_Gyro_Z * INTERRUPTTIME;
 
 	if (G_Motor_Flag == 1) {

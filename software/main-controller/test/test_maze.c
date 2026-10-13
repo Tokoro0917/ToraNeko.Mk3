@@ -7,10 +7,11 @@
  * テストの内容:
  *   1. 壁の地図（maze_map）の基本動作
  *   2. 歩数マップ（search）の基本動作
- *   3. 既知区間の経路（path_make_known）：小さな迷路で、大回りへの変換が正しいか
+ *   3. 既知区間の経路（path_make_known）：小さな迷路で、正しい動きの並びになるか
  *   6. 未知壁探索（KOGUMA のモード0 No.7）：ゴールに着いたあと最短経路の上の見ていない壁を見に行く。
  *      見に行く壁がなくなったらその場で止まって最短経路を計算し、全部の壁を知っているときと
  *      同じ速さの最短経路になるか
+ *   7. ランダムな迷路（たくさん）：全部の壁を知っているときの最短経路が、どれも壁を通らずにゴールに着くか
  *   5. 最短経路（path_make_shortest）：何もない迷路と、探索したあとの迷路で、
  *      大回り・斜めを使った経路が壁を通らずにゴールに着くか
  *   4. 探索のシミュレーション：テスト用の迷路（mazes フォルダの .txt）を、壁を知らない状態から
@@ -19,6 +20,7 @@
  */
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "maze/dijkstra.h"
@@ -238,7 +240,7 @@ static void test_known_path(void)
    *   (0,1)
    *     ↑
    *   (0,0)=スタート
-   * 1 区画ずつだと「直進4 → 右 → 直進4」。大回りにすると「直進3 → 大回り右90 → 直進3」 */
+   * 既知区間では大回りにしないので「直進4 → 右 → 直進4」 */
   maze_map_init();
   maze_map_record_walls(0, 0, DIR_NORTH, false, true, true);
   maze_map_record_walls(0, 1, DIR_NORTH, false, true, true);
@@ -251,9 +253,9 @@ static void test_known_path(void)
   path_make_known(0, 0, DIR_NORTH, &path);
   print_path(&path);
   check(path.count == 3, "例1：動きは 3 つ");
-  check(step_is(&path, 0, MOTION_STRAIGHT, 3), "例1：最初は直進 3 半区画");
-  check(step_is(&path, 1, MOTION_BIG_TURN_RIGHT_90, 0), "例1：次は大回り右 90°");
-  check(step_is(&path, 2, MOTION_STRAIGHT, 3), "例1：最後は直進 3 半区画");
+  check(step_is(&path, 0, MOTION_STRAIGHT, 4), "例1：最初は直進 4 半区画");
+  check(step_is(&path, 1, MOTION_TURN_RIGHT, 0), "例1：次は右（小回り）");
+  check(step_is(&path, 2, MOTION_STRAIGHT, 4), "例1：最後は直進 4 半区画");
   check(path.end_x == 3 && path.end_y == 2 && path.end_dir == DIR_EAST, "例1：(3,2) で東向きに終わる");
 
   /* 例 2：北に 2 区画、右、右で折り返して南に 1 区画で目的地
@@ -262,7 +264,7 @@ static void test_known_path(void)
    *   (0,1) (1,1)
    *     ↑     ↓
    *   (0,0) (1,0)=目的地
-   * 1 区画ずつだと「直進4 → 右 → 右 → 直進2」。大回りにすると「直進3 → 大回り右180 → 直進1」 */
+   * 「直進4 → 右 → 右 → 直進2」 */
   maze_map_init();
   maze_map_record_walls(0, 0, DIR_NORTH, false, true, true);
   maze_map_record_walls(0, 1, DIR_NORTH, false, true, true);
@@ -274,10 +276,11 @@ static void test_known_path(void)
   search_update_step_map();
   path_make_known(0, 0, DIR_NORTH, &path);
   print_path(&path);
-  check(path.count == 3, "例2：動きは 3 つ");
-  check(step_is(&path, 0, MOTION_STRAIGHT, 3), "例2：最初は直進 3 半区画");
-  check(step_is(&path, 1, MOTION_BIG_TURN_RIGHT_180, 0), "例2：次は大回り右 180°");
-  check(step_is(&path, 2, MOTION_STRAIGHT, 1), "例2：最後は直進 1 半区画");
+  check(path.count == 4, "例2：動きは 4 つ");
+  check(step_is(&path, 0, MOTION_STRAIGHT, 4), "例2：最初は直進 4 半区画");
+  check(step_is(&path, 1, MOTION_TURN_RIGHT, 0), "例2：次は右");
+  check(step_is(&path, 2, MOTION_TURN_RIGHT, 0), "例2：もう一度右");
+  check(step_is(&path, 3, MOTION_STRAIGHT, 2), "例2：最後は直進 2 半区画");
   check(path.end_x == 1 && path.end_y == 0 && path.end_dir == DIR_SOUTH, "例2：(1,0) で南向きに終わる");
 
   /* 例 3：いきなり曲がるときは、前に直進がないので大回りにしない
@@ -518,6 +521,12 @@ static int s_watch_x = 0;
 static int s_watch_y = 0;
 static direction_t s_watch_dir = DIR_NORTH;
 
+/* s_stop_on_uturn が true なら、run_to_target() は U ターンする手前で止まり、s_stopped_for_uturn を true にする
+ * （未知壁探索では、U ターンで止まるついでにダイクストラを計算し直すため）。
+ * 走り出してすぐの U ターン（止まって計算したあとの最初の動き）では止まらない */
+static bool s_stop_on_uturn = false;
+static bool s_stopped_for_uturn = false;
+
 /* 今いる (x, y, dir) から、目的地に着くまで足立法で走る。
  * use_known_path が true なら、見たことのある区画が続くところは既知区間の経路でまとめて走る。
  * 進んだ区画数を返す（既知区間の経路でまとめて走った分は数えない）。着けなかったら -1。
@@ -570,6 +579,11 @@ static int run_to_target(int *x, int *y, direction_t *dir, bool use_known_path)
     }
 
     action_t action = search_decide_action(*x, *y, *dir);
+
+    if (s_stop_on_uturn && action == ACTION_UTURN && move_count > 0) {
+      s_stopped_for_uturn = true;
+      return move_count;  /* U ターンの前に止まる */
+    }
 
     if (action == ACTION_STOP) {
       printf("  (%d,%d) で進めなくなった\n", *x, *y);
@@ -662,8 +676,9 @@ static void test_explore(const char *file_path)
   int goal_moves_known = 0;
   int start_moves_known = 0;
   explore_round_trip(true, &goal_moves_known, &start_moves_known);
-  printf("  既知区間を使う:   行き %d 区画、帰り %d 区画（このほかに既知区間を %d 回まとめて走った。大回り %d 回）\n",
-         goal_moves_known, start_moves_known, s_known_path_count, s_big_turn_count);
+  printf("  既知区間を使う:   行き %d 区画、帰り %d 区画（このほかに既知区間を %d 回まとめて走った）\n",
+         goal_moves_known, start_moves_known, s_known_path_count);
+  check(s_big_turn_count == 0, "既知区間の経路には大回りが入らない");
 
   check(s_known_path_error_count == 0, "既知区間の経路が壁を通らず、経路の終わりの位置に着く");
   check(s_known_path_count > 0, "既知区間の経路が使われている");
@@ -808,14 +823,10 @@ static void test_shortest_maze(const char *file_path)
  * 6. 未知壁探索のテスト
  * ------------------------------------------------------------------------- */
 
-static void test_unknown_wall_explore(const char *file_path)
+/* 今の本当の迷路で、未知壁探索の流れ（行き → 見ていない壁を見に行く → 止まって最短経路を計算 → 帰り）を走らせる。
+ * 最後の最短経路が、全部の壁を知っているときと同じ速さなら true。verbose が true なら途中経過を表示する */
+static bool run_unknown_wall_flow(bool verbose)
 {
-  printf("[6] 未知壁探索: %s\n", file_path);
-  if (!load_maze_file(file_path)) {
-    check(false, "迷路ファイルが読めない");
-    return;
-  }
-
   /* 全部の壁を知っているときの最短経路のコスト（これが目標） */
   copy_true_maze_to_map();
   dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
@@ -833,44 +844,72 @@ static void test_unknown_wall_explore(const char *file_path)
   dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
   int cost_after_goal = dijkstra_get_route_cost();
 
-  /* 2. 最短経路の上の見ていない壁を、なくなるまで見に行く */
+  /* 2. ゴールで止まって、未知壁探索の経路を計算する（ダイクストラは止まっているときだけ） */
+  int plan_count = 1;   /* 止まってダイクストラを計算した回数 */
+  int blocked_count = 0;  /* そのうち、経路がふさがれたため */
+  int uturn_count = 0;    /* そのうち、U ターンのついで */
+  search_plan_unknown_walls(s_goal_x, s_goal_y, s_goal_width, s_goal_height);
+
+  /* 3. 経路の上の見ていない壁を、なくなるまで見に行く */
   int wall_count = 0;
   int moves_for_walls = 0;
-  int cell_x;
-  int cell_y;
-  direction_t wall_dir;
-  while (search_find_unknown_wall(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &cell_x, &cell_y, &wall_dir)) {
+  while (true) {
     if (wall_count >= 300) {
       check(false, "見に行く壁が 300 枚を超えた（終わらない）");
       break;
     }
-    wall_count = wall_count + 1;
 
+    int cell_x;
+    int cell_y;
+    direction_t wall_dir;
+    unknown_wall_result_t result = search_check_unknown_walls(&cell_x, &cell_y, &wall_dir);
+    if (result == UNKNOWN_WALL_NONE) {
+      break;  /* 経路の壁を全部見た */
+    }
+    if (result == UNKNOWN_WALL_BLOCKED) {
+      /* 経路がふさがれた：止まって計算し直す */
+      plan_count = plan_count + 1;
+      blocked_count = blocked_count + 1;
+      search_plan_unknown_walls(s_goal_x, s_goal_y, s_goal_width, s_goal_height);
+      continue;
+    }
+
+    /* 見ていない壁の手前の区画へ、止まらずに走る */
+    wall_count = wall_count + 1;
     s_watch_enabled = true;
     s_watch_x = cell_x;
     s_watch_y = cell_y;
     s_watch_dir = wall_dir;
+    s_stop_on_uturn = true;
+    s_stopped_for_uturn = false;
     search_set_target(cell_x, cell_y, 1, 1);
     int moves = run_to_target(&x, &y, &dir, true);
     s_watch_enabled = false;
+    s_stop_on_uturn = false;
 
     check(moves >= 0, "見に行く壁の手前の区画に着く");
     if (moves < 0) {
       break;
     }
     moves_for_walls = moves_for_walls + moves;
-    check(maze_map_get_wall(cell_x, cell_y, wall_dir) != WALL_UNKNOWN, "見に行った壁を見た");
+
+    if (s_stopped_for_uturn) {
+      /* U ターンで止まったついでに計算し直す */
+      plan_count = plan_count + 1;
+      uturn_count = uturn_count + 1;
+      search_plan_unknown_walls(s_goal_x, s_goal_y, s_goal_width, s_goal_height);
+    }
   }
 
-  /* 3. 見に行く壁がなくなったら、その場で止まって最短経路を計算する
+  /* 4. 見に行く壁がなくなったら、その場で止まって最短経路を計算する
    *    （走りながら計算しない。計算が終わってから動き出す） */
-  printf("  見に行く壁がなくなった：(%d,%d) で止まって最短経路を計算する\n", x, y);
+  if (verbose) printf("  見に行く壁がなくなった：(%d,%d) で止まって最短経路を計算する\n", x, y);
   static path_t s_shortest;
   bool found = path_make_shortest(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &s_shortest);
   check(found, "止まった場所で最短経路を計算できる");
   int cost_final = dijkstra_get_route_cost();
 
-  /* 4. 帰り：スタートへ（最短走行はスタートから始まるので） */
+  /* 5. 帰り：スタートへ（最短走行はスタートから始まるので） */
   search_set_target(0, 0, 1, 1);
   int moves_to_start = run_to_target(&x, &y, &dir, true);
   check(moves_to_start >= 0, "スタートに戻る");
@@ -880,11 +919,170 @@ static void test_unknown_wall_explore(const char *file_path)
    * 帰りに新しい壁を見ても、最短経路は変わらない（もう一度計算して確かめる） */
   dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
   check(dijkstra_get_route_cost() == cost_final, "帰りに壁を見ても、止まった場所で計算した最短経路は変わらない");
-  printf("  ゴールに着いた時点の最短経路のコスト %d → 止まった場所で計算 %d（全部の壁を知っているとき %d）\n",
+  if (verbose) printf("  ゴールに着いた時点の最短経路のコスト %d → 止まった場所で計算 %d（全部の壁を知っているとき %d）\n",
          cost_after_goal, cost_final, best_cost);
-  printf("  見に行った壁 %d 枚、そのために進んだ区画 %d（既知区間でまとめて走った分を除く）\n",
+  if (verbose) printf("  見に行った壁 %d 枚、そのために進んだ区画 %d（既知区間でまとめて走った分を除く）\n",
          wall_count, moves_for_walls);
-  check(cost_final == best_cost, "未知壁探索のあとの最短経路は、全部の壁を知っているときと同じ速さ");
+  if (verbose) printf("  止まってダイクストラを計算した回数 %d（ゴール 1、経路がふさがれた %d、U ターンのついで %d）\n",
+         plan_count, blocked_count, uturn_count);
+  return cost_final == best_cost;
+}
+
+static void test_unknown_wall_explore(const char *file_path)
+{
+  printf("[6] 未知壁探索: %s\n", file_path);
+  if (!load_maze_file(file_path)) {
+    check(false, "迷路ファイルが読めない");
+    return;
+  }
+  check(run_unknown_wall_flow(true), "未知壁探索のあとの最短経路は、全部の壁を知っているときと同じ速さ");
+}
+
+/* ---------------------------------------------------------------------------
+ * 7. ランダムな迷路のテスト
+ * ------------------------------------------------------------------------- */
+
+/* 決まった順に乱数を出す（毎回同じ迷路になるように、自分で作る） */
+static unsigned int s_random_seed = 1;
+
+static int random_below(int limit)
+{
+  s_random_seed = s_random_seed * 1103515245u + 12345u;
+  return (int)((s_random_seed / 65536u) % (unsigned int)limit);
+}
+
+/* 本当の迷路の、(x, y) の dir 側の壁を取る（隣の区画の側も） */
+static void open_true_wall(int x, int y, direction_t dir)
+{
+  s_true_wall[x][y][dir] = false;
+  s_true_wall[maze_next_x(x, dir)][maze_next_y(y, dir)][maze_turn_back(dir)] = false;
+}
+
+/* ランダムな迷路を作って、本当の迷路にする（gen_maze.py と同じ作り方）。
+ * ゴールは 2x2〜3x3 で、場所もランダム */
+static void make_random_true_maze(void)
+{
+  static bool s_visited_cell[MAZE_SIZE][MAZE_SIZE];
+  static int s_stack_x[MAZE_SIZE * MAZE_SIZE];
+  static int s_stack_y[MAZE_SIZE * MAZE_SIZE];
+
+  for (int x = 0; x < MAZE_SIZE; x++) {
+    for (int y = 0; y < MAZE_SIZE; y++) {
+      for (int i = 0; i < 4; i++) {
+        s_true_wall[x][y][i] = true;
+      }
+      s_visited_cell[x][y] = false;
+    }
+  }
+
+  /* 1. 穴掘り法で、全部の区画をつなぐ */
+  int stack_count = 1;
+  s_stack_x[0] = 0;
+  s_stack_y[0] = 0;
+  s_visited_cell[0][0] = true;
+  while (stack_count > 0) {
+    int x = s_stack_x[stack_count - 1];
+    int y = s_stack_y[stack_count - 1];
+    direction_t candidates[4];
+    int candidate_count = 0;
+    for (int i = 0; i < 4; i++) {
+      direction_t dir = (direction_t)i;
+      int next_x = maze_next_x(x, dir);
+      int next_y = maze_next_y(y, dir);
+      if (maze_is_inside(next_x, next_y) && !s_visited_cell[next_x][next_y]) {
+        candidates[candidate_count] = dir;
+        candidate_count = candidate_count + 1;
+      }
+    }
+    if (candidate_count == 0) {
+      stack_count = stack_count - 1;
+      continue;
+    }
+    direction_t dir = candidates[random_below(candidate_count)];
+    open_true_wall(x, y, dir);
+    int next_x = maze_next_x(x, dir);
+    int next_y = maze_next_y(y, dir);
+    s_visited_cell[next_x][next_y] = true;
+    s_stack_x[stack_count] = next_x;
+    s_stack_y[stack_count] = next_y;
+    stack_count = stack_count + 1;
+  }
+
+  /* 2. 壁を 15% くらい壊して、道が何通りもある迷路にする */
+  for (int x = 0; x < MAZE_SIZE; x++) {
+    for (int y = 0; y < MAZE_SIZE; y++) {
+      if (y + 1 < MAZE_SIZE && random_below(100) < 15) {
+        open_true_wall(x, y, DIR_NORTH);
+      }
+      if (x + 1 < MAZE_SIZE && random_below(100) < 15) {
+        open_true_wall(x, y, DIR_EAST);
+      }
+    }
+  }
+
+  /* 3. ゴール（中の壁はなし） */
+  s_goal_width = 2 + random_below(2);
+  s_goal_height = s_goal_width;
+  s_goal_x = 4 + random_below(MAZE_SIZE - 8);
+  s_goal_y = 4 + random_below(MAZE_SIZE - 8);
+  for (int x = s_goal_x; x < s_goal_x + s_goal_width; x++) {
+    for (int y = s_goal_y; y < s_goal_y + s_goal_height; y++) {
+      if (y + 1 < s_goal_y + s_goal_height) {
+        open_true_wall(x, y, DIR_NORTH);
+      }
+      if (x + 1 < s_goal_x + s_goal_width) {
+        open_true_wall(x, y, DIR_EAST);
+      }
+    }
+  }
+
+  /* 4. スタートの東は必ず壁、北は必ず開いている（規則。東を閉じても閉じ込められないように北を開ける） */
+  s_true_wall[0][0][DIR_EAST] = true;
+  s_true_wall[1][0][DIR_WEST] = true;
+  open_true_wall(0, 0, DIR_NORTH);
+}
+
+static void test_random_mazes(int maze_count)
+{
+  printf("[7] ランダムな迷路 %d 個で、全部の壁を知っているときの最短経路\n", maze_count);
+  static path_t s_path;
+  int fail_count = 0;
+  for (int n = 0; n < maze_count; n++) {
+    s_random_seed = (unsigned int)(n + 1);
+    make_random_true_maze();
+    copy_true_maze_to_map();
+    bool found = path_make_shortest(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &s_path);
+    bool ok = found;
+    if (ok) {
+      ok = replay_path(&s_path, 0, 0, DIR_NORTH, true);
+    }
+    if (ok) {
+      ok = is_in_goal(s_path.end_x, s_path.end_y);
+    }
+    if (!ok) {
+      fail_count = fail_count + 1;
+      if (fail_count <= 3) {
+        printf("  迷路 %d 番（乱数の種 %d）で失敗\n", n, n + 1);
+      }
+    }
+  }
+  printf("  失敗した迷路: %d 個\n", fail_count);
+  check(fail_count == 0, "ランダムな迷路の最短経路が、どれも壁を通らずにゴールに着く");
+}
+
+static void test_unknown_wall_random(int maze_count)
+{
+  printf("[6] 未知壁探索：ランダムな迷路 %d 個\n", maze_count);
+  int fail_count = 0;
+  for (int n = 0; n < maze_count; n++) {
+    s_random_seed = (unsigned int)(n + 10001);
+    make_random_true_maze();
+    if (!run_unknown_wall_flow(false)) {
+      fail_count = fail_count + 1;
+    }
+  }
+  printf("  全部の壁を知っているときより遅い最短経路になった迷路: %d 個\n", fail_count);
+  check(fail_count == 0, "ランダムな迷路でも、未知壁探索のあとの最短経路は全部の壁を知っているときと同じ速さ");
 }
 
 /* ---------------------------------------------------------------------------
@@ -903,6 +1101,8 @@ int main(void)
   test_shortest_maze("mazes/maze32_offset3x3.txt");
   test_unknown_wall_explore("mazes/maze32_center2x2.txt");
   test_unknown_wall_explore("mazes/maze32_offset3x3.txt");
+  test_random_mazes(2000);
+  test_unknown_wall_random(300);
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

@@ -11,6 +11,38 @@
 #include"stdio.h"
 #include "Define.h"
 
+/* 計算時間の計測(実機のみ。DWTのサイクルカウンタ)。PCのテストでは0のまま。
+ * 各関数の最大時間[us]を記録し、Maze_Debug_Dump()で表示する */
+uint32_t G_Time_Max_WallUpdate_us = 0;	//Maze_Wall_Update(壁の記録+行き止まり潰し+歩数マップ)
+uint32_t G_Time_Max_Known_us = 0;		//Known_Pass_Generation(既知区間の経路生成)
+uint32_t G_Time_Max_Step_us = 0;		//Maze_Step_Calculate(歩数マップ)
+uint32_t G_Time_Max_Dijk_us = 0;		//Maze_Dijkstra_Calculation
+#if defined(STM32F446xx)
+#include "stm32f4xx.h"
+static uint32_t Maze_Time_Start(void) {
+	if ((DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk) == 0) {
+		CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+		DWT->CYCCNT = 0;
+		DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+	}
+	return DWT->CYCCNT;
+}
+static void Maze_Time_End(uint32_t *max_us, uint32_t start) {
+	uint32_t us = (DWT->CYCCNT - start) / (SystemCoreClock / 1000000u);
+	if (us > *max_us) {
+		*max_us = us;
+	}
+}
+#else
+static uint32_t Maze_Time_Start(void) {
+	return 0;
+}
+static void Maze_Time_End(uint32_t *max_us, uint32_t start) {
+	(void) max_us;
+	(void) start;
+}
+#endif
+
 int G_Gool_X; /////////////////////////////////////////
 int G_Gool_Y; /////////////////////////////////////////
 
@@ -170,23 +202,31 @@ unsigned short popStack_walk(STACK_T *stack) {
 	return ret;
 }
 
+/* ---- ダイクストラ(SPFA)のノード ------------------------------------------
+ * ノードは壁の位置(境界)。Row型 = 横壁 G_Maze_Row[y] の bit x、
+ * Column型 = 縦壁 G_Maze_Column[x] の bit y。
+ * 境界は2つのマスに挟まれているので、ノードを「どちら向きに通過しているか」
+ * (sense)で2つの状態に分ける。sense=1 は Row型なら北向き、Column型なら東向き。
+ * 向きを分けないと、あとから向きが入れ替わったノードの先に古いつながりが残り、
+ * 「マスに入って横へ抜け、同じマスに戻って別の壁へ抜ける」実際には走れない経路が
+ * できてしまう(test/test_shortpath.c で検出)。
+ * 状態番号 = ((isRow * (MAZE_SIZE+1) + x) * (MAZE_SIZE+1) + y) * 2 + sense */
+#define DIJK_W (MAZE_SIZE + 1)
+#define DIJK_STATE_NUM (2 * DIJK_W * DIJK_W * 2)
+#define DIJK_NO_PRED 0xFFFF
+
 typedef struct {
 	uint16_t cost;
-	uint8_t x;
-	uint8_t y;
-	uint8_t direction;
-	uint8_t isRow;
-	uint8_t inQueue; //SPFA: このノードが現在キューに積まれているか(確定済みフラグではない)
-} NODE_T;
+	uint16_t pred;		//ゴール側の1つ前の状態番号
+	uint8_t direction;	//この状態に入ったときの向き(0=N,1=NE,...,7=NW。ゴールから外へ向かう向き)
+	uint8_t inQueue;	//SPFA: 現在キューに積まれているか(確定済みフラグではない)
+} DIJK_STATE_T;
 
-typedef struct {
-	int head;
-	int tail;
-	NODE_T *data[MAX_QUEUE_NODE_NUM];
-} Queue_T;
+static DIJK_STATE_T dijk_state[DIJK_STATE_NUM];
 
-NODE_T node_Row[MAZE_SIZE + 1][MAZE_SIZE + 1];
-NODE_T node_Column[MAZE_SIZE + 1][MAZE_SIZE + 1];
+/* SPFAのキュー。inQueueで同じ状態は同時に1回しか積まれないので状態数で足りる */
+static uint16_t dijk_queue[DIJK_STATE_NUM];
+static int dijk_q_head, dijk_q_tail, dijk_q_count;
 
 #ifdef SIM_DEBUG
 int g_queue_node_push_count = 0;
@@ -196,48 +236,51 @@ int g_dijkstra_backtrace_hops = 0;
 int g_bfs_outer_hops = 0;
 #endif
 
-void pushQueue_walk_node(Queue_T *queue, NODE_T *input) {
-	/* データをデータの最後尾の１つ後ろに格納*/
-	queue->data[queue->tail] = input;
-	/* データの最後尾を１つ後ろに移動*/
-	queue->tail = queue->tail + 1;
-	/* 巡回シフト*/
-	if (queue->tail == MAX_QUEUE_NODE_NUM)
-		queue->tail = 0;
-	/* スタックが満杯なら何もせず関数終了*/
-	if (queue->tail == queue->head) {
-		//printf("queue_full\n");return;
+static int dijk_index(int isRow, int x, int y, int sense) {
+	return ((isRow * DIJK_W + x) * DIJK_W + y) * 2 + sense;
+}
+
+static void dijk_push(int s) {
+	if (dijk_q_count >= DIJK_STATE_NUM) {	//inQueueがある限り起きない
 #ifdef SIM_DEBUG
 		g_queue_node_overflow_count++;
 #endif
+		return;
 	}
+	dijk_queue[dijk_q_tail] = (uint16_t) s;
+	dijk_q_tail = (dijk_q_tail + 1) % DIJK_STATE_NUM;
+	dijk_q_count++;
+	dijk_state[s].inQueue = 1;
 #ifdef SIM_DEBUG
 	g_queue_node_push_count++;
-	int occ = queue->tail - queue->head;
-	if (occ < 0)
-		occ += MAX_QUEUE_NODE_NUM;
-	if (occ > g_queue_node_max_occupancy)
-		g_queue_node_max_occupancy = occ;
+	if (dijk_q_count > g_queue_node_max_occupancy)
+		g_queue_node_max_occupancy = dijk_q_count;
 #endif
 }
 
-NODE_T* popqueue_walk_node(Queue_T *queue) {
-	NODE_T *ret = NULL;
-	/* スタックが空なら何もせずに関数終了*/
-	if (queue->tail == queue->head) {
-		//printf("queue_empty\n");
-		// ret->cost=65535;
-		return ret;
+static int dijk_pop(void) {
+	if (dijk_q_count == 0) {
+		return -1;
 	}
-	/* データの最前列からデータを取得*/
-	ret = queue->data[queue->head];
-	/* データの最前列を１つ前にずらす*/
-	queue->head = queue->head + 1;
-	/* 巡回シフト*/
-	if (queue->head == MAX_QUEUE_NODE_NUM)
-		queue->head = 0;
-	/* 取得したデータを返却*/
-	return ret;
+	int s = dijk_queue[dijk_q_head];
+	dijk_q_head = (dijk_q_head + 1) % DIJK_STATE_NUM;
+	dijk_q_count--;
+	dijk_state[s].inQueue = 0;
+	return s;
+}
+
+static int dijk_is_wall(int isRow, int x, int y) {
+	if (isRow) {
+		return (G_Maze_Row[y] & (1u << x)) != 0;
+	}
+	return (G_Maze_Column[x] & (1u << y)) != 0;
+}
+
+/* 表示用: そのノードの2つの向きのうち小さい方のコスト */
+static int dijk_node_cost(int isRow, int x, int y) {
+	int a = dijk_state[dijk_index(isRow, x, y, 0)].cost;
+	int b = dijk_state[dijk_index(isRow, x, y, 1)].cost;
+	return (a < b) ? a : b;
 }
 
 void Maze_Initialization() {
@@ -332,7 +375,7 @@ void Maze_Wall_Search(int X, int Y, int Direction) {
 
 }
 
-void Maze_Wall_Update() {
+static void Maze_Wall_Update_Body(void) {
 	if (G_Robot_Direction % 4 == 0) { //////////////////////////////////////////////////////////北に移動
 		G_Robot_MAZE_X += 0;
 		G_Robot_MAZE_Y += 1;
@@ -531,7 +574,10 @@ void Maze_Wall_Update() {
 	}
 }
 
-void Known_Pass_Generation() {
+/* 1: 既知区間加速で、直線にはさまれた小回りを大回り(90/180)に置き換える。0: 置き換えない(2026-10-09〜) */
+#define KNOWN_PASS_BIG_TURN 0
+
+static void Known_Pass_Generation_Body(void) {
 	int N = 0;
 
 	Known_Flag = 1;
@@ -591,15 +637,17 @@ void Known_Pass_Generation() {
 	for (i = 0; G_Known_Pass[i] != 0; i++) {
 		Known_Pass_CP[i] = G_Known_Pass[i];
 	}
-	/* G_Known_Passの終端(0)自体はコピーされないので、この位置のKnown_Pass_CPは
-	 * 前回実行時の値が残ったまま。末尾コーナー判定の先読み用に1を置き、
-	 * 処理後に必ず0へ戻す(Shortest_Pass_Compression()と同じ手法)。
-	 * これをしないと下のループが終端を見失い前回の残骸を読み進めてしまう */
+	/* ループは実際の経路長term_idxで打ち切る。終端より先(先読み)は関数の最初で
+	 * 0にしてあるので、最後の曲がりは小回りのまま残る。
+	 * 最短走行(Shortest_Pass_Compression)と違い、ここでは先頭を1にしたり
+	 * 終端に1を置いたりしてはいけない。既知区間は区画の境界の手前から始まり、
+	 * 未探索の区画の手前で終わるので、先頭に1(半区画の直進)を置くと毎回
+	 * 90mm余分に進み、終端に1を置くと最後の小回りが大回りになって半区画先で
+	 * 終わってしまう(どちらも実機で直線が伸びる症状になった) */
 	int term_idx = i;
-	G_Known_Pass[i] = 1;
-	Known_Pass_CP[i] = 1;
-	Known_Pass_CP[0] = 1;
-	for (i = 0; i < term_idx; i++) {
+	/* 既知区間の大回り(-4〜-7)への置き換え。2026-10-09 から使わない(KNOWN_PASS_BIG_TURN 0):
+	 * 曲がりはすべて探索と同じ小回りスラローム(-2/-3)で走る */
+	for (i = 0; KNOWN_PASS_BIG_TURN && i < term_idx; i++) {
 		if (Known_Pass_CP[i] == -2) {
 			if (Known_Pass_CP[i - 1] > 0) {
 				if (Known_Pass_CP[i + 1] > 0) { //左９０おおまわり
@@ -644,7 +692,6 @@ void Known_Pass_Generation() {
 
 	}
 
-	/* 先読み用に置いていた終端を正式な0へ戻す */
 	G_Known_Pass[term_idx] = 0;
 	Known_Pass_CP[term_idx] = 0;
 
@@ -944,7 +991,9 @@ void Maze_Unkown_ALL_ModeOFF() {
 	ALL_MODE = 0;
 }
 
-void Maze_Step_Calculate() {
+/* 歩数マップ(G_Step_Map)で歩数0になっているマス全部を起点にBFSで歩数を広げる。
+ * 呼ぶ前に、起点以外のマスをMAX_STEPにしておくこと */
+static void Maze_Step_Propagate(void) {
 	/* MAZE_SIZE=32だとdata[]がMAX_QUEUE_NUM(=マス総数)分あり、スタックに置くと
 	 * スタックオーバーフローの危険があるためstatic(.bss)に置く */
 	static QUEUE_T queue_x;
@@ -956,27 +1005,6 @@ void Maze_Step_Calculate() {
 	unsigned short X;
 	unsigned short Y;
 	Step_N = 0;
-	for (i = 0; i < MAZE_SIZE; i++) {
-		for (j = 0; j < MAZE_SIZE; j++) {
-			G_Step_Map[i][j] = MAX_STEP;
-		}
-	}
-	Maze_Gool_Setting(ALL_MODE);
-	/* ALL_MODE中に未探索マスが尽きるとMaze_Gool_Setting()内でALL_MODEが
-	 * OFFになるが、そのタイミングではまだ「通常モードの目標セル
-	 * (G_Gool_X,Y)を歩数0にする」処理(elseブランチ)が走っていない
-	 * (呼び出し時点のmode==1のまま実行されているため)。ここで補う */
-	if (ALL_MODE == 0 && G_Step_Map[G_Gool_X][G_Gool_Y] != 0) {
-		G_Step_Map[G_Gool_X][G_Gool_Y] = 0;
-	}
-	/* ALL_MODE時はMaze_Gool_Setting()が未探索マスを全部歩数0にするが、
-	 * BFSはキューに積んだマスからしか伝播しないので、歩数0のマス全部を
-	 * 起点としてキューに積まないと多点始点BFSにならない。
-	 * G_Gool_X/Yだけを特別扱いして先に積むと、ALL_MODE中はスタート
-	 * (歩数100、本来は起点ではない)がFIFOの先頭に来て先に展開されてしまい、
-	 * 近くのマスを誤って「スタートからの距離」で埋めてしまう。
-	 * 歩数が実際に0のマスだけを均等に積むことでこれを避ける(mode==2の
-	 * G_Unknown_Target_X/Yもこのスキャンで自動的に拾われる) */
 	for (i = 0; i < MAZE_SIZE; i++) {
 		for (j = 0; j < MAZE_SIZE; j++) {
 			if (G_Step_Map[i][j] == 0) {
@@ -1017,6 +1045,31 @@ void Maze_Step_Calculate() {
 		}
 		Step_N++;
 	}
+}
+
+static void Maze_Step_Calculate_Body(void) {
+	for (i = 0; i < MAZE_SIZE; i++) {
+		for (j = 0; j < MAZE_SIZE; j++) {
+			G_Step_Map[i][j] = MAX_STEP;
+		}
+	}
+	Maze_Gool_Setting(ALL_MODE);
+	/* ALL_MODE中に未探索マスが尽きるとMaze_Gool_Setting()内でALL_MODEが
+	 * OFFになるが、そのタイミングではまだ「通常モードの目標セル
+	 * (G_Gool_X,Y)を歩数0にする」処理(elseブランチ)が走っていない
+	 * (呼び出し時点のmode==1のまま実行されているため)。ここで補う */
+	if (ALL_MODE == 0 && G_Step_Map[G_Gool_X][G_Gool_Y] != 0) {
+		G_Step_Map[G_Gool_X][G_Gool_Y] = 0;
+	}
+	/* ALL_MODE時はMaze_Gool_Setting()が未探索マスを全部歩数0にするが、
+	 * BFSはキューに積んだマスからしか伝播しないので、歩数0のマス全部を
+	 * 起点としてキューに積まないと多点始点BFSにならない。
+	 * G_Gool_X/Yだけを特別扱いして先に積むと、ALL_MODE中はスタート
+	 * (歩数100、本来は起点ではない)がFIFOの先頭に来て先に展開されてしまい、
+	 * 近くのマスを誤って「スタートからの距離」で埋めてしまう。
+	 * 歩数が実際に0のマスだけを均等に積むことでこれを避ける(mode==2の
+	 * G_Unknown_Target_X/Yもこのスキャンで自動的に拾われる) */
+	Maze_Step_Propagate();
 
 	/* 大会ルール上、壁で完全に閉じられていて到達不可能なマスが
 	 * 存在し得る。ALL_MODE中にそういうマスだけが未探索として残ると
@@ -1037,13 +1090,31 @@ void Maze_Shortest_Calculation() {
 	int Short_MAZE_Y = 0;
 	int N = 0;
 
+	/* 歩数マップをゴール2x2区画の4マス全部を起点に作り直す。
+	 * Maze_Step_Calculate()はゴール(G_Gool_X,Y)の1マスだけを起点にするので
+	 * (探索はそのマスに着くまで走る作りのため)、そのままたどると
+	 * 「そのマスへの最短」になり、2x2区画のほかのマスから入る方が近い迷路で
+	 * 1〜2マス遠回りになる(test/test_shortpath.c で検出)。
+	 * 下のループは隣の歩数が小さい方へ進み、歩数0のマスに入ったら止まる */
+	for (int x = 0; x < MAZE_SIZE; x++) {
+		for (int y = 0; y < MAZE_SIZE; y++) {
+			G_Step_Map[x][y] = MAX_STEP;
+		}
+	}
 	G_Step_Map[G_Gool_X][G_Gool_Y] = 0;
 	G_Step_Map[G_Gool_X + 1][G_Gool_Y] = 0;
 	G_Step_Map[G_Gool_X][G_Gool_Y + 1] = 0;
 	G_Step_Map[G_Gool_X + 1][G_Gool_Y + 1] = 0;
+	Maze_Step_Propagate();
 
 	for (i = 0; i < MAX_STEP; i++) {
 		G_Short_Pass[i] = 0;
+	}
+	/* スタートからゴールへ行けない(未確認の壁を壁とみなすと塞がる、探索が
+	 * 途中で止まった等)と、下のループは歩数の小さい隣が見つからず
+	 * 永久に回り続けて固まる。その場合は経路を空にして返す */
+	if (G_Step_Map[0][0] == MAX_STEP) {
+		return;
 	}
 	G_Short_Pass[0] = -1;
 #ifdef SIM_DEBUG
@@ -1220,428 +1291,142 @@ void Maze_Shortest_Calculation() {
 	}
 }
 
-void Maze_Dijkstra_Calculation() {
-	/* MAZE_SIZE=32だとdata[]がMAX_QUEUE_NODE_NUM(=ノード総数)分あり、スタックに
-	 * 置くとスタックオーバーフローの危険があるためstatic(.bss)に置く */
-	static Queue_T queue_node;
-	queue_node.head = 0;
-	queue_node.tail = 0;
+/* 状態(isRow,x,y,sense)から進める3本の辺。進む先は今の向きの先にあるマスを
+ * 通るものだけ(直進1本+斜め2本)。{dir, isRow, dx, dy, sense} */
+typedef struct {
+	int8_t dir, isRow, dx, dy, sense;
+} DIJK_EDGE_T;
 
-	for (int i = 0; i < MAZE_SIZE + 1; i++) { //dijk 初期化
-		for (int j = 0; j < MAZE_SIZE + 1; j++) {
-			node_Row[i][j].cost = DIJK_MAXCOST;
-			node_Row[i][j].isRow = 1;
-			node_Row[i][j].inQueue = 0;
-			node_Row[i][j].x = i;
-			node_Row[i][j].y = j;
-			node_Column[i][j].cost = DIJK_MAXCOST;
-			node_Column[i][j].isRow = 0;
-			node_Column[i][j].inQueue = 0;
-			node_Column[i][j].x = i;
-			node_Column[i][j].y = j;
-		}
-	}
+static const DIJK_EDGE_T dijk_edges[2][2][3] = {
+	{ /* Column型 */
+		{ /* 西向き: マス(x-1,y)を通る */
+			{ 6, 0, -1, 0, 0 },		//W  縦壁(x-1,y)
+			{ 7, 1, -1, 1, 1 },		//NW 横壁(x-1,y+1)
+			{ 5, 1, -1, 0, 0 },		//SW 横壁(x-1,y)
+		},
+		{ /* 東向き: マス(x,y)を通る */
+			{ 2, 0, 1, 0, 1 },		//E  縦壁(x+1,y)
+			{ 1, 1, 0, 1, 1 },		//NE 横壁(x,y+1)
+			{ 3, 1, 0, 0, 0 },		//SE 横壁(x,y)
+		},
+	},
+	{ /* Row型 */
+		{ /* 南向き: マス(x,y-1)を通る */
+			{ 4, 1, 0, -1, 0 },		//S  横壁(x,y-1)
+			{ 5, 0, 0, -1, 0 },		//SW 縦壁(x,y-1)
+			{ 3, 0, 1, -1, 1 },		//SE 縦壁(x+1,y-1)
+		},
+		{ /* 北向き: マス(x,y)を通る */
+			{ 0, 1, 0, 1, 1 },		//N  横壁(x,y+1)
+			{ 7, 0, 0, 0, 0 },		//NW 縦壁(x,y)
+			{ 1, 0, 1, 0, 1 },		//NE 縦壁(x+1,y)
+		},
+	},
+};
 
-	for (int i = 0; i < MAZE_SIZE + 1; i++) { //dijk 壁入れ
-		for (int j = 0; j < MAZE_SIZE + 1; j++) {
-			if ((G_Maze_Row[j] & (1u << i)) == (1u << i)) {
-				node_Row[i][j].cost = DIJK_WALLCOST;
-			}
-			if ((G_Maze_Column[i] & (1u << j)) == (1u << j)) {
-				node_Column[i][j].cost = DIJK_WALLCOST;
-			}
-		}
+static void Maze_Dijkstra_Calculation_Body(void) {
+	for (int s = 0; s < DIJK_STATE_NUM; s++) {	//初期化
+		dijk_state[s].cost = DIJK_MAXCOST;
+		dijk_state[s].pred = DIJK_NO_PRED;
+		dijk_state[s].direction = 0;
+		dijk_state[s].inQueue = 0;
 	}
+	dijk_q_head = 0;
+	dijk_q_tail = 0;
+	dijk_q_count = 0;
 
 	/* ゴールは2x2区画。Maze_Shortest_Calculation(普通の最短)と同じく、
 	 * どの面から入ってもゴール区画に入った時点で経路生成を止めたい。
 	 * 大会ルール上どの面が開口になっているか事前には分からないため、
 	 * 2x2区画を囲む8本の「外から侵入する境界」全てをコスト0の
-	 * マルチソースにする(壁で塞がれている境界は起点にしない) */
+	 * マルチソースにする(壁で塞がれている境界は起点にしない)。
+	 * 起点からはゴールの外側へ向かって広げる(南の境界なら南向き) */
 	{
 		int gx = G_Gool_X;
 		int gy = G_Gool_Y;
-		NODE_T *goal_entries[8] = { &node_Row[gx][gy], //(gx,gy)   南から
-				&node_Row[gx + 1][gy], //(gx+1,gy) 南から
-				&node_Row[gx][gy + 2], //(gx,gy+1)   北から
-				&node_Row[gx + 1][gy + 2], //(gx+1,gy+1) 北から
-				&node_Column[gx][gy], //(gx,gy)   西から
-				&node_Column[gx][gy + 1], //(gx,gy+1) 西から
-				&node_Column[gx + 2][gy], //(gx+1,gy)   東から
-				&node_Column[gx + 2][gy + 1], //(gx+1,gy+1) 東から
+		/* {isRow, x, y, sense, direction} */
+		const int goal_entries[8][5] = { { 1, gx, gy, 0, 4 },	//(gx,gy)     南から
+				{ 1, gx + 1, gy, 0, 4 },			//(gx+1,gy)   南から
+				{ 1, gx, gy + 2, 1, 0 },			//(gx,gy+1)   北から
+				{ 1, gx + 1, gy + 2, 1, 0 },		//(gx+1,gy+1) 北から
+				{ 0, gx, gy, 0, 6 },				//(gx,gy)     西から
+				{ 0, gx, gy + 1, 0, 6 },			//(gx,gy+1)   西から
+				{ 0, gx + 2, gy, 1, 2 },			//(gx+1,gy)   東から
+				{ 0, gx + 2, gy + 1, 1, 2 },		//(gx+1,gy+1) 東から
 				};
 		for (int k = 0; k < 8; k++) {
-			if (goal_entries[k]->cost != DIJK_WALLCOST) {
-				goal_entries[k]->cost = 0;
-				goal_entries[k]->inQueue = 1;
-				pushQueue_walk_node(&queue_node, goal_entries[k]);
+			const int *e = goal_entries[k];
+			if (dijk_is_wall(e[0], e[1], e[2])) {
+				continue;
 			}
+			int s = dijk_index(e[0], e[1], e[2], e[3]);
+			dijk_state[s].cost = 0;
+			dijk_state[s].direction = (uint8_t) e[4];
+			dijk_push(s);
 		}
 	}
 
 	while (1) {
-		NODE_T *popNode;
-		popNode = popqueue_walk_node(&queue_node);
-
-		if (popNode == NULL) { //END
+		int s = dijk_pop();
+		if (s < 0) { //END
 			break;
 		}
+		int sense = s & 1;
+		int y = (s >> 1) % DIJK_W;
+		int x = ((s >> 1) / DIJK_W) % DIJK_W;
+		int isRow = (s >> 1) / (DIJK_W * DIJK_W);
+		DIJK_STATE_T *cur = &dijk_state[s];
 
-		popNode->inQueue = 0; //SPFA: キューから出た。まだ確定ではないので後で再度緩和され得る
-
-		if (popNode->isRow == 1) { //Row
-			if (node_Row[popNode->x][popNode->y + 1].cost != DIJK_WALLCOST) { //no wall
-				if (popNode->direction == 0) {
-					if (node_Row[popNode->x][popNode->y + 1].cost
-							> popNode->cost + CON_COST) {
-						node_Row[popNode->x][popNode->y + 1].cost =
-								popNode->cost + CON_COST;
-						node_Row[popNode->x][popNode->y + 1].direction = 0; //N
-						if (node_Row[popNode->x][popNode->y + 1].inQueue != 1) {
-							node_Row[popNode->x][popNode->y + 1].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Row[popNode->x][popNode->y + 1]);
-						}
-					}
-				} else {
-					if (node_Row[popNode->x][popNode->y + 1].cost
-							> popNode->cost + ST_COST) {
-						node_Row[popNode->x][popNode->y + 1].cost =
-								popNode->cost + ST_COST;
-						node_Row[popNode->x][popNode->y + 1].direction = 0; //N
-						if (node_Row[popNode->x][popNode->y + 1].inQueue != 1) {
-							node_Row[popNode->x][popNode->y + 1].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Row[popNode->x][popNode->y + 1]);
-						}
-					}
-				}
+		for (int k = 0; k < 3; k++) {
+			const DIJK_EDGE_T *e = &dijk_edges[isRow][sense][k];
+			int nx = x + e->dx;
+			int ny = y + e->dy;
+			/* 外周は全部壁なので、外周より外へ出る辺は壁の手前で止まり
+			 * ここには来ない。念のため範囲だけ確認する */
+			if (nx < 0 || nx > MAZE_SIZE || ny < 0 || ny > MAZE_SIZE) {
+				continue;
 			}
-			if (node_Row[popNode->x][popNode->y - 1].cost != DIJK_WALLCOST) { //no wall
-				if (popNode->direction == 4) {
-					if (node_Row[popNode->x][popNode->y - 1].cost
-							> popNode->cost + CON_COST) {
-						node_Row[popNode->x][popNode->y - 1].cost =
-								popNode->cost + CON_COST;
-						node_Row[popNode->x][popNode->y - 1].direction = 4; //S
-						if (node_Row[popNode->x][popNode->y - 1].inQueue != 1) {
-							node_Row[popNode->x][popNode->y - 1].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Row[popNode->x][popNode->y - 1]);
-						}
-					}
-				} else {
-					if (node_Row[popNode->x][popNode->y - 1].cost
-							> popNode->cost + ST_COST) {
-						node_Row[popNode->x][popNode->y - 1].cost =
-								popNode->cost + ST_COST;
-						node_Row[popNode->x][popNode->y - 1].direction = 4; //S
-						if (node_Row[popNode->x][popNode->y - 1].inQueue != 1) {
-							node_Row[popNode->x][popNode->y - 1].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Row[popNode->x][popNode->y - 1]);
-						}
-					}
-				}
+			if (dijk_is_wall(e->isRow, nx, ny)) {
+				continue;
 			}
-			if (node_Column[popNode->x][popNode->y].cost != DIJK_WALLCOST) { //no wall
-				if (popNode->direction == 7) {
-					if (node_Column[popNode->x][popNode->y].cost
-							> popNode->cost + CON_COST) {
-						node_Column[popNode->x][popNode->y].cost =
-								popNode->cost + CON_COST;
-						node_Column[popNode->x][popNode->y].direction = 7; //NW
-						if (node_Column[popNode->x][popNode->y].inQueue != 1) {
-							node_Column[popNode->x][popNode->y].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Column[popNode->x][popNode->y]);
-						}
-					}
-				} else {
-					if (node_Column[popNode->x][popNode->y].cost
-							> popNode->cost + DIAG_COST) {
-						node_Column[popNode->x][popNode->y].cost =
-								popNode->cost + DIAG_COST;
-						node_Column[popNode->x][popNode->y].direction = 7; //NW
-						if (node_Column[popNode->x][popNode->y].inQueue != 1) {
-							node_Column[popNode->x][popNode->y].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Column[popNode->x][popNode->y]);
-						}
-					}
-				}
+			int cost;
+			if (e->dir == cur->direction) {
+				cost = CON_COST;	//同じ向きが続く(直進の連続・斜めの連続)
+			} else if ((e->dir & 1) == 0) {
+				cost = ST_COST;
+			} else {
+				cost = DIAG_COST;
 			}
-			if (node_Column[popNode->x + 1][popNode->y].cost != DIJK_WALLCOST) { //no wall
-				if (popNode->direction == 1) {
-					if (node_Column[popNode->x + 1][popNode->y].cost
-							> popNode->cost + CON_COST) {
-						node_Column[popNode->x + 1][popNode->y].cost =
-								popNode->cost + CON_COST;
-						node_Column[popNode->x + 1][popNode->y].direction = 1; //NE
-						if (node_Column[popNode->x + 1][popNode->y].inQueue != 1) {
-							node_Column[popNode->x + 1][popNode->y].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Column[popNode->x + 1][popNode->y]);
-						}
-					}
-				} else {
-					if (node_Column[popNode->x + 1][popNode->y].cost
-							> popNode->cost + DIAG_COST) {
-						node_Column[popNode->x + 1][popNode->y].cost =
-								popNode->cost + DIAG_COST;
-						node_Column[popNode->x + 1][popNode->y].direction = 1; //NE
-						if (node_Column[popNode->x + 1][popNode->y].inQueue != 1) {
-							node_Column[popNode->x + 1][popNode->y].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Column[popNode->x + 1][popNode->y]);
-						}
-					}
-				}
-			}
-			if (node_Column[popNode->x][popNode->y - 1].cost != DIJK_WALLCOST) { //no wall
-				if (popNode->direction == 5) {
-					if (node_Column[popNode->x][popNode->y - 1].cost
-							> popNode->cost + CON_COST) {
-						node_Column[popNode->x][popNode->y - 1].cost =
-								popNode->cost + CON_COST;
-						node_Column[popNode->x][popNode->y - 1].direction = 5; //SW
-						if (node_Column[popNode->x][popNode->y - 1].inQueue != 1) {
-							node_Column[popNode->x][popNode->y - 1].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Column[popNode->x][popNode->y - 1]);
-						}
-					}
-				} else {
-					if (node_Column[popNode->x][popNode->y - 1].cost
-							> popNode->cost + DIAG_COST) {
-						node_Column[popNode->x][popNode->y - 1].cost =
-								popNode->cost + DIAG_COST;
-						node_Column[popNode->x][popNode->y - 1].direction = 5; //SW
-						if (node_Column[popNode->x][popNode->y - 1].inQueue != 1) {
-							node_Column[popNode->x][popNode->y - 1].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Column[popNode->x][popNode->y - 1]);
-						}
-					}
-				}
-			}
-			if (node_Column[popNode->x + 1][popNode->y - 1].cost
-					!= DIJK_WALLCOST) { //no wall
-				if (popNode->direction == 3) {
-					if (node_Column[popNode->x + 1][popNode->y - 1].cost
-							> popNode->cost + CON_COST) {
-						node_Column[popNode->x + 1][popNode->y - 1].cost =
-								popNode->cost + CON_COST;
-						node_Column[popNode->x + 1][popNode->y - 1].direction = 3; //SE
-						if (node_Column[popNode->x + 1][popNode->y - 1].inQueue
-								!= 1) {
-							node_Column[popNode->x + 1][popNode->y - 1].inQueue =
-									1;
-							pushQueue_walk_node(&queue_node,
-									&node_Column[popNode->x + 1][popNode->y - 1]);
-						}
-					}
-				} else {
-					if (node_Column[popNode->x + 1][popNode->y - 1].cost
-							> popNode->cost + DIAG_COST) {
-						node_Column[popNode->x + 1][popNode->y - 1].cost =
-								popNode->cost + DIAG_COST;
-						node_Column[popNode->x + 1][popNode->y - 1].direction = 3; //SE
-						if (node_Column[popNode->x + 1][popNode->y - 1].inQueue
-								!= 1) {
-							node_Column[popNode->x + 1][popNode->y - 1].inQueue =
-									1;
-							pushQueue_walk_node(&queue_node,
-									&node_Column[popNode->x + 1][popNode->y - 1]);
-						}
-					}
-				}
-			}
-		} else { //column
-			if (node_Column[popNode->x + 1][popNode->y].cost != DIJK_WALLCOST) { //no wall
-				if (popNode->direction == 2) {
-					if (node_Column[popNode->x + 1][popNode->y].cost
-							> popNode->cost + CON_COST) {
-						node_Column[popNode->x + 1][popNode->y].cost =
-								popNode->cost + CON_COST;
-						node_Column[popNode->x + 1][popNode->y].direction = 2; //E
-						if (node_Column[popNode->x + 1][popNode->y].inQueue != 1) {
-							node_Column[popNode->x + 1][popNode->y].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Column[popNode->x + 1][popNode->y]);
-						}
-					}
-				} else {
-					if (node_Column[popNode->x + 1][popNode->y].cost
-							> popNode->cost + ST_COST) {
-						node_Column[popNode->x + 1][popNode->y].cost =
-								popNode->cost + ST_COST;
-						node_Column[popNode->x + 1][popNode->y].direction = 2; //E
-						if (node_Column[popNode->x + 1][popNode->y].inQueue != 1) {
-							node_Column[popNode->x + 1][popNode->y].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Column[popNode->x + 1][popNode->y]);
-						}
-					}
-				}
-			}
-			if (node_Column[popNode->x - 1][popNode->y].cost != DIJK_WALLCOST) { //no wall
-				if (popNode->direction == 6) {
-					if (node_Column[popNode->x - 1][popNode->y].cost
-							> popNode->cost + CON_COST) {
-						node_Column[popNode->x - 1][popNode->y].cost =
-								popNode->cost + CON_COST;
-						node_Column[popNode->x - 1][popNode->y].direction = 6; //E
-						if (node_Column[popNode->x - 1][popNode->y].inQueue != 1) {
-							node_Column[popNode->x - 1][popNode->y].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Column[popNode->x - 1][popNode->y]);
-						}
-					}
-				} else {
-					if (node_Column[popNode->x - 1][popNode->y].cost
-							> popNode->cost + ST_COST) {
-						node_Column[popNode->x - 1][popNode->y].cost =
-								popNode->cost + ST_COST;
-						node_Column[popNode->x - 1][popNode->y].direction = 6; //E
-						if (node_Column[popNode->x - 1][popNode->y].inQueue != 1) {
-							node_Column[popNode->x - 1][popNode->y].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Column[popNode->x - 1][popNode->y]);
-						}
-					}
-				}
-			}
-			if (node_Row[popNode->x][popNode->y + 1].cost != DIJK_WALLCOST) { //no wall
-				if (popNode->direction == 1) {
-					if (node_Row[popNode->x][popNode->y + 1].cost
-							> popNode->cost + CON_COST) {
-						node_Row[popNode->x][popNode->y + 1].cost =
-								popNode->cost + CON_COST;
-						node_Row[popNode->x][popNode->y + 1].direction = 1; //NE
-						if (node_Row[popNode->x][popNode->y + 1].inQueue != 1) {
-							node_Row[popNode->x][popNode->y + 1].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Row[popNode->x][popNode->y + 1]);
-						}
-					}
-				} else {
-					if (node_Row[popNode->x][popNode->y + 1].cost
-							> popNode->cost + DIAG_COST) {
-						node_Row[popNode->x][popNode->y + 1].cost =
-								popNode->cost + DIAG_COST;
-						node_Row[popNode->x][popNode->y + 1].direction = 1; //NE
-						if (node_Row[popNode->x][popNode->y + 1].inQueue != 1) {
-							node_Row[popNode->x][popNode->y + 1].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Row[popNode->x][popNode->y + 1]);
-						}
-					}
-				}
-			}
-			if (node_Row[popNode->x][popNode->y].cost != DIJK_WALLCOST) { //no wall
-				if (popNode->direction == 3) {
-					if (node_Row[popNode->x][popNode->y].cost
-							> popNode->cost + CON_COST) {
-						node_Row[popNode->x][popNode->y].cost =
-								popNode->cost + CON_COST;
-						node_Row[popNode->x][popNode->y].direction = 3; //SE
-						if (node_Row[popNode->x][popNode->y].inQueue != 1) {
-							node_Row[popNode->x][popNode->y].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Row[popNode->x][popNode->y]);
-						}
-					}
-				} else {
-					if (node_Row[popNode->x][popNode->y].cost
-							> popNode->cost + DIAG_COST) {
-						node_Row[popNode->x][popNode->y].cost =
-								popNode->cost + DIAG_COST;
-						node_Row[popNode->x][popNode->y].direction = 3; //SE
-						if (node_Row[popNode->x][popNode->y].inQueue != 1) {
-							node_Row[popNode->x][popNode->y].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Row[popNode->x][popNode->y]);
-						}
-					}
-				}
-			}
-			if (node_Row[popNode->x - 1][popNode->y + 1].cost
-					!= DIJK_WALLCOST) { //no wall
-				if (popNode->direction == 7) {
-					if (node_Row[popNode->x - 1][popNode->y + 1].cost
-							> popNode->cost + CON_COST) {
-						node_Row[popNode->x - 1][popNode->y + 1].cost =
-								popNode->cost + CON_COST;
-						node_Row[popNode->x - 1][popNode->y + 1].direction = 7; //NW
-						if (node_Row[popNode->x - 1][popNode->y + 1].inQueue
-								!= 1) {
-							node_Row[popNode->x - 1][popNode->y + 1].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Row[popNode->x - 1][popNode->y + 1]);
-						}
-					}
-				} else {
-					if (node_Row[popNode->x - 1][popNode->y + 1].cost
-							> popNode->cost + DIAG_COST) {
-						node_Row[popNode->x - 1][popNode->y + 1].cost =
-								popNode->cost + DIAG_COST;
-						node_Row[popNode->x - 1][popNode->y + 1].direction = 7; //NW
-						if (node_Row[popNode->x - 1][popNode->y + 1].inQueue
-								!= 1) {
-							node_Row[popNode->x - 1][popNode->y + 1].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Row[popNode->x - 1][popNode->y + 1]);
-						}
-					}
-				}
-			}
-			if (node_Row[popNode->x - 1][popNode->y].cost != DIJK_WALLCOST) { //no wall
-				if (popNode->direction == 5) {
-					if (node_Row[popNode->x - 1][popNode->y].cost
-							> popNode->cost + CON_COST) {
-						node_Row[popNode->x - 1][popNode->y].cost =
-								popNode->cost + CON_COST;
-						node_Row[popNode->x - 1][popNode->y].direction = 5; //SW
-						if (node_Row[popNode->x - 1][popNode->y].inQueue != 1) {
-							node_Row[popNode->x - 1][popNode->y].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Row[popNode->x - 1][popNode->y]);
-						}
-					}
-				} else {
-					if (node_Row[popNode->x - 1][popNode->y].cost
-							> popNode->cost + DIAG_COST) {
-						node_Row[popNode->x - 1][popNode->y].cost =
-								popNode->cost + DIAG_COST;
-						node_Row[popNode->x - 1][popNode->y].direction = 5; //SW
-						if (node_Row[popNode->x - 1][popNode->y].inQueue != 1) {
-							node_Row[popNode->x - 1][popNode->y].inQueue = 1;
-							pushQueue_walk_node(&queue_node,
-									&node_Row[popNode->x - 1][popNode->y]);
-						}
-					}
+			int ns = dijk_index(e->isRow, nx, ny, e->sense);
+			DIJK_STATE_T *next = &dijk_state[ns];
+			if (next->cost > cur->cost + cost) {
+				next->cost = (uint16_t) (cur->cost + cost);
+				next->direction = (uint8_t) e->dir;
+				next->pred = (uint16_t) s;
+				if (!next->inQueue) {
+					dijk_push(ns);
 				}
 			}
 		}
-
 	}
 
-	int toGool_direction = 0;
+	/* スタート区画の北の壁を北向きに通る状態から、ゴールまでたどる。
+	 * 探索はゴールから外へ広げたので、ロボットの進む向きは
+	 * direction の逆(+4)、ノードの向き(sense)も逆(南向き=0)になる */
 	int N = 0;
+	int s = dijk_index(1, 0, 1, 0);
 
-	NODE_T *short_node;
-	short_node = &node_Row[0][1]; //&node_Row[0][1];
-	toGool_direction = (short_node->direction + 4) % 8; //
-
-	for (int i = 0; i < 255; i++) {
+	for (int i = 0; i < MAX_STEP; i++) {
 		G_Short_Pass[i] = 0;
 	}
 	G_Dijk_Path_Len = 0;
-
+	/* スタートからゴールへ行けないときは経路を空にして返す
+	 * (Maze_Shortest_Calculation()と同じ) */
+	if (dijk_state[s].pred == DIJK_NO_PRED) {
+		return;
+	}
 
 	G_Short_Pass[0] -= 1;
-	//N++;
 
 #ifdef SIM_DEBUG
 	int dbg_backtrace_hops = 0;
@@ -1651,46 +1436,41 @@ void Maze_Dijkstra_Calculation() {
 #ifdef SIM_DEBUG
 		dbg_backtrace_hops++;
 #endif
-		if (++dijk_backtrace_guard > MAX_QUEUE_NODE_NUM) {	//異常系フェイルセーフ(通常は経路長で先に止まる)
+		if (++dijk_backtrace_guard > DIJK_STATE_NUM) {	//異常系フェイルセーフ(通常は経路長で先に止まる)
 			break;
 		}
-		if (short_node->isRow == 1) {
-			short_node = &node_Row[short_node->x][short_node->y];
-		} else {
-			short_node = &node_Column[short_node->x][short_node->y];
-		}
-
-		if (short_node->cost == 0) {
+		DIJK_STATE_T *cur = &dijk_state[s];
+		if (cur->cost == 0 || cur->pred == DIJK_NO_PRED) {	//ゴール(到達不能なら何もしない)
 			break;
 		}
+		int nodeIsRow = (s >> 1) / (DIJK_W * DIJK_W);
+		int nodeX = ((s >> 1) / DIJK_W) % DIJK_W;
+		int nodeY = (s >> 1) % DIJK_W;
+		int toGool_direction = (cur->direction + 4) % 8;
 
-		toGool_direction = (short_node->direction + 4) % 8;
-
-		/* Dijkstra誘導 未知壁探索用: このホップが通る壁(short_node自身)が
+		/* Dijkstra誘導 未知壁探索用: このホップが通る壁(今のノード自身)が
 		 * 実際に通過するセルはtoGool_directionの向きで決まる(進行方向側のセル)。
 		 * Row型ノードはtoGool_directionが{0,1,7}なら北側セル、{3,4,5}なら南側セル。
-		 * Column型ノードは{1,2,3}なら東側セル、{5,6,7}なら西側セルになる
-		 * (このグラフではRow型ノードにdirection 2/6が、Column型ノードに
-		 * direction 0/4が現れることはないので、この2分岐で網羅できる) */
+		 * Column型ノードは{1,2,3}なら東側セル、{5,6,7}なら西側セルになる */
 		if (G_Dijk_Path_Len < MAX_STEP - 1) {
 			int16_t cellX, cellY;
-			if (short_node->isRow) {
+			if (nodeIsRow) {
 				if (toGool_direction == 0 || toGool_direction == 1
 						|| toGool_direction == 7) {
-					cellX = short_node->x;
-					cellY = short_node->y;
+					cellX = nodeX;
+					cellY = nodeY;
 				} else {
-					cellX = short_node->x;
-					cellY = short_node->y - 1;
+					cellX = nodeX;
+					cellY = nodeY - 1;
 				}
 			} else {
 				if (toGool_direction == 2 || toGool_direction == 1
 						|| toGool_direction == 3) {
-					cellX = short_node->x;
-					cellY = short_node->y;
+					cellX = nodeX;
+					cellY = nodeY;
 				} else {
-					cellX = short_node->x - 1;
-					cellY = short_node->y;
+					cellX = nodeX - 1;
+					cellY = nodeY;
 				}
 			}
 			/* この壁が現時点で既知か未知かは記録時点のスナップショットにせず、
@@ -1699,82 +1479,31 @@ void Maze_Dijkstra_Calculation() {
 			 * できるようにするため。詳しくはMaze_Unknown_Wall_Scan()参照) */
 			G_Dijk_Path_X[G_Dijk_Path_Len] = cellX;
 			G_Dijk_Path_Y[G_Dijk_Path_Len] = cellY;
-			G_Dijk_Path_WallIsRow[G_Dijk_Path_Len] = short_node->isRow;
-			G_Dijk_Path_WallI[G_Dijk_Path_Len] = short_node->x;
-			G_Dijk_Path_WallJ[G_Dijk_Path_Len] = short_node->y;
+			G_Dijk_Path_WallIsRow[G_Dijk_Path_Len] = nodeIsRow;
+			G_Dijk_Path_WallI[G_Dijk_Path_Len] = nodeX;
+			G_Dijk_Path_WallJ[G_Dijk_Path_Len] = nodeY;
 			G_Dijk_Path_Len++;
 		}
 
-		if (toGool_direction == 0) {
-			if (G_Short_Pass[N] < 0) {
-				N++;
-			}
-			G_Short_Pass[N] += 2;
-			short_node->y++;
-		} else if (toGool_direction == 1) {
-			N++;
-			if (short_node->isRow == 1) {
-				G_Short_Pass[N] = -3;
-				short_node->x++;
-				short_node->isRow = 0;
-			} else {
-				G_Short_Pass[N] = -2;
-				short_node->y++;
-				short_node->isRow = 1;
-			}
-		} else if (toGool_direction == 2) {
-			if (G_Short_Pass[N] < 0) {
-				N++;
-			}
-			G_Short_Pass[N] += 2;
-			short_node->x++;
-		} else if (toGool_direction == 3) {
-			N++;
-			if (short_node->isRow == 1) {
-				G_Short_Pass[N] = -2;
-				short_node->x++;
-				short_node->y--;
-				short_node->isRow = 0;
-			} else {
-				G_Short_Pass[N] = -3;
-				short_node->isRow = 1;
-			}
-		} else if (toGool_direction == 4) {
-			if (G_Short_Pass[N] < 0) {
-				N++;
-			}
-			G_Short_Pass[N] += 2;
-			short_node->y--;
-		} else if (toGool_direction == 5) {
-			N++;
-			if (short_node->isRow == 1) {
-				G_Short_Pass[N] = -3;
-				short_node->y--;
-				short_node->isRow = 0;
-			} else {
-				G_Short_Pass[N] = -2;
-				short_node->x--;
-				short_node->isRow = 1;
-			}
-		} else if (toGool_direction == 6) {
-			if (G_Short_Pass[N] < 0) {
-				N++;
-			}
-			G_Short_Pass[N] += 2;
-			short_node->x--;
-		} else if (toGool_direction == 7) {
-			N++;
-			if (short_node->isRow == 1) {
-				G_Short_Pass[N] = -2;
-				short_node->isRow = 0;
-			} else {
-				G_Short_Pass[N] = -3;
-				short_node->x--;
-				short_node->y++;
-				short_node->isRow = 1;
-			}
+		if (N >= MAX_STEP - 2) {	//配列の終端(0)を必ず残す
+			break;
 		}
-
+		if ((toGool_direction & 1) == 0) {	//直進(半区画2つ=1区画)
+			if (G_Short_Pass[N] < 0) {
+				N++;
+			}
+			G_Short_Pass[N] += 2;
+		} else {	//小回り: 進む向きとノードの種類で左右が決まる
+			int left;
+			if (nodeIsRow) {
+				left = (toGool_direction == 3 || toGool_direction == 7);
+			} else {
+				left = (toGool_direction == 1 || toGool_direction == 5);
+			}
+			N++;
+			G_Short_Pass[N] = left ? -2 : -3;
+		}
+		s = cur->pred;
 	}
 
 	if (G_Short_Pass[0] == 0) {
@@ -1825,6 +1554,16 @@ int Maze_Unknown_Wall_Still_Unknown(void) {
 	} else {
 		return ((Maze_Column_Look[G_Unknown_Wall_I] >> G_Unknown_Wall_J) & 1u)
 				== 0;
+	}
+}
+
+/* Maze_Unknown_Wall_Scan()が最後に見つけた壁を確認した結果、壁があったら1
+ * (ダイクストラ経路がその壁でふさがれていた)。確認済みになってから呼ぶこと */
+int Maze_Unknown_Wall_Is_Wall(void) {
+	if (G_Unknown_Wall_IsRow) {
+		return (G_Maze_Row[G_Unknown_Wall_J] >> G_Unknown_Wall_I) & 1u;
+	} else {
+		return (G_Maze_Column[G_Unknown_Wall_I] >> G_Unknown_Wall_J) & 1u;
 	}
 }
 
@@ -2138,7 +1877,7 @@ void Maze_Dijkstra_Mapping() {
 			if ((G_Maze_Row[j] & (1u << i)) == (1u << i)) {
 				printf("---");
 			} else {
-				printf("%3d",node_Row[i][j].cost);
+				printf("%3d", dijk_node_cost(1, i, j));
 			}
 		}
 		printf("+\n\r");
@@ -2146,7 +1885,7 @@ void Maze_Dijkstra_Mapping() {
 			if ((G_Maze_Column[i] & (1u << (j - 1))) == (1u << (j - 1))) {
 				printf("   |");
 			} else {
-				printf(" %3d",node_Column[i][j-1].cost);//
+				printf(" %3d", dijk_node_cost(0, i, j - 1));
 			}
 		}
 		printf("\n\r");
@@ -2183,5 +1922,184 @@ void Pass_zero_act() {
 	if (Known_Pass_NANAME[i + 2] == 0) {
 		Known_Pass_NANAME[i + 2] = -1;
 	}
+}
+
+
+/* ---- 迷路のデバッグ出力(main.c モード3 No.0) -------------------------------
+ * 保存済みの迷路(Maze_Save()した壁・見た壁)をシリアルに出す。
+ *   1. PCで読み込む用の16進の行(MAZE_DUMP_BEGIN 〜 MAZE_DUMP_END)
+ *   2. 人が見る用の地図。"---"/"|"=壁、空白=壁なし(確認済み)、
+ *      " . "/":"=未確認(最短走行では壁として扱う)、S=スタート、G=ゴール
+ *   3. 最短走行と同じ手順で作った命令列(BFS版とダイクストラ版)
+ * 出力を丸ごとファイルに保存して
+ *   ./test_shortpath --dump そのファイル
+ * にかけると、PCで同じ命令列が作られるか・壁に突っ込まないかを確認できる。
+ * 走行はしない(モーターは動かさない)。作業用の壁情報・歩数マップ・経路配列は
+ * 書き換わるが、保存済みの迷路(_Save)は変えない */
+static void Maze_Debug_Print_Pass(const char *name, const int16_t *pass) {
+	printf("%s:", name);
+	for (int k = 0; k < MAX_STEP && pass[k] != 0; k++) {
+		printf(" %d", pass[k]);
+	}
+	printf("\r\n");
+}
+
+static void Maze_Debug_Plan(int dijkstra) {
+	Maze_Road();
+	Maze_Wall_fill();
+	G_Gool_X = MAZE_GOOL_X;
+	G_Gool_Y = MAZE_GOOL_Y;
+	G_Robot_MAZE_X = 0;
+	G_Robot_MAZE_Y = 0;
+	G_Robot_Direction = 0;
+	G_MAZE_Explored[G_Gool_X][G_Gool_Y] = 0;
+	Maze_Step_Calculate();
+	if (dijkstra) {
+		Maze_Dijkstra_Calculation();
+	} else {
+		Maze_Shortest_Calculation();
+	}
+	Shortest_Pass_Compression();
+	Shortest_Pass_Compression_NANAME();
+}
+
+void Maze_Debug_Dump(void) {
+	int x, y;
+
+	printf("\r\n#BEGIN MAZE size=%d goal_x=%d goal_y=%d\r\n", MAZE_SIZE, MAZE_GOOL_X, MAZE_GOOL_Y);	//tools/viewer.html で読む
+	printf("MAZE_DUMP_BEGIN %d\r\n", MAZE_SIZE);
+	for (int k = 0; k < MAZE_SIZE + 1; k++) {
+		printf("ROW %d %08lX\r\n", k, (unsigned long) G_Maze_Row_Save[k]);
+	}
+	for (int k = 0; k < MAZE_SIZE + 1; k++) {
+		printf("COL %d %08lX\r\n", k, (unsigned long) G_Maze_Column_Save[k]);
+	}
+	for (int k = 0; k < MAZE_SIZE + 1; k++) {
+		printf("LROW %d %08lX\r\n", k, (unsigned long) Maze_Row_Look_Save[k]);
+	}
+	for (int k = 0; k < MAZE_SIZE + 1; k++) {
+		printf("LCOL %d %08lX\r\n", k, (unsigned long) Maze_Column_Look_Save[k]);
+	}
+	printf("MAZE_DUMP_END\r\n\r\n");
+
+	/* 人が見る用の地図(上が北) */
+	int unknown = 0;
+	for (y = MAZE_SIZE; y >= 0; y--) {
+		for (x = 0; x < MAZE_SIZE; x++) {
+			int seen = (Maze_Row_Look_Save[y] >> x) & 1u;
+			int wall = (G_Maze_Row_Save[y] >> x) & 1u;
+			printf("+%s", !seen ? " . " : (wall ? "---" : "   "));
+			unknown += !seen;
+		}
+		printf("+\r\n");
+		if (y == 0) {
+			break;
+		}
+		for (x = 0; x < MAZE_SIZE + 1; x++) {
+			int seen = (Maze_Column_Look_Save[x] >> (y - 1)) & 1u;
+			int wall = (G_Maze_Column_Save[x] >> (y - 1)) & 1u;
+			printf("%s", !seen ? ":" : (wall ? "|" : " "));
+			unknown += !seen;
+			if (x < MAZE_SIZE) {
+				int cy = y - 1;
+				char c = ' ';
+				if (x == 0 && cy == 0) {
+					c = 'S';
+				} else if (x >= MAZE_GOOL_X && x <= MAZE_GOOL_X + 1
+						&& cy >= MAZE_GOOL_Y && cy <= MAZE_GOOL_Y + 1) {
+					c = 'G';
+				}
+				printf(" %c ", c);
+			}
+		}
+		printf("\r\n");
+	}
+	printf("unknown walls: %d\r\n\r\n", unknown);
+
+	/* 電源を入れてからの各計算の最大時間(この下の経路計算の分は含まない) */
+	printf("TIME_MAX_US wall_update=%lu known_pass=%lu step=%lu dijkstra=%lu\r\n\r\n",
+			(unsigned long) G_Time_Max_WallUpdate_us,
+			(unsigned long) G_Time_Max_Known_us,
+			(unsigned long) G_Time_Max_Step_us,
+			(unsigned long) G_Time_Max_Dijk_us);
+
+	/* 最短走行と同じ手順の命令列 */
+	Maze_Debug_Plan(0);
+	if (G_Short_Pass[0] == 0) {	//空の経路(最短走行ではエラーになって走らない)
+		printf("NO PATH: start cannot reach goal (unknown walls count as walls)\r\n");
+	}
+	Maze_Debug_Print_Pass("BFS_PASS", G_Short_Pass);
+	Maze_Debug_Print_Pass("BFS_NANAME", G_Short_Pass_NANAME);
+	Maze_Debug_Plan(1);
+	Maze_Debug_Print_Pass("DIJK_PASS", G_Short_Pass);
+	Maze_Debug_Print_Pass("DIJK_NANAME", G_Short_Pass_NANAME);
+	printf("#END MAZE\r\n\r\n");
+
+	Maze_Road();	//作業用の壁情報を保存済みの状態に戻しておく
+}
+
+/* ---- 計算時間を測るための入口 -----------------------------------------------
+ * 探索中は計算のあいだも機体は前の速度のまま進むので、計算が長いとその分だけ
+ * 直線が伸びる。最大時間はファイル先頭の G_Time_Max_* に記録する */
+
+void Maze_Wall_Update() {
+	uint32_t t = Maze_Time_Start();
+	Maze_Wall_Update_Body();
+	Maze_Time_End(&G_Time_Max_WallUpdate_us, t);
+}
+
+void Known_Pass_Generation() {
+	uint32_t t = Maze_Time_Start();
+	Known_Pass_Generation_Body();
+	Maze_Time_End(&G_Time_Max_Known_us, t);
+}
+
+void Maze_Step_Calculate() {
+	uint32_t t = Maze_Time_Start();
+	Maze_Step_Calculate_Body();
+	Maze_Time_End(&G_Time_Max_Step_us, t);
+}
+
+void Maze_Dijkstra_Calculation() {
+	uint32_t t = Maze_Time_Start();
+	Maze_Dijkstra_Calculation_Body();
+	Maze_Time_End(&G_Time_Max_Dijk_us, t);
+}
+
+/* 今いる区画(G_Robot_MAZE_X/Y)と向き(G_Robot_Direction)から、前後左右の
+ * 区画の歩数を G_Maze_Flont/Back/Left/Right に入れる(壁があれば MAX_STEP)。
+ * Maze_Wall_Update() の後半と同じ内容を、区画を移動せずに行う。
+ * 止まっているあいだに歩数マップを作り直したあと、進む向きを決め直すのに使う */
+void Maze_Neighbor_Update(void) {
+	static const int dx[4] = { 0, 1, 0, -1 };
+	static const int dy[4] = { 1, 0, -1, 0 };
+	int x = G_Robot_MAZE_X;
+	int y = G_Robot_MAZE_Y;
+	int h = G_Robot_Direction % 4;
+	uint16_t v[4];	//向き 0=前 1=右 2=後 3=左
+	for (int k = 0; k < 4; k++) {
+		int d = (h + k) % 4;	//絶対方位 0=北 1=東 2=南 3=西
+		int nx = x + dx[d];
+		int ny = y + dy[d];
+		int wall;
+		if (d == 0) {
+			wall = (G_Maze_Row[y + 1] >> x) & 1u;
+		} else if (d == 1) {
+			wall = (G_Maze_Column[x + 1] >> y) & 1u;
+		} else if (d == 2) {
+			wall = (G_Maze_Row[y] >> x) & 1u;
+		} else {
+			wall = (G_Maze_Column[x] >> y) & 1u;
+		}
+		if (wall || nx < 0 || ny < 0 || nx >= MAZE_SIZE || ny >= MAZE_SIZE) {
+			v[k] = MAX_STEP;
+		} else {
+			v[k] = G_Step_Map[nx][ny];
+		}
+	}
+	G_Maze_Flont = v[0];
+	G_Maze_Right = v[1];
+	G_Maze_Back = v[2];
+	G_Maze_Left = v[3];
 }
 

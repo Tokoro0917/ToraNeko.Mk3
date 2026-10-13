@@ -89,6 +89,21 @@ void LED_batt_error() {
 	HAL_Delay(500);
 }
 
+/* 最短経路が作れなかったとき(スタートからゴールへ行けない迷路)の知らせ。
+ * 全LED点滅+低い音を3回。走り出さずに戻る */
+void LED_Path_Error() {
+	for (int i = 0; i < 3; i++) {
+		LED_ALL_ON();
+		HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
+		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_4, 20);
+		__HAL_TIM_SET_AUTORELOAD(&htim4, 6000);
+		HAL_Delay(300);
+		HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_4);
+		LED_Reset();
+		HAL_Delay(200);
+	}
+}
+
 void LED_Goal() {
 	for (int i = 0; i < 2; i++) {
 		HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, 1);

@@ -16,6 +16,7 @@ void LED_Setup_Robot();
 void LED_batt_error();
 
 void LED_Goal();
+void LED_Path_Error();	//最短経路が作れなかった
 
 void LED_program_number (int );
 void LED_program_mode(int );

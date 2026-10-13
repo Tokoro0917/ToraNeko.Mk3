@@ -159,7 +159,10 @@ static void convert_to_big_turns(path_t *src, path_t *dst)
  * 区画 (x, y) に向き dir で入るところから、探索と同じ決め方（歩数マップ）で進む先を決めていき、
  * 「まだ壁を見ていない区画」に入る手前で止める。壁を見たことのある区画では新しい情報が
  * 増えないので、1 区画ずつ止まって考えなくても、探索とまったく同じ道を通る。
- * それをまとめて 1 つの経路にして、速く走れるようにする（大回りにも変換する）。
+ * それをまとめて 1 つの経路にして、直線を速く走れるようにする。
+ *
+ * 曲がるところは、探索と同じ小回りのスラローム（MOTION_TURN_LEFT / RIGHT）のまま。
+ * 大回りには置き換えない（KOGUMA も 2026-10-09 から既知区間では大回りを使っていない）。
  *
  * 先に maze_map_record_walls() で (x, y) の壁を記録し、search_update_step_map() で
  * 歩数マップを作っておくこと。
@@ -167,10 +170,9 @@ static void convert_to_big_turns(path_t *src, path_t *dst)
  * path->count が 0 なら、まとめて走れる区間はない。 */
 void path_make_known(int x, int y, direction_t dir, path_t *path)
 {
-  path_t *raw = &s_work_a;  /* 大回りにする前の経路 */
-  path_clear(raw);
+  path_clear(path);
 
-  while (raw->count < PATH_STEP_MAX) {
+  while (path->count < PATH_STEP_MAX) {
     if (!maze_map_is_visited(x, y)) {
       break;  /* まだ壁を見ていない区画。ここからは普通の探索で 1 区画ずつ進む */
     }
@@ -182,15 +184,15 @@ void path_make_known(int x, int y, direction_t dir, path_t *path)
     if (action == ACTION_STOP) {
       break;
     } else if (action == ACTION_FORWARD) {
-      path_add_straight(raw, 2);  /* 1 区画 = 2 半区画 */
+      path_add_straight(path, 2);  /* 1 区画 = 2 半区画 */
     } else if (action == ACTION_TURN_LEFT) {
-      path_add_motion(raw, MOTION_TURN_LEFT);
+      path_add_motion(path, MOTION_TURN_LEFT);
       dir = maze_turn_left(dir);
     } else if (action == ACTION_TURN_RIGHT) {
-      path_add_motion(raw, MOTION_TURN_RIGHT);
+      path_add_motion(path, MOTION_TURN_RIGHT);
       dir = maze_turn_right(dir);
     } else {
-      path_add_motion(raw, MOTION_UTURN);
+      path_add_motion(path, MOTION_UTURN);
       dir = maze_turn_back(dir);
     }
 
@@ -198,7 +200,6 @@ void path_make_known(int x, int y, direction_t dir, path_t *path)
     y = maze_next_y(y, dir);
   }
 
-  convert_to_big_turns(raw, path);
   path->end_x = x;
   path->end_y = y;
   path->end_dir = dir;

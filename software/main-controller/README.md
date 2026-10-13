@@ -158,7 +158,7 @@ sys（explore / mode / ...）
 | 5 | モータ PWM | `drv/motor.c` | `motor.c`（出力部分） | 未着手 |
 | 6 | 壁センサ（2組ずつ点灯） | `drv/wall.c`, `ctrl/wall_ctrl.c` | `PL_sensor.c`, `Wallsensor.c` | 未着手 |
 | 7 | 速度・角度制御（PID、フィードフォワード） | `ctrl/odometry.c`, `ctrl/pid.c`, `ctrl/trajectory.c`, `ctrl/run.c` | `motor.c`, `Move.c` | 未着手 |
-| 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | **迷路の処理は完了**（PC テスト済み）：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）、既知区間の経路と大回り・最短経路の斜め（`path.c`）、ダイクストラ（`dijkstra.c`）、未知壁探索（`search_find_unknown_wall`）。走りながら呼び出す部分（`sys/explore.c`）はステップ9 |
+| 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | **迷路の処理は完了**（PC テスト済み）：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）、既知区間の経路と大回り・最短経路の斜め（`path.c`）、ダイクストラ（`dijkstra.c`）、未知壁探索（`search_plan_unknown_walls` / `search_check_unknown_walls`）。2026-10-13 に KOGUMA の最新版（ダイクストラの不具合修正、既知区間は小回りだけ、ダイクストラは止まっているときだけ計算）に合わせた。走りながら呼び出す部分（`sys/explore.c`）はステップ9 |
 | 9 | 探索走行、走行モード、ログ、フェイルセーフ、保存 | `sys/explore.c`, `sys/mode.c`, `sys/ui.c`, `sys/log.c`, `sys/failsafe.c`, `sys/flash.c` | `main.c`, `UI.c`, `LOG.c`, `Failsafe.c` | 未着手 |
 
 ### KOGUMA のファイルとの対応

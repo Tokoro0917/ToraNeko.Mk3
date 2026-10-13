@@ -28,7 +28,7 @@ typedef enum {
   MOTION_TURN_LEFT,           /* 探索用の左ターン（小さいスラローム 90°）。1 区画の中で曲がる */
   MOTION_TURN_RIGHT,          /* 探索用の右ターン */
   MOTION_UTURN,               /* 区画の中で止まって 180° 回り、入ってきた辺から出る */
-  MOTION_BIG_TURN_LEFT_90,    /* 大回り左 90°。前後の直進を半区画ずつ使って大きく曲がる */
+  MOTION_BIG_TURN_LEFT_90,    /* 大回り左 90°。前後の直進を半区画ずつ使って大きく曲がる（最短経路だけで使う） */
   MOTION_BIG_TURN_RIGHT_90,   /* 大回り右 90° */
   MOTION_BIG_TURN_LEFT_180,   /* 大回り左 180°（左に 2 回続けて曲がるところ） */
   MOTION_BIG_TURN_RIGHT_180,  /* 大回り右 180° */
