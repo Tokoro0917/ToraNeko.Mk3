@@ -8,6 +8,7 @@ KOGUMA.MkIIl のコード（[../reference/koguma-mkiil/](../reference/koguma-mki
 - [PIN_REQUIREMENTS.md](PIN_REQUIREMENTS.md): 確定したピン割り当て（回路図から抽出）と、KOGUMA との違い
 - [CUBEMX_SETUP.md](CUBEMX_SETUP.md): CubeMX（`.ioc`）の設定値（ステップ0）
 - [KOGUMA_PORTING.md](KOGUMA_PORTING.md): KOGUMA のコードの棚卸し（使っている機能・使っていない機能）と、移植する／しないの判断
+- [MODES.md](MODES.md): 機体の操作（選ぶ・決める・スタート）、LED の表し方、モードの割り当て、迷路・ゴールの保存（ステップ9で作る）
 
 ## 決定事項
 
@@ -29,6 +30,7 @@ KOGUMA.MkIIl のコード（[../reference/koguma-mkiil/](../reference/koguma-mki
 | 割り込み優先度 | 壁センサの連鎖（ADC の DMA）> 制御周期（TIM11）> ログ送信（USART の DMA） | 制御処理が長引いてもセンサ測定が遅れないようにする |
 | ファイル構成・命名規則 | 下記「ファイル構成」「命名規則」の通り | 生成コードと自作コードを分離し、自作コードは層ごとにフォルダ分け |
 | KOGUMA からの移植方針 | 使っていない機能は持ち込まない | 関数・モード単位の棚卸しと判断は [KOGUMA_PORTING.md](KOGUMA_PORTING.md) |
+| 操作とモード | タイヤを回して選び、スイッチ SW1 で決定、前センサに手をかざして離すとスタート。モード0 探索（すべて吸引なし）、1 最短走行、2〜4 ターン単体テスト、5 センサの調整、6 基本調整、7 設定 | 2026-10-14 に決定。詳しくは [MODES.md](MODES.md)。ブザーはないので合図は LED |
 
 ## ファイル構成
 
@@ -81,7 +83,7 @@ software/main-controller/
     │   │   ├── battery.c/.h      バッテリ電圧の読み取り
     │   │   ├── fan.c/.h          吸引ファンの PWM
     │   │   ├── led.c/.h          UI 用 LED
-    │   │   ├── buzzer.c/.h       ブザー
+    │   │   ├── switch.c/.h       ユーザースイッチ SW1 の読み取り
     │   │   ├── spi_bus.c/.h      SPI 転送と CS 制御の共通部分（imu / encoder から使う）
     │   │   ├── timebase.c/.h     経過時間（ms は SysTick。µs は TIM5 で、ステップ2で追加する）とシステムクロックの取得
     │   │   └── uart.c/.h         ログ送信（DMA 送信・リングバッファ）。printf の出力先（`_write`）もここ
@@ -103,7 +105,7 @@ software/main-controller/
     │       ├── scheduler.c/.h    制御周期（2kHz）の処理（センサ → 制御 → 出力の順に呼ぶ）
     │       ├── explore.c/.h      探索走行：maze に次の行き先を聞き、run で 1 区画動かす（maze と ctrl をつなぐ唯一の場所）
     │       ├── mode.c/.h         走行モードの選択と実行（モード表）
-    │       ├── ui.c/.h           モード選択の操作、LED・ブザーでの通知
+    │       ├── ui.c/.h           モード選択の操作、LED での表示と合図（ブザーはない）
     │       ├── log.c/.h          走行ログの記録と吸い出し
     │       ├── failsafe.c/.h     異常の検知（衝突、電圧低下など）と停止
     │       └── flash.c/.h        迷路・パラメータの Flash への保存
@@ -159,7 +161,7 @@ sys（explore / mode / ...）
 | 6 | 壁センサ（2組ずつ点灯） | `drv/wall.c`, `ctrl/wall_ctrl.c` | `PL_sensor.c`, `Wallsensor.c` | 未着手 |
 | 7 | 速度・角度制御（PID、フィードフォワード） | `ctrl/odometry.c`, `ctrl/pid.c`, `ctrl/trajectory.c`, `ctrl/run.c` | `motor.c`, `Move.c` | 未着手 |
 | 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | **迷路の処理は完了**（PC テスト済み）：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）、既知区間の経路と大回り・最短経路の斜め（`path.c`）、ダイクストラ（`dijkstra.c`）、未知壁探索（`search_plan_unknown_walls` / `search_check_unknown_walls`）。2026-10-13 に KOGUMA の最新版（ダイクストラの不具合修正、既知区間は小回りだけ、ダイクストラは止まっているときだけ計算）に合わせた。ダイクストラは、KOGUMA と違い「同じ向きに続けて進む区間」ごとに広げて、いつも本当の最短を返すようにした（2026-10-14）。走りながら呼び出す部分（`sys/explore.c`）はステップ9 |
-| 9 | 探索走行、走行モード、ログ、フェイルセーフ、保存 | `sys/explore.c`, `sys/mode.c`, `sys/ui.c`, `sys/log.c`, `sys/failsafe.c`, `sys/flash.c` | `main.c`, `UI.c`, `LOG.c`, `Failsafe.c` | 未着手 |
+| 9 | 探索走行、走行モード、ログ、フェイルセーフ、保存 | `sys/explore.c`, `sys/mode.c`, `sys/ui.c`, `sys/log.c`, `sys/failsafe.c`, `sys/flash.c` | `main.c`, `UI.c`, `LOG.c`, `Failsafe.c` | 未着手。操作とモードは [MODES.md](MODES.md)、ログ・出力・フェイルセーフは [KOGUMA_PORTING.md](KOGUMA_PORTING.md) の B・F で決定済み |
 
 ### KOGUMA のファイルとの対応
 
@@ -174,7 +176,7 @@ sys（explore / mode / ...）
 | `Maze.c` | `maze/maze_map.c`、`maze/search.c`、`maze/path.c`、`maze/dijkstra.c` |
 | `PL_timer.c` | `sys/scheduler.c` |
 | `main.c`（モード選択部分） | `sys/mode.c`、`sys/explore.c` |
-| `UI.c` | `sys/ui.c`、`drv/led.c`、`drv/buzzer.c` |
+| `UI.c` | `sys/ui.c`、`drv/led.c`（ブザーの部分は持ち込まない） |
 | `LOG.c` | `sys/log.c` |
 | `Failsafe.c` | `sys/failsafe.c` |
 | `Define.h` | `config/robot_params.h`、`config/ctrl_gains.h` |
