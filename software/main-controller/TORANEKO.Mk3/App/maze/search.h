@@ -15,6 +15,7 @@
  *       UNKNOWN_WALL_FOUND ：見ていない壁がある。その手前の区画を目的地にして、壁を見るまで走る（止まらない）
  *       UNKNOWN_WALL_BLOCKED：経路の上に壁があった（ふさがれた）。次の区画で止まって計算し直す
  *       UNKNOWN_WALL_NONE  ：経路の壁を全部見た。その場で止まって path_make_shortest() で最短経路を計算する
+ *       UNKNOWN_WALL_NO_PLAN：経路を覚えていない。search_plan_unknown_walls() が false だった（ゴールへの道がない）など
  * U ターンするときも止まるので、そのときにも計算し直す。
  */
 #ifndef MAZE_SEARCH_H
@@ -32,6 +33,7 @@ typedef enum {
   UNKNOWN_WALL_FOUND,    /* 経路の上に見ていない壁がある */
   UNKNOWN_WALL_BLOCKED,  /* 経路の上に壁があった（経路がふさがれた）。止まって計算し直す */
   UNKNOWN_WALL_NONE,     /* 経路の壁を全部見た（未知壁探索は終わり） */
+  UNKNOWN_WALL_NO_PLAN,  /* 経路を覚えていない（計算していない、またはゴールへの道がなかった） */
 } unknown_wall_result_t;
 
 /* 次の動き */

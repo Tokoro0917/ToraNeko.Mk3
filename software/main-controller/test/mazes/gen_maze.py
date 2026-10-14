@@ -86,8 +86,10 @@ def make_maze(seed, goal_x, goal_y, goal_w, goal_h, loop_ratio):
             if in_goal(x + 1, y):
                 east[x][y] = False
 
-    # 4. スタート区画の東は必ず壁（規則）
+    # 4. スタート区画の東は必ず壁、北は必ず開いている（規則。東を閉じても閉じ込められないように北を開ける）
+    #    test_maze.c の make_random_true_maze() と同じ
     east[0][0] = True
+    north[0][0] = False
 
     # 5. スタートからゴールにたどり着けるか確かめる
     seen = [[False] * SIZE for _ in range(SIZE)]

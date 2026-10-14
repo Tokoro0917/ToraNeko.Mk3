@@ -354,21 +354,6 @@ static void convert_to_diagonal(path_t *src, path_t *dst)
  * 最短経路
  * ======================================================================== */
 
-/* 区画 (from_x, from_y) から隣の区画 (to_x, to_y) へ向かう向き */
-static direction_t direction_between(int from_x, int from_y, int to_x, int to_y)
-{
-  if (to_y > from_y) {
-    return DIR_NORTH;
-  }
-  if (to_y < from_y) {
-    return DIR_SOUTH;
-  }
-  if (to_x > from_x) {
-    return DIR_EAST;
-  }
-  return DIR_WEST;
-}
-
 /* 最短経路を作る（KOGUMA の Maze_Dijkstra_Calculation → Shortest_Pass_Compression → _NANAME）。
  *
  *   1. ダイクストラで、スタートからゴールまでの通る区画を探す（まだ見ていない壁は「ある」とみなす）
@@ -398,7 +383,7 @@ bool path_make_shortest(int goal_x, int goal_y, int goal_width, int goal_height,
     int y = dijkstra_get_route_y(i);
     int next_x = dijkstra_get_route_x(i + 1);
     int next_y = dijkstra_get_route_y(i + 1);
-    direction_t next_dir = direction_between(x, y, next_x, next_y);
+    direction_t next_dir = maze_direction_between(x, y, next_x, next_y);
 
     if (next_dir == dir) {
       path_add_straight(raw, 2);

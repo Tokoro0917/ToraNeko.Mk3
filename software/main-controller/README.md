@@ -15,7 +15,7 @@ KOGUMA.MkIIl のコード（[../reference/koguma-mkiil/](../reference/koguma-mki
 |---|---|---|
 | 書き込み・デバッグ | STLINK-V3MODS（SWD） | SWDIO=PA13, SWCLK=PA14, NRST。SWO（PB3）は任意 |
 | PCとの通信・printf | UART → STLINK-V3MODS の仮想COMポート | 書き込みとログがケーブル1本で済む。**USBは使わない**（PA11/PA12 を他用途に回せる） |
-| UART | USART1（PA9 TX / PA10 RX）を推奨 | APB2 側なので高速化しやすい。PA2/PA3（USART2）は ADC 入力と取り合いになるため避ける |
+| UART | USART1 の **TX だけ**（PA9） | APB2 側なので高速化しやすい。受信はしない。RX に使えるピン（PA10/PB7/PB3）は LED2・モータ・IMU で埋まっているので、CubeMX では Single Wire になる（PA9 は USER CODE 欄でプッシュプルにしている。[CUBEMX_SETUP.md](CUBEMX_SETUP.md) の 7） |
 | 開発環境 | **STM32CubeMX（コード生成、Toolchain = CMake）＋ VS Code（STM32Cube for Visual Studio Code 拡張）** | ピン・クロック設定は `.ioc`（CubeMX）で管理。ビルドは CMake + Ninja + arm-none-eabi-gcc なのでコマンドラインだけでビルドでき、CI や Claude の環境でもファームのビルドを確認できる。CubeIDE は使わない |
 | ビルド | `cmake --preset Debug && cmake --build --preset Debug` | CubeMX が生成する `CMakePresets.json` をそのまま使う。成果物は `build/Debug/TORANEKO.Mk3.elf` |
 | ライブラリ | STM32 HAL | 制御周期の割り込み内で重い箇所は、必要になったら LL/レジスタ直接に置き換える |
@@ -47,7 +47,7 @@ software/main-controller/
     │   ├── gcc-arm-none-eabi.cmake   ツールチェーン設定（生成）
     │   └── stm32cubemx/CMakeLists.txt  Core/・Drivers/ のソース一覧（再生成のたびに上書き。編集しない）
     ├── startup_stm32f411xe.s     スタートアップ（生成）
-    ├── STM32F411XX_FLASH.ld      リンカスクリプト（生成）
+    ├── STM32F411xx_FLASH.ld      リンカスクリプト（生成）
     │
     ├── Core/                     ── CubeMX が生成。USER CODE 欄以外は編集しない
     │   ├── Inc/
@@ -83,7 +83,7 @@ software/main-controller/
     │   │   ├── led.c/.h          UI 用 LED
     │   │   ├── buzzer.c/.h       ブザー
     │   │   ├── spi_bus.c/.h      SPI 転送と CS 制御の共通部分（imu / encoder から使う）
-    │   │   ├── timebase.c/.h     経過時間（ms は SysTick、µs は TIM5）とシステムクロックの取得
+    │   │   ├── timebase.c/.h     経過時間（ms は SysTick。µs は TIM5 で、ステップ2で追加する）とシステムクロックの取得
     │   │   └── uart.c/.h         ログ送信（DMA 送信・リングバッファ）。printf の出力先（`_write`）もここ
     │   │
     │   ├── ctrl/                 制御
@@ -158,7 +158,7 @@ sys（explore / mode / ...）
 | 5 | モータ PWM | `drv/motor.c` | `motor.c`（出力部分） | 未着手 |
 | 6 | 壁センサ（2組ずつ点灯） | `drv/wall.c`, `ctrl/wall_ctrl.c` | `PL_sensor.c`, `Wallsensor.c` | 未着手 |
 | 7 | 速度・角度制御（PID、フィードフォワード） | `ctrl/odometry.c`, `ctrl/pid.c`, `ctrl/trajectory.c`, `ctrl/run.c` | `motor.c`, `Move.c` | 未着手 |
-| 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | **迷路の処理は完了**（PC テスト済み）：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）、既知区間の経路と大回り・最短経路の斜め（`path.c`）、ダイクストラ（`dijkstra.c`）、未知壁探索（`search_plan_unknown_walls` / `search_check_unknown_walls`）。2026-10-13 に KOGUMA の最新版（ダイクストラの不具合修正、既知区間は小回りだけ、ダイクストラは止まっているときだけ計算）に合わせた。走りながら呼び出す部分（`sys/explore.c`）はステップ9 |
+| 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | **迷路の処理は完了**（PC テスト済み）：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）、既知区間の経路と大回り・最短経路の斜め（`path.c`）、ダイクストラ（`dijkstra.c`）、未知壁探索（`search_plan_unknown_walls` / `search_check_unknown_walls`）。2026-10-13 に KOGUMA の最新版（ダイクストラの不具合修正、既知区間は小回りだけ、ダイクストラは止まっているときだけ計算）に合わせた。ダイクストラは、KOGUMA と違い「同じ向きに続けて進む区間」ごとに広げて、いつも本当の最短を返すようにした（2026-10-14）。走りながら呼び出す部分（`sys/explore.c`）はステップ9 |
 | 9 | 探索走行、走行モード、ログ、フェイルセーフ、保存 | `sys/explore.c`, `sys/mode.c`, `sys/ui.c`, `sys/log.c`, `sys/failsafe.c`, `sys/flash.c` | `main.c`, `UI.c`, `LOG.c`, `Failsafe.c` | 未着手 |
 
 ### KOGUMA のファイルとの対応

@@ -24,7 +24,14 @@ jobs:
       - name: ビルド (Debug)
         run: |
           cmake --preset Debug
-          cmake --build --preset Debug
+          cmake --build --preset Debug 2>&1 | tee build.log
+
+      - name: 警告がないこと（CLAUDE.md のルール。警告が 1 つでもあれば失敗にする）
+        run: |
+          if grep -q "warning:" build.log; then
+            grep "warning:" build.log
+            exit 1
+          fi
 
       - name: サイズ
         run: arm-none-eabi-size build/Debug/TORANEKO.Mk3.elf

@@ -41,13 +41,7 @@ void search_set_target(int x, int y, int width, int height)
 /* (x, y) が目的地の範囲の中か */
 bool search_is_in_target(int x, int y)
 {
-  if (x < s_target_x || x >= s_target_x + s_target_width) {
-    return false;
-  }
-  if (y < s_target_y || y >= s_target_y + s_target_height) {
-    return false;
-  }
-  return true;
+  return maze_is_in_area(x, y, s_target_x, s_target_y, s_target_width, s_target_height);
 }
 
 /* (x, y) から向き dir へ進めるか（足立法なので、まだ見ていない壁は通れるとみなす） */
@@ -194,16 +188,7 @@ bool search_plan_unknown_walls(int goal_x, int goal_y, int goal_width, int goal_
 /* 覚えた経路の i 番目の区画から i+1 番目の区画へ向かう向き */
 static direction_t plan_direction(int i)
 {
-  if (s_plan_y[i + 1] > s_plan_y[i]) {
-    return DIR_NORTH;
-  }
-  if (s_plan_y[i + 1] < s_plan_y[i]) {
-    return DIR_SOUTH;
-  }
-  if (s_plan_x[i + 1] > s_plan_x[i]) {
-    return DIR_EAST;
-  }
-  return DIR_WEST;
+  return maze_direction_between(s_plan_x[i], s_plan_y[i], s_plan_x[i + 1], s_plan_y[i + 1]);
 }
 
 /* 覚えた経路の壁を見直す（KOGUMA の Maze_Unknown_Wall_Scan と Maze_Unknown_Wall_Is_Wall）。軽いので、走りながら呼んでよい。
@@ -213,9 +198,15 @@ static direction_t plan_direction(int i)
  *   2. そうでなく、「まだ見ていない」壁があれば UNKNOWN_WALL_FOUND。スタート側から見て最初の 1 枚について、
  *      手前の区画を (cell_x, cell_y) に、その区画から見た壁の向きを wall_dir に入れる。
  *      その区画まで行けば、センサでその壁を見られる（まだ入ったことのない区画なので、入ると前・左・右の壁を見る）
- *   3. どちらでもなければ UNKNOWN_WALL_NONE（経路の壁は全部見てあり、全部なかった）。 */
+ *   3. どちらでもなければ UNKNOWN_WALL_NONE（経路の壁は全部見てあり、全部なかった）。
+ * 経路を覚えていなければ UNKNOWN_WALL_NO_PLAN（「全部見た」と区別するため）。 */
 unknown_wall_result_t search_check_unknown_walls(int *cell_x, int *cell_y, direction_t *wall_dir)
 {
+  /* 0. 経路を覚えていない（search_plan_unknown_walls をまだ呼んでいないか、ゴールへの道がなかった） */
+  if (s_plan_length == 0) {
+    return UNKNOWN_WALL_NO_PLAN;
+  }
+
   /* 1. ふさがれていないか */
   for (int i = 0; i + 1 < s_plan_length; i++) {
     if (maze_map_get_wall(s_plan_x[i], s_plan_y[i], plan_direction(i)) == WALL_EXIST) {

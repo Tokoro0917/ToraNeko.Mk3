@@ -40,22 +40,41 @@ void maze_map_init(void)
   s_visited[0][0] = true;
 }
 
-/* 壁の状態を書き込む。隣の区画から見た同じ壁も一緒に書き込む */
+/* (x, y) の dir 側の壁が、規則で必ずある壁か（外周と、スタート区画の東の壁） */
+static bool is_fixed_wall(int x, int y, direction_t dir)
+{
+  int next_x = maze_next_x(x, dir);
+  int next_y = maze_next_y(y, dir);
+  if (!maze_is_inside(next_x, next_y)) {
+    return true;  /* 外周 */
+  }
+  if (x == 0 && y == 0 && dir == DIR_EAST) {
+    return true;  /* スタート区画の東 */
+  }
+  if (x == 1 && y == 0 && dir == DIR_WEST) {
+    return true;  /* 同じ壁を (1,0) から見たもの */
+  }
+  return false;
+}
+
+/* 壁の状態を書き込む。隣の区画から見た同じ壁も一緒に書き込む。
+ * 規則で必ずある壁（外周、スタート区画の東）は、何を書き込もうとしても「あり」のまま */
 void maze_map_set_wall(int x, int y, direction_t dir, wall_state_t state)
 {
   if (!maze_is_inside(x, y)) {
     return;
   }
 
-  int next_x = maze_next_x(x, dir);
-  int next_y = maze_next_y(y, dir);
-  if (!maze_is_inside(next_x, next_y)) {
-    /* 外周の壁。センサの読み間違いで消えないように、いつでも「あり」にする */
-    s_walls[x][y][dir] = WALL_EXIST;
-    return;
+  if (is_fixed_wall(x, y, dir)) {
+    state = WALL_EXIST;
   }
 
+  int next_x = maze_next_x(x, dir);
+  int next_y = maze_next_y(y, dir);
   s_walls[x][y][dir] = state;
+  if (!maze_is_inside(next_x, next_y)) {
+    return;  /* 外周なので、隣の区画はない */
+  }
   /* 隣の区画から見ると、同じ壁は反対向きになる */
   s_walls[next_x][next_y][maze_turn_back(dir)] = state;
 }
@@ -69,6 +88,21 @@ wall_state_t maze_map_get_wall(int x, int y, direction_t dir)
   return s_walls[x][y][dir];
 }
 
+/* センサで見た 1 枚の壁を記録する（KOGUMA と同じく、壁は足すだけで消さない）。
+ *   - 壁が見えた           → 「あり」にする
+ *   - 壁が見えなかった     → まだ見ていなかった壁だけ「なし」にする。
+ *                             すでに「あり」の壁は、1 回の読み間違いで消えないようにそのままにする */
+static void record_one_wall(int x, int y, direction_t dir, bool wall_seen)
+{
+  if (wall_seen) {
+    maze_map_set_wall(x, y, dir, WALL_EXIST);
+    return;
+  }
+  if (maze_map_get_wall(x, y, dir) == WALL_UNKNOWN) {
+    maze_map_set_wall(x, y, dir, WALL_NONE);
+  }
+}
+
 /* 区画 (x, y) に向き dir で入ったときに、センサで見た前・左・右の壁を記録する。
  * 後ろの壁は、通ってきたところなので記録済み（1 つ前の区画で「前の壁なし」として書いている） */
 void maze_map_record_walls(int x, int y, direction_t dir, bool wall_front, bool wall_left, bool wall_right)
@@ -77,23 +111,9 @@ void maze_map_record_walls(int x, int y, direction_t dir, bool wall_front, bool 
     return;
   }
 
-  if (wall_front) {
-    maze_map_set_wall(x, y, dir, WALL_EXIST);
-  } else {
-    maze_map_set_wall(x, y, dir, WALL_NONE);
-  }
-
-  if (wall_left) {
-    maze_map_set_wall(x, y, maze_turn_left(dir), WALL_EXIST);
-  } else {
-    maze_map_set_wall(x, y, maze_turn_left(dir), WALL_NONE);
-  }
-
-  if (wall_right) {
-    maze_map_set_wall(x, y, maze_turn_right(dir), WALL_EXIST);
-  } else {
-    maze_map_set_wall(x, y, maze_turn_right(dir), WALL_NONE);
-  }
+  record_one_wall(x, y, dir, wall_front);
+  record_one_wall(x, y, maze_turn_left(dir), wall_left);
+  record_one_wall(x, y, maze_turn_right(dir), wall_right);
 
   s_visited[x][y] = true;
 }
@@ -117,6 +137,33 @@ bool maze_is_inside(int x, int y)
     return false;
   }
   return true;
+}
+
+/* (x, y) が、左下 (area_x, area_y)・幅 width・高さ height の長方形の中か（ゴールの範囲などに使う） */
+bool maze_is_in_area(int x, int y, int area_x, int area_y, int width, int height)
+{
+  if (x < area_x || x >= area_x + width) {
+    return false;
+  }
+  if (y < area_y || y >= area_y + height) {
+    return false;
+  }
+  return true;
+}
+
+/* 隣り合う区画 (from_x, from_y) から (to_x, to_y) へ向かう向き */
+direction_t maze_direction_between(int from_x, int from_y, int to_x, int to_y)
+{
+  if (to_y > from_y) {
+    return DIR_NORTH;
+  }
+  if (to_y < from_y) {
+    return DIR_SOUTH;
+  }
+  if (to_x > from_x) {
+    return DIR_EAST;
+  }
+  return DIR_WEST;
 }
 
 /* 向き dir に 1 区画進んだときの x */

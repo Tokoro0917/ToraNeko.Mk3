@@ -12,6 +12,7 @@
  *      見に行く壁がなくなったらその場で止まって最短経路を計算し、全部の壁を知っているときと
  *      同じ速さの最短経路になるか
  *   7. ランダムな迷路（たくさん）：全部の壁を知っているときの最短経路が、どれも壁を通らずにゴールに着くか
+ *   8. ダイクストラの答えが本当の最短か：時間はかかるが確実な方法（総当たりに近い計算）で求めたコストと比べる
  *   5. 最短経路（path_make_shortest）：何もない迷路と、探索したあとの迷路で、
  *      大回り・斜めを使った経路が壁を通らずにゴールに着くか
  *   4. 探索のシミュレーション：テスト用の迷路（mazes フォルダの .txt）を、壁を知らない状態から
@@ -27,6 +28,10 @@
 #include "maze/maze_map.h"
 #include "maze/path.h"
 #include "maze/search.h"
+
+/* ダイクストラの中だけで使う関数（move_from など）を、8 のテストで使うため、dijkstra.c をファイルごと取り込む。
+ * そのため Makefile では dijkstra.c を別にコンパイルしない */
+#include "maze/dijkstra.c"
 
 /* ---------------------------------------------------------------------------
  * テスト結果の数え方
@@ -91,10 +96,18 @@ static bool load_maze_file(const char *path)
       s_true_wall[x][y][DIR_EAST] = (lines[cell_row][cell_col + 2] == '|');
 
       if (lines[cell_row][cell_col] == 'G') {
-        if (x < goal_min_x) { goal_min_x = x; }
-        if (y < goal_min_y) { goal_min_y = y; }
-        if (x > goal_max_x) { goal_max_x = x; }
-        if (y > goal_max_y) { goal_max_y = y; }
+        if (x < goal_min_x) {
+          goal_min_x = x;
+        }
+        if (y < goal_min_y) {
+          goal_min_y = y;
+        }
+        if (x > goal_max_x) {
+          goal_max_x = x;
+        }
+        if (y > goal_max_y) {
+          goal_max_y = y;
+        }
       }
     }
   }
@@ -137,6 +150,19 @@ static void test_maze_map(void)
   maze_map_set_wall(0, 0, DIR_WEST, WALL_NONE);
   check(maze_map_get_wall(0, 0, DIR_WEST) == WALL_EXIST, "外周の壁は消えない");
 
+  /* スタート区画の東の壁（規則で必ずある）も消せない */
+  maze_map_set_wall(0, 0, DIR_EAST, WALL_NONE);
+  check(maze_map_get_wall(0, 0, DIR_EAST) == WALL_EXIST, "スタートの東の壁は消えない");
+  check(maze_map_get_wall(1, 0, DIR_WEST) == WALL_EXIST, "(1,0) から見たスタートの東の壁も消えない");
+
+  /* センサで見た壁は足すだけで、1 回「見えなかった」だけでは消えない（KOGUMA と同じ） */
+  maze_map_record_walls(3, 3, DIR_NORTH, true, false, false);
+  check(maze_map_get_wall(3, 3, DIR_NORTH) == WALL_EXIST, "見えた前の壁は「あり」");
+  check(maze_map_get_wall(3, 3, DIR_WEST) == WALL_NONE, "見えなかった左の壁は「なし」");
+  maze_map_record_walls(3, 3, DIR_NORTH, false, true, false);
+  check(maze_map_get_wall(3, 3, DIR_NORTH) == WALL_EXIST, "一度見えた壁は、あとで見えなくても消えない");
+  check(maze_map_get_wall(3, 3, DIR_WEST) == WALL_EXIST, "「なし」だった壁も、あとで見えたら「あり」になる");
+
   /* 向きを変える */
   check(maze_turn_left(DIR_NORTH) == DIR_WEST, "北の左は西");
   check(maze_turn_right(DIR_WEST) == DIR_NORTH, "西の右は北");
@@ -168,6 +194,16 @@ static void test_step_map(void)
   /* 歩数が小さい方へ進む。同じなら 前 → 左 → 右 の順 */
   check(search_decide_action(3, 0, DIR_NORTH) == ACTION_FORWARD, "前が近ければ直進");
   check(search_decide_action(0, 2, DIR_NORTH) == ACTION_TURN_RIGHT, "右が近ければ右");
+
+  /* 未知壁探索の経路を計算していないときは「全部見た」ではなく「経路がない」 */
+  int cell_x;
+  int cell_y;
+  direction_t wall_dir;
+  maze_map_init();
+  maze_map_set_wall(0, 0, DIR_NORTH, WALL_EXIST);
+  check(!search_plan_unknown_walls(10, 10, 1, 1), "閉じ込められていたら未知壁探索の経路は計算できない");
+  check(search_check_unknown_walls(&cell_x, &cell_y, &wall_dir) == UNKNOWN_WALL_NO_PLAN,
+        "経路が計算できなかったら UNKNOWN_WALL_NO_PLAN（「全部見た」と区別する）");
 
   /* 囲まれていてたどり着けないときは止まる */
   maze_map_init();
@@ -446,7 +482,7 @@ static bool replay_path(const path_t *path, int x, int y, direction_t dir, bool 
       }
       break;
     case MOTION_DIAG_STRAIGHT:
-      for (int k = 0; k < path->steps[i].half_count && ok; k++) {
+      for (int turn_count = 0; turn_count < path->steps[i].half_count && ok; turn_count++) {
         if (last_turn_left) {
           ok = replay_turn(&x, &y, &dir, ACTION_TURN_RIGHT);
           last_turn_left = false;
@@ -653,6 +689,7 @@ static void explore_round_trip(bool use_known_path, int *moves_to_goal, int *mov
   check(count_wrong_walls() == 0, "記録した壁が本当の迷路と同じ");
 }
 
+/* 迷路ファイルの迷路を、1 区画ずつ探索した場合と、既知区間をまとめて走った場合で比べる */
 static void test_explore(const char *file_path)
 {
   printf("[4] 探索のシミュレーション: %s\n", file_path);
@@ -778,6 +815,7 @@ static void check_shortest(const char *name)
   check(is_in_goal(s_path.end_x, s_path.end_y), "最短経路の終わりはゴールの中");
 }
 
+/* 中に壁がない迷路で、最短経路が斜めを使うかを調べる */
 static void test_shortest_open(void)
 {
   printf("[5] 最短経路：中に壁がない迷路で、(0,0) → (6,6)\n");
@@ -800,6 +838,7 @@ static void test_shortest_open(void)
         "何も見ていない迷路では最短経路は見つからない");
 }
 
+/* 迷路ファイルの迷路で、探索のあとと、全部の壁を知っているときの最短経路を調べる */
 static void test_shortest_maze(const char *file_path)
 {
   printf("[5] 最短経路: %s\n", file_path);
@@ -829,7 +868,8 @@ static bool run_unknown_wall_flow(bool verbose)
 {
   /* 全部の壁を知っているときの最短経路のコスト（これが目標） */
   copy_true_maze_to_map();
-  dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+  bool found_best = dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+  check(found_best, "全部の壁を知っているとき、ゴールへの道がある");
   int best_cost = dijkstra_get_route_cost();
 
   /* 1. 行き：スタート → ゴール */
@@ -841,14 +881,15 @@ static bool run_unknown_wall_flow(bool verbose)
   int moves_to_goal = run_to_target(&x, &y, &dir, true);
   check(moves_to_goal >= 0, "ゴールに着く");
 
-  dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+  bool found_after_goal = dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+  check(found_after_goal, "ゴールに着いた時点で、見た壁だけでゴールへの道がある");
   int cost_after_goal = dijkstra_get_route_cost();
 
   /* 2. ゴールで止まって、未知壁探索の経路を計算する（ダイクストラは止まっているときだけ） */
-  int plan_count = 1;   /* 止まってダイクストラを計算した回数 */
+  int plan_count = 1;     /* 止まってダイクストラを計算した回数 */
   int blocked_count = 0;  /* そのうち、経路がふさがれたため */
   int uturn_count = 0;    /* そのうち、U ターンのついで */
-  search_plan_unknown_walls(s_goal_x, s_goal_y, s_goal_width, s_goal_height);
+  check(search_plan_unknown_walls(s_goal_x, s_goal_y, s_goal_width, s_goal_height), "ゴールで未知壁探索の経路を計算できる");
 
   /* 3. 経路の上の見ていない壁を、なくなるまで見に行く */
   int wall_count = 0;
@@ -865,6 +906,10 @@ static bool run_unknown_wall_flow(bool verbose)
     unknown_wall_result_t result = search_check_unknown_walls(&cell_x, &cell_y, &wall_dir);
     if (result == UNKNOWN_WALL_NONE) {
       break;  /* 経路の壁を全部見た */
+    }
+    if (result == UNKNOWN_WALL_NO_PLAN) {
+      check(false, "未知壁探索の経路がない");
+      break;
     }
     if (result == UNKNOWN_WALL_BLOCKED) {
       /* 経路がふさがれた：止まって計算し直す */
@@ -903,7 +948,9 @@ static bool run_unknown_wall_flow(bool verbose)
 
   /* 4. 見に行く壁がなくなったら、その場で止まって最短経路を計算する
    *    （走りながら計算しない。計算が終わってから動き出す） */
-  if (verbose) printf("  見に行く壁がなくなった：(%d,%d) で止まって最短経路を計算する\n", x, y);
+  if (verbose) {
+    printf("  見に行く壁がなくなった：(%d,%d) で止まって最短経路を計算する\n", x, y);
+  }
   static path_t s_shortest;
   bool found = path_make_shortest(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &s_shortest);
   check(found, "止まった場所で最短経路を計算できる");
@@ -917,17 +964,25 @@ static bool run_unknown_wall_flow(bool verbose)
 
   /* 結果：止まった場所で計算した最短経路が、全部の壁を知っているときと同じ速さか。
    * 帰りに新しい壁を見ても、最短経路は変わらない（もう一度計算して確かめる） */
-  dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+  bool found_after_return = dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+  check(found_after_return, "帰ったあとも、ゴールへの道がある");
   check(dijkstra_get_route_cost() == cost_final, "帰りに壁を見ても、止まった場所で計算した最短経路は変わらない");
-  if (verbose) printf("  ゴールに着いた時点の最短経路のコスト %d → 止まった場所で計算 %d（全部の壁を知っているとき %d）\n",
-         cost_after_goal, cost_final, best_cost);
-  if (verbose) printf("  見に行った壁 %d 枚、そのために進んだ区画 %d（既知区間でまとめて走った分を除く）\n",
-         wall_count, moves_for_walls);
-  if (verbose) printf("  止まってダイクストラを計算した回数 %d（ゴール 1、経路がふさがれた %d、U ターンのついで %d）\n",
-         plan_count, blocked_count, uturn_count);
+  if (verbose) {
+    printf("  ゴールに着いた時点の最短経路のコスト %d → 止まった場所で計算 %d（全部の壁を知っているとき %d）\n",
+           cost_after_goal, cost_final, best_cost);
+  }
+  if (verbose) {
+    printf("  見に行った壁 %d 枚、そのために進んだ区画 %d（既知区間でまとめて走った分を除く）\n",
+           wall_count, moves_for_walls);
+  }
+  if (verbose) {
+    printf("  止まってダイクストラを計算した回数 %d（ゴール 1、経路がふさがれた %d、U ターンのついで %d）\n",
+           plan_count, blocked_count, uturn_count);
+  }
   return cost_final == best_cost;
 }
 
+/* 迷路ファイルの迷路で、未知壁探索の流れを調べる */
 static void test_unknown_wall_explore(const char *file_path)
 {
   printf("[6] 未知壁探索: %s\n", file_path);
@@ -1042,13 +1097,14 @@ static void make_random_true_maze(void)
   open_true_wall(0, 0, DIR_NORTH);
 }
 
+/* ランダムな迷路 maze_count 個で、全部の壁を知っているときの最短経路が走れるかを調べる */
 static void test_random_mazes(int maze_count)
 {
   printf("[7] ランダムな迷路 %d 個で、全部の壁を知っているときの最短経路\n", maze_count);
   static path_t s_path;
   int fail_count = 0;
-  for (int n = 0; n < maze_count; n++) {
-    s_random_seed = (unsigned int)(n + 1);
+  for (int maze_index = 0; maze_index < maze_count; maze_index++) {
+    s_random_seed = (unsigned int)(maze_index + 1);
     make_random_true_maze();
     copy_true_maze_to_map();
     bool found = path_make_shortest(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &s_path);
@@ -1062,7 +1118,7 @@ static void test_random_mazes(int maze_count)
     if (!ok) {
       fail_count = fail_count + 1;
       if (fail_count <= 3) {
-        printf("  迷路 %d 番（乱数の種 %d）で失敗\n", n, n + 1);
+        printf("  迷路 %d 番（乱数の種 %d）で失敗\n", maze_index, maze_index + 1);
       }
     }
   }
@@ -1070,12 +1126,13 @@ static void test_random_mazes(int maze_count)
   check(fail_count == 0, "ランダムな迷路の最短経路が、どれも壁を通らずにゴールに着く");
 }
 
+/* ランダムな迷路 maze_count 個で、未知壁探索のあとの最短経路が、全部の壁を知っているときと同じ速さかを調べる */
 static void test_unknown_wall_random(int maze_count)
 {
   printf("[6] 未知壁探索：ランダムな迷路 %d 個\n", maze_count);
   int fail_count = 0;
-  for (int n = 0; n < maze_count; n++) {
-    s_random_seed = (unsigned int)(n + 10001);
+  for (int maze_index = 0; maze_index < maze_count; maze_index++) {
+    s_random_seed = (unsigned int)(maze_index + 10001);
     make_random_true_maze();
     if (!run_unknown_wall_flow(false)) {
       fail_count = fail_count + 1;
@@ -1083,6 +1140,208 @@ static void test_unknown_wall_random(int maze_count)
   }
   printf("  全部の壁を知っているときより遅い最短経路になった迷路: %d 個\n", fail_count);
   check(fail_count == 0, "ランダムな迷路でも、未知壁探索のあとの最短経路は全部の壁を知っているときと同じ速さ");
+}
+
+/* ---------------------------------------------------------------------------
+ * 8. ダイクストラの答えが本当の最短かのテスト
+ * ------------------------------------------------------------------------- */
+
+#define REF_COST_MAX 1000000  /* まだたどり着いていない */
+
+/* 確認用の計算で使う、状態「点 + その点に来た向き（8 方向）」ごとのコスト [横の壁か][x][y][向き] */
+static int s_ref_cost[2][MAZE_SIZE + 1][MAZE_SIZE + 1][8];
+
+/* 確認用：ダイクストラとは別のやり方で、本当の最短のコストを求める。
+ * 状態に「来た向き」まで含め、コストが変わらなくなるまで全部の状態を何度も見直す（遅いが確実）。
+ * まだ見ていない壁は「ある」とみなす。道がなければ REF_COST_MAX */
+static int calc_reference_cost(int goal_x, int goal_y, int goal_width, int goal_height)
+{
+  for (int row = 0; row < 2; row++) {
+    for (int x = 0; x <= MAZE_SIZE; x++) {
+      for (int y = 0; y <= MAZE_SIZE; y++) {
+        for (int i = 0; i < 8; i++) {
+          s_ref_cost[row][x][y][i] = REF_COST_MAX;
+        }
+      }
+    }
+  }
+
+  /* ゴールの入口を、ゴールから外へ向かう向きでコスト 0 にする（dijkstra.c の add_goal_entrance と同じ） */
+  for (int x = goal_x; x < goal_x + goal_width; x++) {
+    for (int y = goal_y; y < goal_y + goal_height; y++) {
+      for (int i = 0; i < 4; i++) {
+        direction_t dir = (direction_t)i;
+        if (maze_is_in_area(maze_next_x(x, dir), maze_next_y(y, dir), goal_x, goal_y, goal_width, goal_height)) {
+          continue;
+        }
+        edge_t edge;
+        dir8_t outward;
+        if (dir == DIR_NORTH) {
+          edge = make_edge(true, x, y + 1);
+          outward = DIR8_NORTH;
+        } else if (dir == DIR_SOUTH) {
+          edge = make_edge(true, x, y);
+          outward = DIR8_SOUTH;
+        } else if (dir == DIR_EAST) {
+          edge = make_edge(false, x + 1, y);
+          outward = DIR8_EAST;
+        } else {
+          edge = make_edge(false, x, y);
+          outward = DIR8_WEST;
+        }
+        if (is_open(edge, true)) {
+          s_ref_cost[edge.is_row][edge.x][edge.y][outward] = 0;
+        }
+      }
+    }
+  }
+
+  /* コストが変わらなくなるまで見直す */
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (int row = 0; row < 2; row++) {
+      for (int x = 0; x <= MAZE_SIZE; x++) {
+        for (int y = 0; y <= MAZE_SIZE; y++) {
+          for (int i = 0; i < 8; i++) {
+            int cost = s_ref_cost[row][x][y][i];
+            if (cost == REF_COST_MAX) {
+              continue;
+            }
+            dir8_t came_dir = (dir8_t)i;
+            edge_t from = make_edge(row == 1, x, y);
+            direction_t crossing = crossing_after(from, came_dir);
+            for (int j = 0; j < 8; j++) {
+              dir8_t dir = (dir8_t)j;
+              if (!is_forward_move(crossing, dir)) {
+                continue;
+              }
+              edge_t to;
+              int cell_x;
+              int cell_y;
+              if (!move_from(from, dir, &to, &cell_x, &cell_y)) {
+                continue;
+              }
+              if (!maze_is_inside(cell_x, cell_y) || !is_open(to, true)) {
+                continue;
+              }
+              int step_cost;
+              if (dir == came_dir) {
+                step_cost = COST_CONTINUE;
+              } else if (is_orthogonal(dir)) {
+                step_cost = COST_STRAIGHT;
+              } else {
+                step_cost = COST_DIAGONAL;
+              }
+              if (cost + step_cost < s_ref_cost[to.is_row][to.x][to.y][dir]) {
+                s_ref_cost[to.is_row][to.x][to.y][dir] = cost + step_cost;
+                changed = true;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /* スタートの区画の北の壁を、ゴール側から見て南向き（南・南東・南西）に通る状態のうち、いちばん安いもの */
+  int best = s_ref_cost[1][0][1][DIR8_SOUTH];
+  if (s_ref_cost[1][0][1][DIR8_SOUTH_EAST] < best) {
+    best = s_ref_cost[1][0][1][DIR8_SOUTH_EAST];
+  }
+  if (s_ref_cost[1][0][1][DIR8_SOUTH_WEST] < best) {
+    best = s_ref_cost[1][0][1][DIR8_SOUTH_WEST];
+  }
+  return best;
+}
+
+/* 区画に向き heading_in で入り、向き heading_out で出るときの、点から点への向き（8 方向）。
+ * 同じなら縦横の向き、違えば 2 つを合わせた斜めの向き（例：北から入って東へ出るなら北東） */
+static dir8_t hop_direction(direction_t heading_in, direction_t heading_out)
+{
+  bool north = (heading_in == DIR_NORTH || heading_out == DIR_NORTH);
+  bool south = (heading_in == DIR_SOUTH || heading_out == DIR_SOUTH);
+  bool east = (heading_in == DIR_EAST || heading_out == DIR_EAST);
+  bool west = (heading_in == DIR_WEST || heading_out == DIR_WEST);
+  if (north && east) {
+    return DIR8_NORTH_EAST;
+  }
+  if (north && west) {
+    return DIR8_NORTH_WEST;
+  }
+  if (south && east) {
+    return DIR8_SOUTH_EAST;
+  }
+  if (south && west) {
+    return DIR8_SOUTH_WEST;
+  }
+  if (north) {
+    return DIR8_NORTH;
+  }
+  if (south) {
+    return DIR8_SOUTH;
+  }
+  if (east) {
+    return DIR8_EAST;
+  }
+  return DIR8_WEST;
+}
+
+/* dijkstra_find_route() が返した区画の並びを実際にたどったときのコストを、区画の並びから数え直す。
+ * コストはゴール側から数える（ゴールに入る向きにそのまま進むところは COST_CONTINUE） */
+static int count_route_cost(void)
+{
+  int length = dijkstra_get_route_length();
+  int last = length - 1;  /* ゴールの区画の番号 */
+  direction_t into_goal = maze_direction_between(dijkstra_get_route_x(last - 1), dijkstra_get_route_y(last - 1),
+                                                 dijkstra_get_route_x(last), dijkstra_get_route_y(last));
+  dir8_t previous = hop_direction(into_goal, into_goal);
+  int cost = 0;
+  /* スタートの区画（0 番）とゴールの区画（last 番）の間の区画を、ゴール側から順に */
+  for (int i = last - 1; i >= 1; i--) {
+    direction_t heading_in = maze_direction_between(dijkstra_get_route_x(i - 1), dijkstra_get_route_y(i - 1),
+                                                    dijkstra_get_route_x(i), dijkstra_get_route_y(i));
+    direction_t heading_out = maze_direction_between(dijkstra_get_route_x(i), dijkstra_get_route_y(i),
+                                                     dijkstra_get_route_x(i + 1), dijkstra_get_route_y(i + 1));
+    dir8_t hop = reverse_dir8(hop_direction(heading_in, heading_out));  /* ゴール側から見た向き */
+    if (hop == reverse_dir8(previous)) {
+      cost = cost + COST_CONTINUE;
+    } else if (is_orthogonal(hop)) {
+      cost = cost + COST_STRAIGHT;
+    } else {
+      cost = cost + COST_DIAGONAL;
+    }
+    previous = reverse_dir8(hop);
+  }
+  return cost;
+}
+
+/* ランダムな迷路 maze_count 個で、ダイクストラの答えのコストが本当の最短と同じか、
+ * 返した区画の並びのコストが報告したコストと同じかを調べる */
+static void test_dijkstra_exact(int maze_count)
+{
+  printf("[8] ダイクストラの答えが本当の最短か：ランダムな迷路 %d 個\n", maze_count);
+  int not_shortest_count = 0;
+  int wrong_cost_count = 0;
+  for (int maze_index = 0; maze_index < maze_count; maze_index++) {
+    s_random_seed = (unsigned int)(maze_index + 20001);
+    make_random_true_maze();
+    copy_true_maze_to_map();
+    if (!dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true)) {
+      not_shortest_count = not_shortest_count + 1;
+      continue;
+    }
+    if (dijkstra_get_route_cost() != calc_reference_cost(s_goal_x, s_goal_y, s_goal_width, s_goal_height)) {
+      not_shortest_count = not_shortest_count + 1;
+    }
+    if (dijkstra_get_route_cost() != count_route_cost()) {
+      wrong_cost_count = wrong_cost_count + 1;
+    }
+  }
+  printf("  本当の最短でなかった迷路: %d 個、返した道のコストと報告したコストが違った迷路: %d 個\n",
+         not_shortest_count, wrong_cost_count);
+  check(not_shortest_count == 0, "ダイクストラの答えは本当の最短");
+  check(wrong_cost_count == 0, "返した道のコストと、報告したコストが同じ");
 }
 
 /* ---------------------------------------------------------------------------
@@ -1103,6 +1362,7 @@ int main(void)
   test_unknown_wall_explore("mazes/maze32_offset3x3.txt");
   test_random_mazes(2000);
   test_unknown_wall_random(300);
+  test_dijkstra_exact(500);
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");
