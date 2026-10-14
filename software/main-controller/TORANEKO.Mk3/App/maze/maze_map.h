@@ -38,6 +38,12 @@ wall_state_t maze_map_get_wall(int x, int y, direction_t dir);
 void maze_map_record_walls(int x, int y, direction_t dir, bool wall_front, bool wall_left, bool wall_right);
 bool maze_map_is_visited(int x, int y);
 
+/* フェイルセーフで止まったときに戻す区画の数（MODES.md の 5） */
+#define MAZE_UNDO_CELL_COUNT 5
+
+void maze_map_undo_recent_cells(void);
+void maze_map_clear_recent_cells(void);
+
 bool maze_is_inside(int x, int y);
 bool maze_is_in_area(int x, int y, int area_x, int area_y, int width, int height);
 direction_t maze_direction_between(int from_x, int from_y, int to_x, int to_y);

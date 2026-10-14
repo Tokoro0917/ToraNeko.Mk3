@@ -100,7 +100,7 @@ KOGUMA のモード表（[reference README](../reference/koguma-mkiil/README.md)
 
 **ToraNeko のモード表**：2026-10-14 に、操作・LED の表し方と一緒に話し合って決め直した（モード0 探索、1 最短走行、2 探索のターン調整、3 最短走行のターン調整、4 空き、5 センサ（値の表示と調整）、6 基本調整、7 出力と設定）。中身は [MODES.md](MODES.md) を参照。
 
-**最新の KOGUMA のモード0との対応**（ToraNeko の `sys/explore.c` も、KOGUMA と同じく「フラグの組み合わせ」で探索の種類を選ぶ形にする）
+**最新の KOGUMA のモード0との対応**（ToraNeko は走り方が 3 つだけなので、フラグの組み合わせではなく、`sys/explore.h` の `explore_type_t`（往復・片道・未知壁探索）で選ぶ）
 
 | 古い番号（上の表） | 最新の番号 | フラグ | ToraNeko |
 |---|---|---|---|
@@ -170,7 +170,7 @@ KOGUMA のモード表（[reference README](../reference/koguma-mkiil/README.md)
 | 見に行く区画は、壁を通り抜けた先（ゴール側）の区画 | 壁のスタート側の区画（その壁の手前）。まだ入ったことのない区画なので、入れば必ずその壁を見られる |
 | 経路の未確認の壁がなくなったら、スタートへ戻る | **その場で止まって最短経路を計算してから**、スタートへ戻る（2026-10-13 に決定） |
 
-**ToraNeko の未知壁探索の流れ**（ステップ9の `sys/explore.c` はこの順に書く）
+**ToraNeko の未知壁探索の流れ**（`sys/explore.c` の `explore_run()` と `scan_unknown_walls()` は、この順に書いてある）
 
 | # | すること | 使う関数 |
 |---|---|---|

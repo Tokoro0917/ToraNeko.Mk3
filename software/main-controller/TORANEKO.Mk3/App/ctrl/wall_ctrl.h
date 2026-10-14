@@ -1,0 +1,20 @@
+/*
+ * wall_ctrl.h
+ * 壁のあり・なしの判定と、壁に沿って走るための補正
+ *
+ * 中身（wall_ctrl.c）はステップ6で作る。今は、探索（sys/explore.c）が使う「壁があるか」の形だけを先に決めておく。
+ * PC のテストでは、test/test_maze.c の中の「仮の機体」がこの関数を持っている。
+ *
+ * ■ 壁があるか
+ * 区画の入口の辺に着いたときに、その区画の前・左・右の壁があるかを答える（KOGUMA の G_Wall_data にあたる）。
+ */
+#ifndef CTRL_WALL_CTRL_H
+#define CTRL_WALL_CTRL_H
+
+#include <stdbool.h>
+
+bool wall_ctrl_has_wall_front(void);
+bool wall_ctrl_has_wall_left(void);
+bool wall_ctrl_has_wall_right(void);
+
+#endif /* CTRL_WALL_CTRL_H */

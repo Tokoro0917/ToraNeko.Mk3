@@ -5,7 +5,7 @@
  * ビルドと実行（このフォルダで）:  make
  *
  * テストの内容:
- *   1. 壁の地図（maze_map）の基本動作
+ *   1. 壁の地図（maze_map）の基本動作。フェイルセーフで止まったときに、最後の 5 区画ぶんを戻せるか
  *   2. 歩数マップ（search）の基本動作
  *   3. 既知区間の経路（path_make_known）：小さな迷路で、正しい動きの並びになるか
  *   6. 未知壁探索（KOGUMA のモード0 No.7）：ゴールに着いたあと最短経路の上の見ていない壁を見に行く。
@@ -18,6 +18,10 @@
  *   4. 探索のシミュレーション：テスト用の迷路（mazes フォルダの .txt）を、壁を知らない状態から
  *      足立法で スタート → ゴール → スタート と走り、ちゃんと帰ってこられるかを調べる。
  *      既知区間の経路を使って走っても、1 区画ずつ走ったときと同じところに着くかも調べる
+ *   9. 探索走行（sys/explore.c）：本当の迷路の上を動く「仮の機体」で、往復・片道・未知壁探索を走らせる。
+ *      止まる場所・Flash に保存する場所・最後の位置・記録した壁が正しいか、未知壁探索のあとの最短経路が
+ *      全部の壁を知っているときと同じ速さか、フェイルセーフで止まったときに最後の 5 区画ぶんを戻して保存し、
+ *      続きから探索できるかを調べる
  */
 #include <stdbool.h>
 #include <stdio.h>
@@ -28,6 +32,11 @@
 #include "maze/maze_map.h"
 #include "maze/path.h"
 #include "maze/search.h"
+#include "ctrl/run.h"
+#include "ctrl/wall_ctrl.h"
+#include "sys/explore.h"
+#include "sys/failsafe.h"
+#include "sys/flash.h"
 
 /* ダイクストラの中だけで使う関数（move_from など）を、8 のテストで使うため、dijkstra.c をファイルごと取り込む。
  * そのため Makefile では dijkstra.c を別にコンパイルしない */
@@ -167,6 +176,52 @@ static void test_maze_map(void)
   check(maze_turn_left(DIR_NORTH) == DIR_WEST, "北の左は西");
   check(maze_turn_right(DIR_WEST) == DIR_NORTH, "西の右は北");
   check(maze_turn_back(DIR_EAST) == DIR_WEST, "東の後ろは西");
+}
+
+/* 最後に壁を記録した 5 区画ぶんを戻す（フェイルセーフで止まったとき） */
+static void test_undo_recent_cells(void)
+{
+  printf("[1] 壁の地図：最後の %d 区画ぶんを戻す\n", MAZE_UNDO_CELL_COUNT);
+
+  /* 1. スタートから北へ 7 区画進んだとする。左（西）は外周、右（東）は壁なし、前も壁なし */
+  maze_map_init();
+  for (int y = 1; y <= 7; y++) {
+    maze_map_record_walls(0, y, DIR_NORTH, false, true, false);
+  }
+  maze_map_undo_recent_cells();
+  /* 古い 2 区画 (0,1)・(0,2) は残り、新しい 5 区画 (0,3)〜(0,7) は記録する前に戻る */
+  check(maze_map_is_visited(0, 1) && maze_map_is_visited(0, 2), "古い 2 区画は入ったことのあるまま");
+  check(maze_map_get_wall(0, 2, DIR_EAST) == WALL_NONE, "古い区画の壁は残る");
+  check(maze_map_get_wall(0, 2, DIR_NORTH) == WALL_NONE, "古い区画 (0,2) で見た前の壁（= (0,3) の南）は残る");
+  check(!maze_map_is_visited(0, 3) && !maze_map_is_visited(0, 7), "新しい 5 区画は入ったことのない区画に戻る");
+  check(maze_map_get_wall(0, 3, DIR_EAST) == WALL_UNKNOWN, "新しい区画の壁は「まだ見ていない」に戻る");
+  check(maze_map_get_wall(1, 5, DIR_WEST) == WALL_UNKNOWN, "隣の区画から見た同じ壁も戻る");
+  check(maze_map_get_wall(0, 7, DIR_NORTH) == WALL_UNKNOWN, "いちばん新しい区画の前の壁も戻る");
+  check(maze_map_get_wall(0, 5, DIR_WEST) == WALL_EXIST, "外周の壁は「あり」のまま");
+
+  /* 2. 続けてもう一度戻しても、何も変わらない（覚えている区画はもうない） */
+  maze_map_undo_recent_cells();
+  check(maze_map_is_visited(0, 2), "2 回目は何も戻さない");
+
+  /* 3. 同じ区画を 2 回記録した（2 回目で前の壁が見えた）ときは、1 回目の前の状態まで戻る */
+  maze_map_init();
+  maze_map_record_walls(5, 5, DIR_NORTH, false, false, false);
+  maze_map_record_walls(5, 5, DIR_NORTH, true, false, false);
+  check(maze_map_get_wall(5, 5, DIR_NORTH) == WALL_EXIST, "2 回目の記録で前の壁が「あり」");
+  maze_map_undo_recent_cells();
+  check(maze_map_get_wall(5, 5, DIR_NORTH) == WALL_UNKNOWN, "2 回とも戻り、「まだ見ていない」になる");
+  check(maze_map_get_wall(5, 6, DIR_SOUTH) == WALL_UNKNOWN, "(5,6) から見た同じ壁も戻る");
+  check(!maze_map_is_visited(5, 5), "入ったことのない区画に戻る");
+
+  /* 4. 探索を始めるときに忘れた区画は、戻さない */
+  maze_map_init();
+  maze_map_record_walls(0, 1, DIR_NORTH, false, true, true);
+  maze_map_clear_recent_cells();
+  maze_map_record_walls(0, 2, DIR_NORTH, true, true, false);
+  maze_map_undo_recent_cells();
+  check(maze_map_get_wall(0, 1, DIR_EAST) == WALL_EXIST, "忘れる前に記録した区画は戻さない");
+  check(maze_map_is_visited(0, 1), "忘れる前に記録した区画は入ったことのあるまま");
+  check(maze_map_get_wall(0, 2, DIR_NORTH) == WALL_UNKNOWN, "忘れたあとに記録した区画は戻す");
 }
 
 /* ---------------------------------------------------------------------------
@@ -1345,12 +1400,468 @@ static void test_dijkstra_exact(int maze_count)
 }
 
 /* ---------------------------------------------------------------------------
+ * 9. 探索走行（sys/explore.c）のテスト
+ *
+ * explore.c が使う「機体を動かす」（ctrl/run.h）、「壁を見る」（ctrl/wall_ctrl.h）、
+ * 「フェイルセーフ」（sys/failsafe.h）、「Flash に保存」（sys/flash.h）の関数を、ここで仮に作る（仮の機体）。
+ * 仮の機体は、本当の迷路（s_true_wall）の上を 1 区画ずつ動き、おかしな使い方をされたら数える。
+ *   - 壁に突っ込んだ
+ *   - 走っているのに「発進」した、止まっているのに「直進」した など、状態に合わない動きを頼まれた
+ *   - 止まっているのに壁を見た（壁は区画の入口の辺で見る）
+ *   - 走っているあいだに Flash に保存した（保存中は CPU が止まるので、止まっているときだけ）
+ * ------------------------------------------------------------------------- */
+
+static int s_sim_x = 0;                /* 仮の機体の位置と向き */
+static int s_sim_y = 0;
+static direction_t s_sim_dir = DIR_NORTH;
+static bool s_sim_stopped = true;      /* 区画の真ん中で止まっているか */
+static bool s_sim_at_start = false;    /* スタート区画に置かれて、まだ走り出していないか */
+static int s_sim_motion_count = 0;     /* 動きを頼まれた回数 */
+static int s_sim_failsafe_at = -1;     /* この回数目の動きでフェイルセーフを起こす（-1 なら起こさない） */
+static bool s_sim_failsafe = false;    /* フェイルセーフで止まっているか */
+static bool s_sim_all_walls = false;   /* true なら、センサがいつも「前・左・右とも壁あり」と答える（読み間違いの試験） */
+static int s_sim_error_count = 0;      /* おかしな使い方をされた回数 */
+static int s_sim_stop_count = 0;       /* 止まった回数（U ターンと、未知壁探索で計算するときなど） */
+static int s_sim_save_count = 0;       /* Flash に保存した回数 */
+
+/* 迷路の地図の写し（フェイルセーフで戻した結果と比べるため） */
+typedef struct {
+  wall_state_t walls[MAZE_SIZE][MAZE_SIZE][4];
+  bool visited[MAZE_SIZE][MAZE_SIZE];
+} map_copy_t;
+
+/* 壁を記録する直前の地図の写し。新しい MAZE_UNDO_CELL_COUNT 回ぶん（[0] がいちばん古い） */
+static map_copy_t s_sim_before_record[MAZE_UNDO_CELL_COUNT];
+static int s_sim_before_record_count = 0;
+static map_copy_t s_sim_at_place;  /* スタートに置いたときの地図 */
+static map_copy_t s_sim_flash;     /* 最後に Flash に保存した地図 */
+
+/* 今の地図を写す */
+static void copy_map(map_copy_t *copy)
+{
+  for (int x = 0; x < MAZE_SIZE; x++) {
+    for (int y = 0; y < MAZE_SIZE; y++) {
+      for (int i = 0; i < 4; i++) {
+        copy->walls[x][y][i] = maze_map_get_wall(x, y, (direction_t)i);
+      }
+      copy->visited[x][y] = maze_map_is_visited(x, y);
+    }
+  }
+}
+
+/* 2 つの地図の写しが同じか */
+static bool same_map(const map_copy_t *a, const map_copy_t *b)
+{
+  for (int x = 0; x < MAZE_SIZE; x++) {
+    for (int y = 0; y < MAZE_SIZE; y++) {
+      for (int i = 0; i < 4; i++) {
+        if (a->walls[x][y][i] != b->walls[x][y][i]) {
+          return false;
+        }
+      }
+      if (a->visited[x][y] != b->visited[x][y]) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/* おかしな使い方をされたことを数える。最初の数回だけ表示する */
+static void sim_error(const char *message)
+{
+  if (s_sim_error_count < 5) {
+    printf("  仮の機体: %s（(%d,%d) 向き %d）\n", message, s_sim_x, s_sim_y, s_sim_dir);
+  }
+  s_sim_error_count = s_sim_error_count + 1;
+}
+
+/* 機体をスタート区画に北向きに置く（走らせる前に呼ぶ）。数えたものも 0 に戻す */
+static void sim_place_at_start(int failsafe_at)
+{
+  s_sim_x = 0;
+  s_sim_y = 0;
+  s_sim_dir = DIR_NORTH;
+  s_sim_stopped = true;
+  s_sim_at_start = true;
+  s_sim_motion_count = 0;
+  s_sim_failsafe_at = failsafe_at;
+  s_sim_failsafe = false;
+  s_sim_error_count = 0;
+  s_sim_stop_count = 0;
+  s_sim_save_count = 0;
+  s_sim_before_record_count = 0;
+  copy_map(&s_sim_at_place);
+}
+
+/* 動きを 1 つ頼まれた。フェイルセーフを起こす回数になったら起こす。
+ * フェイルセーフで止まっていれば false（動かない。本物の機体も、モーターが止まっているので動かない） */
+static bool sim_begin_motion(void)
+{
+  if (s_sim_failsafe) {
+    return false;
+  }
+  s_sim_motion_count = s_sim_motion_count + 1;
+  if (s_sim_motion_count == s_sim_failsafe_at) {
+    s_sim_failsafe = true;
+    s_sim_stopped = true;
+    return false;
+  }
+  return true;
+}
+
+/* 向き dir に 1 区画進み、次の区画の入口の辺へ行く。壁があれば突っ込んだとして数える */
+static void sim_go(direction_t dir)
+{
+  s_sim_dir = dir;
+  if (s_true_wall[s_sim_x][s_sim_y][dir]) {
+    sim_error("壁に突っ込んだ");
+    return;
+  }
+  s_sim_x = maze_next_x(s_sim_x, dir);
+  s_sim_y = maze_next_y(s_sim_y, dir);
+  s_sim_stopped = false;
+}
+
+/* 走っているときにだけ頼んでよい動きか調べる */
+static void sim_must_be_moving(const char *name)
+{
+  if (s_sim_stopped) {
+    sim_error(name);
+  }
+}
+
+void run_search_start(void)
+{
+  if (!sim_begin_motion()) {
+    return;
+  }
+  if (!s_sim_at_start) {
+    sim_error("スタートに置いていないのに走り出した");
+  }
+  s_sim_at_start = false;
+  sim_go(DIR_NORTH);
+}
+
+void run_search_straight(void)
+{
+  if (!sim_begin_motion()) {
+    return;
+  }
+  sim_must_be_moving("止まっているのに直進した");
+  sim_go(s_sim_dir);
+}
+
+void run_search_turn_left(void)
+{
+  if (!sim_begin_motion()) {
+    return;
+  }
+  sim_must_be_moving("止まっているのにスラロームした");
+  sim_go(maze_turn_left(s_sim_dir));
+}
+
+void run_search_turn_right(void)
+{
+  if (!sim_begin_motion()) {
+    return;
+  }
+  sim_must_be_moving("止まっているのにスラロームした");
+  sim_go(maze_turn_right(s_sim_dir));
+}
+
+void run_search_stop_at_center(void)
+{
+  if (!sim_begin_motion()) {
+    return;
+  }
+  sim_must_be_moving("止まっているのに、また止まった");
+  s_sim_stopped = true;
+  s_sim_stop_count = s_sim_stop_count + 1;
+}
+
+void run_search_go_from_center(run_turn_t turn)
+{
+  if (!sim_begin_motion()) {
+    return;
+  }
+  if (!s_sim_stopped) {
+    sim_error("走っているのに、止まったところからの発進をした");
+  }
+  direction_t dir = s_sim_dir;
+  if (turn == RUN_TURN_LEFT) {
+    dir = maze_turn_left(dir);
+  } else if (turn == RUN_TURN_RIGHT) {
+    dir = maze_turn_right(dir);
+  } else if (turn == RUN_TURN_BACK) {
+    dir = maze_turn_back(dir);
+  }
+  sim_go(dir);
+}
+
+/* 壁を見る。explore.c は前・左・右の順に見てから記録するので、前を見たときに「記録する直前の地図」を写しておく */
+bool wall_ctrl_has_wall_front(void)
+{
+  if (s_sim_stopped) {
+    sim_error("止まっているのに壁を見た");
+  }
+  if (s_sim_before_record_count == MAZE_UNDO_CELL_COUNT) {
+    for (int i = 0; i + 1 < MAZE_UNDO_CELL_COUNT; i++) {
+      s_sim_before_record[i] = s_sim_before_record[i + 1];
+    }
+    s_sim_before_record_count = MAZE_UNDO_CELL_COUNT - 1;
+  }
+  copy_map(&s_sim_before_record[s_sim_before_record_count]);
+  s_sim_before_record_count = s_sim_before_record_count + 1;
+
+  if (s_sim_all_walls) {
+    return true;
+  }
+  return s_true_wall[s_sim_x][s_sim_y][s_sim_dir];
+}
+
+bool wall_ctrl_has_wall_left(void)
+{
+  if (s_sim_all_walls) {
+    return true;
+  }
+  return s_true_wall[s_sim_x][s_sim_y][maze_turn_left(s_sim_dir)];
+}
+
+bool wall_ctrl_has_wall_right(void)
+{
+  if (s_sim_all_walls) {
+    return true;
+  }
+  return s_true_wall[s_sim_x][s_sim_y][maze_turn_right(s_sim_dir)];
+}
+
+bool failsafe_is_stopped(void)
+{
+  return s_sim_failsafe;
+}
+
+void flash_save_maze(void)
+{
+  if (!s_sim_stopped) {
+    sim_error("走っているあいだに Flash に保存した");
+  }
+  s_sim_save_count = s_sim_save_count + 1;
+  copy_map(&s_sim_flash);
+}
+
+/* 全部の壁を知っているときの最短経路のコスト（未知壁探索の目標） */
+static int best_route_cost(void)
+{
+  copy_true_maze_to_map();
+  if (!dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true)) {
+    return -1;
+  }
+  return dijkstra_get_route_cost();
+}
+
+/* 今の地図（探索で見た壁）での最短経路のコスト */
+static int recorded_route_cost(void)
+{
+  if (!dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true)) {
+    return -1;
+  }
+  return dijkstra_get_route_cost();
+}
+
+/* 走り方の名前（表示用） */
+static const char *explore_type_name(explore_type_t type)
+{
+  if (type == EXPLORE_ONE_WAY) {
+    return "片道";
+  }
+  if (type == EXPLORE_UNKNOWN_WALLS) {
+    return "未知壁探索";
+  }
+  return "往復";
+}
+
+/* 空の迷路から、走り方 type で探索させる。最後まで走り、終わりの場所・保存・壁が正しければ true。
+ * 未知壁探索なら、最短経路が全部の壁を知っているときと同じ速さかも調べる。verbose なら結果を表示する */
+static bool explore_and_check(explore_type_t type, bool verbose)
+{
+  int best_cost = best_route_cost();
+
+  maze_map_init();
+  sim_place_at_start(-1);
+  explore_result_t result = explore_run(type, s_goal_x, s_goal_y, s_goal_width, s_goal_height);
+
+  bool ok = true;
+  if (result != EXPLORE_RESULT_DONE) {
+    ok = false;
+  }
+  if (s_sim_error_count != 0) {
+    ok = false;
+  }
+  if (!s_sim_stopped) {
+    ok = false;  /* 最後は止まっている */
+  }
+  if (s_sim_save_count != 1) {
+    ok = false;  /* 最後に 1 回だけ保存する */
+  }
+  if (count_wrong_walls() != 0) {
+    ok = false;
+  }
+  if (type == EXPLORE_ONE_WAY) {
+    if (!is_in_goal(s_sim_x, s_sim_y)) {
+      ok = false;
+    }
+  } else {
+    if (s_sim_x != 0 || s_sim_y != 0) {
+      ok = false;
+    }
+  }
+  int cost = recorded_route_cost();
+  if (type == EXPLORE_UNKNOWN_WALLS && cost != best_cost) {
+    ok = false;
+  }
+
+  if (verbose) {
+    printf("  %s: 動き %d 回、止まった %d 回、最後の位置 (%d,%d)、最短経路のコスト %d（全部の壁を知っているとき %d）\n",
+           explore_type_name(type), s_sim_motion_count, s_sim_stop_count, s_sim_x, s_sim_y, cost, best_cost);
+  }
+  return ok;
+}
+
+/* 迷路ファイルの迷路で、3 つの走り方を試す */
+static void test_explore_types(const char *file_path)
+{
+  printf("[9] 探索走行（explore.c）: %s\n", file_path);
+  if (!load_maze_file(file_path)) {
+    check(false, "迷路ファイルが読めない");
+    return;
+  }
+  check(explore_and_check(EXPLORE_ROUND_TRIP, true), "往復：スタートに戻って止まり、保存する");
+  check(explore_and_check(EXPLORE_ONE_WAY, true), "片道：ゴールで止まり、保存する");
+  check(explore_and_check(EXPLORE_UNKNOWN_WALLS, true), "未知壁探索：スタートに戻り、最短経路が全部の壁を知っているときと同じ");
+}
+
+/* 走り方 type で、failsafe_at 回目の動きでフェイルセーフを起こす。
+ * 最後の 5 区画ぶんが戻って保存されるか、そのあとスタートに置き直して続きから探索できるかを調べる */
+static bool failsafe_and_continue(explore_type_t type, int failsafe_at)
+{
+  int best_cost = best_route_cost();
+  bool ok = true;
+
+  /* 1. 空の迷路から走らせて、途中でフェイルセーフを起こす */
+  maze_map_init();
+  sim_place_at_start(failsafe_at);
+  explore_result_t result = explore_run(type, s_goal_x, s_goal_y, s_goal_width, s_goal_height);
+  if (result != EXPLORE_RESULT_FAILSAFE) {
+    return true;  /* フェイルセーフを起こす前に走り終わった（この回数では試せない） */
+  }
+
+  /* 2. 最後に壁を記録した 5 区画ぶんが、記録する前に戻っているか（1 回も記録していなければ、置いたときのまま） */
+  map_copy_t now;
+  copy_map(&now);
+  if (s_sim_before_record_count > 0) {
+    if (!same_map(&now, &s_sim_before_record[0])) {
+      ok = false;
+    }
+  } else {
+    if (!same_map(&now, &s_sim_at_place)) {
+      ok = false;
+    }
+  }
+  if (s_sim_save_count != 1 || !same_map(&s_sim_flash, &now)) {
+    ok = false;  /* 戻したあとの迷路を 1 回保存する */
+  }
+  if (s_sim_error_count != 0) {
+    ok = false;
+  }
+
+  /* 3. スタートに置き直して、続きから同じ走り方で探索する */
+  sim_place_at_start(-1);
+  result = explore_run(type, s_goal_x, s_goal_y, s_goal_width, s_goal_height);
+  if (result != EXPLORE_RESULT_DONE || s_sim_error_count != 0 || count_wrong_walls() != 0) {
+    ok = false;
+  }
+  if (type == EXPLORE_UNKNOWN_WALLS && recorded_route_cost() != best_cost) {
+    ok = false;
+  }
+  return ok;
+}
+
+/* フェイルセーフで止まったときのテスト（迷路ファイルの迷路で、起こす時刻をいろいろ変える） */
+static void test_explore_failsafe(const char *file_path)
+{
+  printf("[9] 探索走行：フェイルセーフで止まったとき: %s\n", file_path);
+  if (!load_maze_file(file_path)) {
+    check(false, "迷路ファイルが読めない");
+    return;
+  }
+  int fail_count = 0;
+  int tried_count = 0;
+  for (int failsafe_at = 1; failsafe_at <= 400; failsafe_at = failsafe_at + 7) {
+    if (!failsafe_and_continue(EXPLORE_ROUND_TRIP, failsafe_at)) {
+      fail_count = fail_count + 1;
+    }
+    if (!failsafe_and_continue(EXPLORE_UNKNOWN_WALLS, failsafe_at)) {
+      fail_count = fail_count + 1;
+    }
+    tried_count = tried_count + 2;
+  }
+  printf("  試した回数 %d、うまくいかなかった回数 %d\n", tried_count, fail_count);
+  check(fail_count == 0, "最後の 5 区画ぶんを戻して保存し、続きから探索できる");
+}
+
+/* センサが読み間違えて、ゴールへの道がなくなったとき */
+static void test_explore_no_route(void)
+{
+  printf("[9] 探索走行：壁を読み間違えて、ゴールへの道がなくなったとき\n");
+  load_maze_file("mazes/maze32_center2x2.txt");
+  maze_map_init();
+  sim_place_at_start(-1);
+  s_sim_all_walls = true;  /* どこを見ても「壁あり」と答える */
+  explore_result_t result = explore_run(EXPLORE_ROUND_TRIP, s_goal_x, s_goal_y, s_goal_width, s_goal_height);
+  s_sim_all_walls = false;
+  check(result == EXPLORE_RESULT_NO_ROUTE, "道がなくなったと答える");
+  check(s_sim_stopped, "その場で止まっている");
+  check(s_sim_save_count == 0, "保存しない");
+  check(s_sim_error_count == 0, "おかしな動きをしない");
+}
+
+/* ランダムな迷路で、3 つの走り方と、フェイルセーフのあとの続きを試す */
+static void test_explore_random(int maze_count)
+{
+  printf("[9] 探索走行：ランダムな迷路 %d 個\n", maze_count);
+  int fail_count = 0;
+  int failsafe_fail_count = 0;
+  for (int maze_index = 0; maze_index < maze_count; maze_index++) {
+    s_random_seed = (unsigned int)(maze_index + 20001);
+    make_random_true_maze();
+    if (!explore_and_check(EXPLORE_ROUND_TRIP, false)) {
+      fail_count = fail_count + 1;
+    }
+    if (!explore_and_check(EXPLORE_ONE_WAY, false)) {
+      fail_count = fail_count + 1;
+    }
+    if (!explore_and_check(EXPLORE_UNKNOWN_WALLS, false)) {
+      fail_count = fail_count + 1;
+    }
+    int failsafe_at = 1 + random_below(300);
+    if (!failsafe_and_continue(EXPLORE_UNKNOWN_WALLS, failsafe_at)) {
+      failsafe_fail_count = failsafe_fail_count + 1;
+    }
+  }
+  printf("  うまくいかなかった走行 %d 回、フェイルセーフのあとうまくいかなかった %d 回\n", fail_count, failsafe_fail_count);
+  check(fail_count == 0, "ランダムな迷路でも、3 つの走り方が正しく終わる");
+  check(failsafe_fail_count == 0, "ランダムな迷路でも、フェイルセーフのあと続きから探索できる");
+}
+
+/* ---------------------------------------------------------------------------
  * main
  * ------------------------------------------------------------------------- */
 
 int main(void)
 {
   test_maze_map();
+  test_undo_recent_cells();
   test_step_map();
   test_known_path();
   test_explore("mazes/maze32_center2x2.txt");
@@ -1363,6 +1874,12 @@ int main(void)
   test_random_mazes(2000);
   test_unknown_wall_random(300);
   test_dijkstra_exact(500);
+  test_explore_types("mazes/maze32_center2x2.txt");
+  test_explore_types("mazes/maze32_offset3x3.txt");
+  test_explore_failsafe("mazes/maze32_center2x2.txt");
+  test_explore_failsafe("mazes/maze32_offset3x3.txt");
+  test_explore_no_route();
+  test_explore_random(300);
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

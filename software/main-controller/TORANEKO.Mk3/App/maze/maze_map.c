@@ -6,11 +6,28 @@
  * 区画ごとに、北・東・南・西の 4 枚の壁の状態を持つ（s_walls[x][y][向き]）。
  * 1 枚の壁は隣り合う 2 つの区画から見えるので（例：(0,0) の北の壁 = (0,1) の南の壁）、
  * 書き込むときは maze_map_set_wall() で必ず両側をそろえて書く。
+ *
+ * ■ 最後の 5 区画ぶんを戻す（フェイルセーフで止まったとき。MODES.md の 5）
+ * ぶつかる直前は機体がずれていて、壁を読み間違えているかもしれない。そこで、壁を記録するたびに
+ * 「その区画と、記録する前の 4 枚の壁」を覚えておき（新しい 5 区画ぶん）、フェイルセーフで止まったら
+ * 新しいほうから順に、記録する前の状態に戻す。
  */
 #include "maze/maze_map.h"
 
 static wall_state_t s_walls[MAZE_SIZE][MAZE_SIZE][4];  /* [x][y][向き] */
 static bool s_visited[MAZE_SIZE][MAZE_SIZE];           /* その区画に入って壁を見たか */
+
+/* 壁を記録する前の、1 つの区画の状態 */
+typedef struct {
+  int x;
+  int y;
+  wall_state_t walls[4];  /* 記録する前の 4 枚の壁 [向き] */
+  bool visited;           /* 記録する前に、その区画に入ったことがあったか */
+} undo_cell_t;
+
+/* 覚えている区画。s_undo_cells[0] がいちばん古く、s_undo_cells[s_undo_count - 1] がいちばん新しい */
+static undo_cell_t s_undo_cells[MAZE_UNDO_CELL_COUNT];
+static int s_undo_count = 0;
 
 /* 迷路の情報を消して、最初の状態にする。
  * 外周の壁と、スタート区画の東の壁（規則で必ずある）は最初から「あり」にしておく */
@@ -38,6 +55,8 @@ void maze_map_init(void)
   maze_map_set_wall(0, 0, DIR_EAST, WALL_EXIST);
   maze_map_set_wall(0, 0, DIR_NORTH, WALL_NONE);
   s_visited[0][0] = true;
+
+  maze_map_clear_recent_cells();
 }
 
 /* (x, y) の dir 側の壁が、規則で必ずある壁か（外周と、スタート区画の東の壁） */
@@ -103,19 +122,72 @@ static void record_one_wall(int x, int y, direction_t dir, bool wall_seen)
   }
 }
 
+/* 区画 (x, y) の今の状態（4 枚の壁と、入ったことがあるか）を、戻すときのために覚えておく。
+ * 覚えられるのは新しい MAZE_UNDO_CELL_COUNT 区画ぶんだけ。いっぱいなら、いちばん古いものを捨てる */
+static void remember_cell(int x, int y)
+{
+  /* いっぱいなら、全部を 1 つずつ前へずらして、いちばん古いもの（[0]）を捨てる */
+  if (s_undo_count == MAZE_UNDO_CELL_COUNT) {
+    for (int i = 0; i + 1 < MAZE_UNDO_CELL_COUNT; i++) {
+      s_undo_cells[i] = s_undo_cells[i + 1];
+    }
+    s_undo_count = MAZE_UNDO_CELL_COUNT - 1;
+  }
+
+  /* いちばん後ろに足す */
+  int last = s_undo_count;
+  s_undo_cells[last].x = x;
+  s_undo_cells[last].y = y;
+  s_undo_cells[last].walls[DIR_NORTH] = s_walls[x][y][DIR_NORTH];
+  s_undo_cells[last].walls[DIR_EAST] = s_walls[x][y][DIR_EAST];
+  s_undo_cells[last].walls[DIR_SOUTH] = s_walls[x][y][DIR_SOUTH];
+  s_undo_cells[last].walls[DIR_WEST] = s_walls[x][y][DIR_WEST];
+  s_undo_cells[last].visited = s_visited[x][y];
+  s_undo_count = s_undo_count + 1;
+}
+
 /* 区画 (x, y) に向き dir で入ったときに、センサで見た前・左・右の壁を記録する。
- * 後ろの壁は、通ってきたところなので記録済み（1 つ前の区画で「前の壁なし」として書いている） */
+ * 後ろの壁は、通ってきたところなので記録済み（1 つ前の区画で「前の壁なし」として書いている）。
+ * フェイルセーフで止まったときに戻せるように、記録する前の状態を覚えておく */
 void maze_map_record_walls(int x, int y, direction_t dir, bool wall_front, bool wall_left, bool wall_right)
 {
   if (!maze_is_inside(x, y)) {
     return;
   }
 
+  remember_cell(x, y);
+
   record_one_wall(x, y, dir, wall_front);
   record_one_wall(x, y, maze_turn_left(dir), wall_left);
   record_one_wall(x, y, maze_turn_right(dir), wall_right);
 
   s_visited[x][y] = true;
+}
+
+/* 最後に壁を記録した区画（MAZE_UNDO_CELL_COUNT 区画まで）を、記録する前の状態に戻す。
+ * フェイルセーフで止まったときに呼ぶ（ぶつかる直前に読み間違えたかもしれない壁を残さないため）。
+ * 同じ壁を 2 回記録していることもあるので、新しいほうから順に戻す（最後に、いちばん古い記録の前の状態になる）。
+ * 戻したあとは、覚えている区画はなくなる */
+void maze_map_undo_recent_cells(void)
+{
+  for (int i = s_undo_count - 1; i >= 0; i--) {
+    int x = s_undo_cells[i].x;
+    int y = s_undo_cells[i].y;
+    /* maze_map_set_wall() で書くので、隣の区画から見た同じ壁もそろって戻る */
+    maze_map_set_wall(x, y, DIR_NORTH, s_undo_cells[i].walls[DIR_NORTH]);
+    maze_map_set_wall(x, y, DIR_EAST, s_undo_cells[i].walls[DIR_EAST]);
+    maze_map_set_wall(x, y, DIR_SOUTH, s_undo_cells[i].walls[DIR_SOUTH]);
+    maze_map_set_wall(x, y, DIR_WEST, s_undo_cells[i].walls[DIR_WEST]);
+    s_visited[x][y] = s_undo_cells[i].visited;
+  }
+  s_undo_count = 0;
+}
+
+/* 覚えている区画を忘れる（戻せなくする）。探索を始めるときに呼ぶ。
+ * 前の走行で記録して、もう Flash に保存した壁まで戻してしまわないようにするため */
+void maze_map_clear_recent_cells(void)
+{
+  s_undo_count = 0;
 }
 
 /* その区画に入って壁を見たことがあるか */
