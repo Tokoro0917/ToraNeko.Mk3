@@ -30,6 +30,7 @@ void ui_all_off(void);
 void ui_blink_all(int times);
 void ui_signal_ok(void);
 void ui_signal_error(void);
+void ui_show_loading(void);
 
 /* 入力 */
 void ui_forget_tire_rotation(void);

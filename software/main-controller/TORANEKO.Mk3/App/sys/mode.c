@@ -123,7 +123,7 @@ static void run_explore(int number)
   explore_result_t result = explore_run(type, goal_get_x(), goal_get_y(), GOAL_WIDTH, GOAL_HEIGHT);
 
   if (result == EXPLORE_RESULT_FAILSAFE) {
-    /* 7 個全部を点けて、前センサに手をかざして離すまで待ち、フェイルセーフを解除する */
+    /* 7 個全部を点滅させて、スイッチが押されるまで待ち（押したら「ロード中」を出す）、フェイルセーフを解除する */
     ui_wait_failsafe_reset();
     failsafe_clear();
   } else if (result == EXPLORE_RESULT_NO_ROUTE) {
