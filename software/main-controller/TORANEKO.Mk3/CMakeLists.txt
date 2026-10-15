@@ -46,6 +46,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 set(APP_SOURCES
     App/app.c
     App/drv/led.c
+    App/drv/switch.c
     App/drv/timebase.c
     App/drv/uart.c
     App/maze/maze_map.c
