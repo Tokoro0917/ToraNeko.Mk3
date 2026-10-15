@@ -5,7 +5,7 @@
  * ■ 流れ（mode_run_once() の 1 回ぶん）
  *   1. 左タイヤでモード、右タイヤで No. を選ぶ。スイッチで決定する
  *   2. スタート待ち（前センサに手をかざして離すと、1 秒後に始まる。スイッチで 1 に戻る）
- *   3. 選んだモードを走らせる。終わったら、同じモード・No. のまま 1 に戻る
+ *   3. 選んだモードを走らせる。終わったら「うまくいった」を出し、同じモード・No. のまま 1 に戻る
  *
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す）
  *   モード0 No.1〜3  探索（往復・片道・未知壁探索）
@@ -122,7 +122,9 @@ static void run_explore(int number)
 
   explore_result_t result = explore_run(type, goal_get_x(), goal_get_y(), GOAL_WIDTH, GOAL_HEIGHT);
 
-  if (result == EXPLORE_RESULT_FAILSAFE) {
+  if (result == EXPLORE_RESULT_DONE) {
+    ui_signal_ok();  /* 走り終わった（迷路の保存は explore_run() の中で済んでいる） */
+  } else if (result == EXPLORE_RESULT_FAILSAFE) {
     /* 7 個全部を点滅させて、スイッチが押されるまで待ち（押したら「ロード中」を出す）、フェイルセーフを解除する */
     ui_wait_failsafe_reset();
     failsafe_clear();
@@ -184,6 +186,7 @@ static void run_setting(int number)
 {
   if (number == 1) {
     output_all(goal_get_x(), goal_get_y());
+    ui_signal_ok();  /* 出し終わった */
   } else if (number == 2) {
     input_goal();
   } else if (number == 15) {
