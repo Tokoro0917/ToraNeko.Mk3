@@ -18,7 +18,7 @@
  *   3. ゴール（電源を入れたときに Flash から読む、使える位置か）
  *   4. モードを選んで、スタートして、探索を呼ぶまで（LED の表示と時刻も）
  *   5. No.0 では決定しない、スタート待ちでの選び直し、走ったあとも同じモード・No.、フェイルセーフ、ゴールへ行けなかった
- *   6. ゴールの位置の入力（使えない位置のときは x に戻る）、迷路の読み込み
+ *   6. 出力、ゴールの位置の入力（使えない位置のときは x に戻る）、迷路の読み込み
  */
 #include <stdbool.h>
 #include <stdint.h>
@@ -36,6 +36,7 @@
 #include "sys/flash.h"
 #include "sys/goal.h"
 #include "sys/mode.h"
+#include "sys/output.h"
 #include "sys/ui.h"
 
 /* ---------------------------------------------------------------------------
@@ -204,6 +205,10 @@ static int s_flash_maze_load_count = 0;
 
 static int s_failsafe_clear_count = 0;
 
+static int s_output_count = 0;    /* 出力が呼ばれた回数 */
+static int s_output_goal_x = 0;   /* 出力に渡されたゴール */
+static int s_output_goal_y = 0;
+
 static explore_result_t s_explore_result = EXPLORE_RESULT_DONE;  /* 探索が返す結果 */
 static int s_explore_count = 0;           /* 探索が呼ばれた回数 */
 static explore_type_t s_explore_type = EXPLORE_ROUND_TRIP;
@@ -230,6 +235,7 @@ static void reset_world(void)
   s_flash_has_maze = false;
   s_flash_maze_load_count = 0;
   s_failsafe_clear_count = 0;
+  s_output_count = 0;
   s_explore_result = EXPLORE_RESULT_DONE;
   s_explore_count = 0;
   s_explore_time_ms = 0;
@@ -325,6 +331,14 @@ bool flash_load_goal(int *goal_x, int *goal_y)
   *goal_x = s_flash_goal_x;
   *goal_y = s_flash_goal_y;
   return true;
+}
+
+/* 出力：出さずに、呼ばれたことを覚える */
+void output_all(int goal_x, int goal_y)
+{
+  s_output_count = s_output_count + 1;
+  s_output_goal_x = goal_x;
+  s_output_goal_y = goal_y;
 }
 
 /* 探索：走らずに、呼ばれたことを覚える。走っているあいだはタイヤが回るので、回った量も足す */
@@ -644,6 +658,25 @@ static void test_goal_input_invalid(void)
   check(goal_get_x() == 16 && goal_get_y() == 15, "ゴールが (16, 15) になる");
 }
 
+/* 出力：モード7 No.1 を選んでスタートすると、今のゴールを渡して出力を呼ぶ */
+static void test_output(void)
+{
+  printf("[6] 出力\n");
+  reset_world();
+  s_flash_has_goal = true;
+  s_flash_goal_x = 8;
+  s_flash_goal_y = 9;
+  mode_init();
+  rotate_left_at(100, -1);   /* モード7 */
+  rotate_right_at(100, 1);   /* No.1 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+  check(s_output_count == 1, "出力を 1 回呼ぶ");
+  check(s_output_goal_x == 8 && s_output_goal_y == 9, "今のゴールを渡す（ビューアがゴールを描くのに使う）");
+  check(s_explore_count == 0, "走らない");
+}
+
 /* 迷路の読み込み：保存した迷路があれば全部を 1 秒点け、なければ外側の 4 個を速く点滅させる */
 static void test_load_maze(void)
 {
@@ -686,6 +719,7 @@ int main(void)
   test_reselect();
   test_failsafe();
   test_no_route();
+  test_output();
   test_goal_input();
   test_goal_input_invalid();
   test_load_maze();

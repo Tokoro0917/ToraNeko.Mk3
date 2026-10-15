@@ -9,6 +9,7 @@
  *
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す）
  *   モード0 No.1〜3  探索（往復・片道・未知壁探索）
+ *   モード7 No.1     出力（迷路と走行ログを PC へ出す）
  *   モード7 No.2     ゴールの位置を入れる
  *   モード7 No.3     迷路の読み込み
  * No.0 と、まだ何もない番号では、スイッチを押しても決定しない（何も起きない）。
@@ -20,6 +21,7 @@
 #include "sys/failsafe.h"
 #include "sys/flash.h"
 #include "sys/goal.h"
+#include "sys/output.h"
 #include "sys/ui.h"
 
 /* 選んでいるモードと No.（走り終わっても、そのまま残す） */
@@ -58,8 +60,8 @@ bool mode_has_action(int mode, int number)
     return false;
   }
   if (mode == 7) {
-    if (number >= 2 && number <= 3) {
-      return true;  /* ゴールの位置、迷路の読み込み */
+    if (number >= 1 && number <= 3) {
+      return true;  /* 出力、ゴールの位置、迷路の読み込み */
     }
     return false;
   }
@@ -174,10 +176,12 @@ static void load_maze(void)
   }
 }
 
-/* 出力と設定（No.2 ゴールの位置、No.3 迷路の読み込み） */
+/* 出力と設定（No.1 出力、No.2 ゴールの位置、No.3 迷路の読み込み） */
 static void run_setting(int number)
 {
-  if (number == 2) {
+  if (number == 1) {
+    output_all(goal_get_x(), goal_get_y());
+  } else if (number == 2) {
     input_goal();
   } else if (number == 3) {
     load_maze();

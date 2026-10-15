@@ -53,6 +53,8 @@ set(APP_SOURCES
     App/maze/search.c
     App/maze/path.c
     App/maze/dijkstra.c
+    App/sys/log.c
+    App/sys/output.c
 )
 
 # Add sources to executable
@@ -84,3 +86,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
     # Add user defined libraries
 )
+
+# printf で小数（%f）を出せるようにする（走行ログの出力に使う。KOGUMA_PORTING.md の B6）。
+# nano.specs（小さい printf）は、そのままだと %f を出さないので、小数を出す部分をリンクに入れさせる。Flash が約 10KB 増える
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE -u _printf_float)

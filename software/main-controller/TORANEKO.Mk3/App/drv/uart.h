@@ -11,6 +11,7 @@
 
 void uart_init(void);
 void uart_write(const uint8_t *data, uint32_t len);
+void uart_wait_free(uint32_t count);
 uint32_t uart_get_dropped_count(void);
 
 #endif /* DRV_UART_H */

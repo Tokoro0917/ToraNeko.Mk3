@@ -124,6 +124,34 @@ void uart_write(const uint8_t *data, uint32_t len)
   }
 }
 
+/* 送信待ちバッファの空き [文字]。
+ * s_send_pos は DMA の送信完了の割り込みで進む（空きが増える）。読んでいるあいだに進んでも、
+ * 空きを少なめに数えるだけなので困らない（割り込みは禁止しない） */
+static uint32_t get_free_count(void)
+{
+  uint32_t write_pos = s_write_pos;
+  uint32_t send_pos = s_send_pos;
+  uint32_t used;
+  if (write_pos >= send_pos) {
+    used = write_pos - send_pos;
+  } else {
+    used = UART_BUF_SIZE - send_pos + write_pos;
+  }
+  /* バッファは「書き込み位置の次が送信位置」になったら一杯（1 文字ぶんは使わない） */
+  return UART_BUF_SIZE - 1 - used;
+}
+
+/* 送信待ちバッファに count 文字ぶんの空きができるまで待つ。
+ * 出力（迷路・走行ログ。全部で 100KB ほど）のように、たくさんの文字を続けて送るときに、
+ * バッファが一杯になって文字を捨てないように、1 行ずつ書く前に呼ぶ。
+ * 割り込みの中から呼んではいけない（送信完了の割り込みが来ないと、空きが増えないため） */
+void uart_wait_free(uint32_t count)
+{
+  while (get_free_count() < count) {
+    /* DMA が送り終わって、空きが増えるのを待つ */
+  }
+}
+
 /* バッファが一杯で捨てた文字数（累計）。0 でなければ、ログの量が多すぎる */
 uint32_t uart_get_dropped_count(void)
 {
