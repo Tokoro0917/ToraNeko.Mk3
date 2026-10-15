@@ -24,6 +24,6 @@ mechanical/
 | [case_insert/](./case_insert/) | ケース（お弁当箱）の中子に入れて、機体を動かないように納める受け台。中子の寸法は仮の値 |
 | [jigs/maintenance_stand/](./jigs/maintenance_stand/) | 機体を載せるとタイヤが浮くメンテナンス用スタンド |
 | [jigs/centering_plate/](./jigs/centering_plate/) | 機体を区画の決まった位置に置くセンタリング板。まっすぐ版（区画の中心）と斜め版（辺の中点に 45°、左右）。位置決めに要るところだけの細い枠で、置いたままスタートできる |
-| [jigs/encoder_solder_jig/](./jigs/encoder_solder_jig/) | エンコーダ基板はんだ付け治具 |
+| [jigs/encoder_solder_jig/](./jigs/encoder_solder_jig/) | エンコーダ基板はんだ付け治具。メイン基板の縁（タイヤ用の切り欠き）を挟んで留める（ネジ不要） |
 
 CADツールは **Fusion 360** を使用しています。
