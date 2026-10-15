@@ -25,7 +25,8 @@ typedef enum {
 typedef enum {
   EXPLORE_RESULT_DONE,      /* 最後まで走った（往復・未知壁探索はスタート、片道はゴールの区画の真ん中で止まっている） */
   EXPLORE_RESULT_FAILSAFE,  /* フェイルセーフで止まった（最後に壁を記録した 5 区画ぶんを戻してから、迷路を保存した） */
-  EXPLORE_RESULT_NO_ROUTE,  /* 目的地へ行く道がなくなった（壁の読み間違いなど）。その場で止まっている */
+  EXPLORE_RESULT_NO_ROUTE,  /* 目的地（行きはゴール、帰りはスタート）へ行く道がなくなった（壁の読み間違いなど）、
+                             * または動きすぎた。その場で止まっている。迷路は保存しない */
 } explore_result_t;
 
 explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int goal_width, int goal_height);

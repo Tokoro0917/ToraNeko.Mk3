@@ -39,7 +39,8 @@ void maze_map_record_walls(int x, int y, direction_t dir, bool wall_front, bool 
 bool maze_map_is_visited(int x, int y);
 void maze_map_set_visited(int x, int y, bool visited);
 
-/* フェイルセーフで止まったときに戻す区画の数（MODES.md の 5） */
+/* フェイルセーフで止まったときに戻す、壁の記録の回数（MODES.md の 5）。
+ * ふつうは 5 区画ぶん。U ターンで同じ区画に 2 回入ると、その区画は 2 回と数える */
 #define MAZE_UNDO_CELL_COUNT 5
 
 void maze_map_undo_recent_cells(void);

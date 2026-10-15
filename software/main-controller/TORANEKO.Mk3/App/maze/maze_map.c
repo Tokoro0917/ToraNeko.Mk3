@@ -147,7 +147,8 @@ static void remember_cell(int x, int y)
 }
 
 /* 区画 (x, y) に向き dir で入ったときに、センサで見た前・左・右の壁を記録する。
- * 後ろの壁は、通ってきたところなので記録済み（1 つ前の区画で「前の壁なし」として書いている）。
+ * 後ろの壁は、通ってきたところなので記録済み（1 つ前の区画で、前・左・右のどれかの「壁なし」として書いている。
+ * (0,1) の南の壁は、maze_map_init() で「壁なし」にしてある）。
  * フェイルセーフで止まったときに戻せるように、記録する前の状態を覚えておく */
 void maze_map_record_walls(int x, int y, direction_t dir, bool wall_front, bool wall_left, bool wall_right)
 {

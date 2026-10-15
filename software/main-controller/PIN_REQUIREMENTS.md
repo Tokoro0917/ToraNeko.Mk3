@@ -54,7 +54,7 @@ CubeMX の具体的な設定値は [CUBEMX_SETUP.md](CUBEMX_SETUP.md) を参照�
 | モータ PWM | TIM3 CH1〜4 | **TIM4 CH1〜4** | `htim3` → `htim4`。チャンネル割り当て（左 CH1/2、右 CH3/4）は同じ |
 | 吸引ファン PWM | TIM2 CH1 | **TIM2 CH2** | チャンネル番号のみ変更 |
 | ブザー | TIM4 CH4 | **なし** | ブザー関連コードは移植しない |
-| 制御周期割り込み | TIM6 | **TIM11（案、検討中）** | F411 に TIM6 がないため |
+| 制御周期割り込み | TIM6 | **TIM11**（決定。CubeMX で 2kHz・優先度 2 に設定済み） | F411 に TIM6 がないため |
 | IMU | SPI1（PA5〜7）、CS=PA4 | **SPI1（PB3〜5）**、CS=PA15 | ハンドルは同じ `hspi1`。CS ピンのみ変更 |
 | エンコーダ | SPI3、CS=PC5/PA15 | **SPI2**、CS=PA8/PC15 | `hspi3` → `hspi2` |
 | 壁センサ受光 | ADC1 IN10〜13 | **ADC1 IN3〜6** | チャンネル番号を変更。DMA バッファの並び（[0]=バッテリ、[4]=センサ1）は同じにできる |

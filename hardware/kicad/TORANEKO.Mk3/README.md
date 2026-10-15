@@ -18,7 +18,7 @@ KiCadプロジェクト本体（`TORANEKO.Mk3.kicad_pro` / `.kicad_sch` / `.kica
 | 吸引ファン | サクションファン × 1（型番未定）。NチャネルMOSFETによるローサイドPWM駆動 |
 | 電源 | 2セルLiPo入力 → MCU/センサ用3.3V系（**LXDC55FAAA-203**）、モータドライバ（MP6551）はLiPo直結 |
 | デバッグ/書き込み | STLINK-V3MODS（SWD＋仮想COMポート）。USBは使わない |
-| クロック | HSE 水晶 10MHz → SYSCLK 100MHz |
+| クロック | HSE 10MHz（セラミック発振子 CSTNE10M0G52Z000R0）→ SYSCLK 100MHz |
 
 ## ペリフェラル割り当て案（STM32F411CEU6）
 

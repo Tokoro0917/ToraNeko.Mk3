@@ -154,14 +154,13 @@ void ui_signal_error(void)
   }
 }
 
-/* wait_ms [ms] 待つ。待っているあいだに押されたスイッチは読み捨てる（あとで「押された」と答えないようにする） */
-static void wait_ignoring_switch(uint32_t wait_ms)
+/* 時刻 until_ms [ms] になるまで待つ。待っているあいだに押されたスイッチは読み捨てる（あとで「押された」と答えないようにする）。
+ * 待つ回数ではなく時刻で決めるのは、実機の 1 回の待ち（HAL_Delay）が少し長くなることがあり、回数で数えるとずれがたまるため */
+static void wait_until_ignoring_switch(uint32_t until_ms)
 {
-  uint32_t waited_ms = 0;
-  while (waited_ms < wait_ms) {
+  while (timebase_get_ms() < until_ms) {
     ui_switch_pushed();  /* 読むだけで、答えは使わない */
     ui_wait_ms(UI_POLL_MS);
-    waited_ms = waited_ms + UI_POLL_MS;
   }
 }
 
@@ -170,9 +169,11 @@ static void wait_ignoring_switch(uint32_t wait_ms)
 void ui_show_loading(void)
 {
   ui_all_off();
+  uint32_t next_ms = timebase_get_ms();
   for (uint8_t num = 1; num <= LED_COUNT; num++) {
     led_set(num, true);
-    wait_ignoring_switch(LOADING_STEP_MS);
+    next_ms = next_ms + LOADING_STEP_MS;
+    wait_until_ignoring_switch(next_ms);
   }
   ui_all_off();
 }

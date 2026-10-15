@@ -166,7 +166,8 @@ static void convert_to_big_turns(path_t *src, path_t *dst)
  *
  * 先に maze_map_record_walls() で (x, y) の壁を記録し、search_update_step_map() で
  * 歩数マップを作っておくこと。
- * path->end_x, end_y, end_dir には、走り終わったときの位置（まだ見ていない区画の入口）が入る。
+ * path->end_x, end_y, end_dir には、走り終わったときの位置（区画の入口の辺）が入る。ふつうはまだ見ていない区画の入口だが、
+ * 目的地の入口、行き止まり（ACTION_STOP）の手前、経路がいっぱいになって止めたところのこともある。
  * path->count が 0 なら、まとめて走れる区間はない。 */
 void path_make_known(int x, int y, direction_t dir, path_t *path)
 {

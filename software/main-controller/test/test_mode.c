@@ -5,19 +5,22 @@
  * ビルドと実行（このフォルダで）:  make
  *
  * ■ しくみ
- * mode.c・ui.c が使う関数（時計、LED、タイヤ、スイッチ、前センサの手、Flash、探索）を、ここで仮に作る。
+ * mode.c・ui.c・goal.c が使う関数（時計、LED、タイヤ、スイッチ、前センサの手、Flash、探索、ログ出力、
+ * フェイルセーフの解除）を、ここで仮に作る。
  *   - 時計：timebase_wait_ms() が呼ばれると、その分だけ仮の時計を進める
  *   - 入力：「何 ms に、タイヤを何段回す・スイッチを押す・手をかざす」という予定を先に作っておき、
  *           仮の時計がその時刻を過ぎたら入力を変える
  *   - LED：点けた・消した時刻を全部覚えておき、あとで「この時刻にどの LED が点いていたか」を調べる
  *   - 探索：explore_run() は走らずに、呼ばれた時刻と中身を覚えて、決めておいた結果を返す
+ *   - ログ出力・フェイルセーフの解除：何もせずに、呼ばれたことを覚える
  *
  * ■ テストの内容
  *   1. LED の表し方（モードと No.、ゴールの値）
  *   2. 入力の読み方（タイヤの段、スイッチのチャタリング）
  *   3. ゴール（電源を入れたときに Flash から読む、使える位置か）
- *   4. モードを選んで、スタートして、探索を呼ぶまで（LED の表示と時刻も）
- *   5. No.0 では決定しない、スタート待ちでの選び直し、走ったあとも同じモード・No.、フェイルセーフ、ゴールへ行けなかった
+ *   4. モードを選んで、スタートして、探索を呼ぶまで（LED の表示と時刻、走り終わったら「うまくいった」、走ったあとも同じモード・No.）
+ *   5. No.0 では決定しない、モードと No. は一周する、スタート待ちでの選び直し、前センサの手のチャタリング、
+ *      フェイルセーフ（点滅、スイッチで解除、ロード中）、道がなくなった
  *   6. ログ出力（終わったら「うまくいった」）、ゴールの位置の入力（使えない位置のときは x に戻る）、迷路呼び出し
  */
 #include <stdbool.h>
@@ -245,11 +248,13 @@ static void reset_world(void)
  * mode.c・ui.c・goal.c が使う関数（ここで仮に作る）
  * ------------------------------------------------------------------------- */
 
+/* 今の時刻：仮の時計を返す */
 uint32_t timebase_get_ms(void)
 {
   return s_now_ms;
 }
 
+/* 待つ：仮の時計を wait_ms 進めて、その時刻までの入力の予定を反映する。決めた時間を過ぎたら、テストを止める */
 void timebase_wait_ms(uint32_t wait_ms)
 {
   s_now_ms = s_now_ms + wait_ms;
@@ -260,6 +265,7 @@ void timebase_wait_ms(uint32_t wait_ms)
   }
 }
 
+/* LED を点ける・消す：変わったときだけ、時刻と一緒に覚える */
 void led_set(uint8_t num, bool on)
 {
   if (num < 1 || num > LED_COUNT) {
@@ -277,6 +283,7 @@ void led_set(uint8_t num, bool on)
   }
 }
 
+/* LED を全部消す */
 void led_all_off(void)
 {
   for (uint8_t num = 1; num <= LED_COUNT; num++) {
@@ -284,6 +291,7 @@ void led_all_off(void)
   }
 }
 
+/* タイヤが回った量：入力の予定で決めた値を返す */
 int32_t encoder_get_left_total(void)
 {
   return s_left_count;
@@ -294,27 +302,32 @@ int32_t encoder_get_right_total(void)
   return s_right_count;
 }
 
+/* スイッチが押されているか：入力の予定で決めた値を返す */
 bool switch_is_pressed(void)
 {
   return s_switch;
 }
 
+/* 前センサに手がかざされているか：入力の予定で決めた値を返す */
 bool wall_ctrl_is_hand_front(void)
 {
   return s_hand;
 }
 
+/* フェイルセーフの解除：呼ばれた回数を数える */
 void failsafe_clear(void)
 {
   s_failsafe_clear_count = s_failsafe_clear_count + 1;
 }
 
+/* 迷路の読み込み：呼ばれた回数を数え、決めておいた答え（保存した迷路があるか）を返す */
 bool flash_load_maze(void)
 {
   s_flash_maze_load_count = s_flash_maze_load_count + 1;
   return s_flash_has_maze;
 }
 
+/* ゴールの保存：仮の Flash に覚えて、回数を数える */
 void flash_save_goal(int goal_x, int goal_y)
 {
   s_flash_has_goal = true;
@@ -323,6 +336,7 @@ void flash_save_goal(int goal_x, int goal_y)
   s_flash_goal_save_count = s_flash_goal_save_count + 1;
 }
 
+/* ゴールの読み込み：仮の Flash に覚えたゴールを返す */
 bool flash_load_goal(int *goal_x, int *goal_y)
 {
   if (!s_flash_has_goal) {
@@ -499,7 +513,7 @@ static void test_select_and_start(void)
   check_leds_at(1800, "1111111", "手をかざしているあいだは、全部点く");
   check_leds_at(2500, "0000000", "手を離すと、全部消える");
   check_leds_at(s_explore_time_ms + 500, "1111111", "走り終わったら、全部を 1 秒点ける（うまくいった）");
-  check(s_now_ms >= s_explore_time_ms + 1000, "うまくいったの合図は 1 秒");
+  check(s_now_ms >= s_explore_time_ms + 1000 && s_now_ms <= s_explore_time_ms + 1020, "うまくいったの合図は 1 秒");
   check_leds_at(s_now_ms, "0000000", "合図のあとは消す");
 
   /* 2 回目：選び直さずにスイッチを押せば、同じモード・No. で走る */
@@ -548,6 +562,23 @@ static void test_wrap(void)
   check_leds_at(1200, "1111111", "モード7・No.15 は全部点く");
   check(mode_get_mode() == 7 && mode_get_number() == 15, "モード7・No.15 になる");
   check(s_flash_maze_load_count == 1, "迷路呼び出しが 1 回だけ呼ばれる（No.3 では決定しない）");
+}
+
+/* 前センサの手は、3 回続けて（0.03 秒）読んだときだけ「かざした」とみなす。短く触れただけでは始まらない */
+static void test_hand_debounce(void)
+{
+  printf("[5] 前センサの手のチャタリング\n");
+  reset_world();
+  mode_init();
+
+  rotate_right_at(100, 1);   /* No.1 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 20);         /* 0.02 秒だけ：2 回しか読めないので、かざしたとみなさない */
+  hand_at(3000, 500);        /* 0.5 秒：かざしたとみなす。3500 ms に離す */
+  mode_run_once();
+
+  check(s_explore_count == 1, "探索は 1 回だけ");
+  check(s_explore_time_ms >= 3500 + 1000, "短く触れただけでは始まらず、2 回目に手を離してから 1 秒後に始まる");
 }
 
 /* スタート待ちでスイッチを押すと、選び直しに戻る（走らない） */
@@ -743,6 +774,7 @@ int main(void)
   test_number_zero();
   test_wrap();
   test_reselect();
+  test_hand_debounce();
   test_failsafe();
   test_no_route();
   test_output();

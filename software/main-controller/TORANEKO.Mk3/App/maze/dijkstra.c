@@ -593,6 +593,13 @@ static void route_add(int x, int y)
   s_route_length = s_route_length + 1;
 }
 
+/* 途中まで作った道を捨てる（道が見つからなかったときは、長さもコストも 0 にしておく） */
+static void forget_route(void)
+{
+  s_route_length = 0;
+  s_route_cost = 0;
+}
+
 /* スタートからゴールへの道を探す。見つかったら true。
  * 結果は dijkstra_get_route_x/y() で、スタート (0,0) からゴールの最初の区画まで順に読める。
  * unknown_as_wall：まだ見ていない壁を「ある」とみなすか（最短走行では true） */
@@ -626,12 +633,14 @@ bool dijkstra_find_route(int goal_x, int goal_y, int goal_width, int goal_height
     edge_t edge = state.edge;
     for (int i = 0; i < run_length; i++) {
       if (s_route_length >= ROUTE_CELL_MAX) {
+        forget_route();
         return false;  /* 長すぎる（普通は起きない） */
       }
       edge_t next_edge;
       int cell_x;
       int cell_y;
       if (!move_from(edge, move_dir, &next_edge, &cell_x, &cell_y)) {
+        forget_route();
         return false;  /* 向きの記録がおかしい（普通は起きない） */
       }
       route_add(cell_x, cell_y);
@@ -646,6 +655,10 @@ bool dijkstra_find_route(int goal_x, int goal_y, int goal_width, int goal_height
   int goal_cell_x;
   int goal_cell_y;
   get_cell_beyond(state.edge, move_dir, &goal_cell_x, &goal_cell_y);
+  if (s_route_length >= ROUTE_CELL_MAX) {
+    forget_route();
+    return false;  /* ゴールの区画が入らない（普通は起きない） */
+  }
   route_add(goal_cell_x, goal_cell_y);
   return true;
 }

@@ -69,13 +69,19 @@ static volatile int s_count = 0;                  /* 記録した行数 */
 static volatile int s_interval_ms = 1;            /* 何 ms ごとに 1 行残すか */
 static volatile int s_periods_per_row = 2;        /* 何回の制御周期ごとに 1 行残すか */
 static volatile int s_period_count = 0;           /* 前に残してから、何回呼ばれたか */
-static volatile float s_start_distance_mm = 0.0f; /* 記録を始めたときの距離 [mm] */
+
+/* log_record()（割り込み）の中だけで使う変数 */
+static float s_start_distance_mm = 0.0f;          /* 記録を始めたときの距離 [mm] */
 
 /* 記録を始める。interval_ms [ms] ごとに 1 行残す（制御周期の何回ぶんかに直す。2kHz なら 1ms = 2 回）。
- * 前のログは消える */
+ * 1 より小さい値を渡されたら 1ms にする（出力の dt・div と、本当の間隔をそろえるため）。前のログは消える */
 void log_start(int interval_ms)
 {
   s_recording = false;
+
+  if (interval_ms < 1) {
+    interval_ms = 1;
+  }
 
   int periods = interval_ms * CTRL_FREQ_HZ / 1000;
   if (periods < 1) {
@@ -128,29 +134,29 @@ void log_record(log_values_t values)
     return;
   }
 
-  int i = s_count;
-  if (i == 0) {
+  int row = s_count;
+  if (row == 0) {
     s_start_distance_mm = values.distance_mm;
   }
-  s_rows[i].distance_mm = values.distance_mm - s_start_distance_mm;
-  s_rows[i].speed = to_int16(values.speed_mm_s, SCALE_SPEED);
-  s_rows[i].speed_target = to_int16(values.speed_target_mm_s, SCALE_SPEED);
-  s_rows[i].omega = to_int16(values.omega_deg_s, SCALE_OMEGA);
-  s_rows[i].omega_target = to_int16(values.omega_target_deg_s, SCALE_OMEGA);
-  s_rows[i].angle = to_int16(values.angle_deg, SCALE_OMEGA);
-  s_rows[i].sensor_left = to_int16((float)values.sensor_left, 1.0f);
-  s_rows[i].sensor_right = to_int16((float)values.sensor_right, 1.0f);
-  s_rows[i].wall_dist_left = to_int16(values.wall_dist_left_mm, SCALE_DIST);
-  s_rows[i].wall_dist_right = to_int16(values.wall_dist_right_mm, SCALE_DIST);
-  s_rows[i].wall_error = to_int16(values.wall_error, SCALE_ERROR);
-  s_rows[i].wall_p = to_int16(values.wall_p, SCALE_PID);
-  s_rows[i].wall_d = to_int16(values.wall_d, SCALE_PID);
-  s_rows[i].voltage_left = to_int16(values.voltage_left_v, SCALE_VOLT);
-  s_rows[i].voltage_right = to_int16(values.voltage_right_v, SCALE_VOLT);
-  s_rows[i].battery = to_int16(values.battery_v, SCALE_BATT);
-  s_rows[i].wall_used = (int8_t)values.wall_used;
-  s_rows[i].phase = (int8_t)values.phase;
-  s_count = i + 1;
+  s_rows[row].distance_mm = values.distance_mm - s_start_distance_mm;
+  s_rows[row].speed = to_int16(values.speed_mm_s, SCALE_SPEED);
+  s_rows[row].speed_target = to_int16(values.speed_target_mm_s, SCALE_SPEED);
+  s_rows[row].omega = to_int16(values.omega_deg_s, SCALE_OMEGA);
+  s_rows[row].omega_target = to_int16(values.omega_target_deg_s, SCALE_OMEGA);
+  s_rows[row].angle = to_int16(values.angle_deg, SCALE_OMEGA);
+  s_rows[row].sensor_left = to_int16((float)values.sensor_left, 1.0f);
+  s_rows[row].sensor_right = to_int16((float)values.sensor_right, 1.0f);
+  s_rows[row].wall_dist_left = to_int16(values.wall_dist_left_mm, SCALE_DIST);
+  s_rows[row].wall_dist_right = to_int16(values.wall_dist_right_mm, SCALE_DIST);
+  s_rows[row].wall_error = to_int16(values.wall_error, SCALE_ERROR);
+  s_rows[row].wall_p = to_int16(values.wall_p, SCALE_PID);
+  s_rows[row].wall_d = to_int16(values.wall_d, SCALE_PID);
+  s_rows[row].voltage_left = to_int16(values.voltage_left_v, SCALE_VOLT);
+  s_rows[row].voltage_right = to_int16(values.voltage_right_v, SCALE_VOLT);
+  s_rows[row].battery = to_int16(values.battery_v, SCALE_BATT);
+  s_rows[row].wall_used = (int8_t)values.wall_used;
+  s_rows[row].phase = (int8_t)values.phase;
+  s_count = row + 1;
 }
 
 /* 記録をやめる（記録した行は残る） */
@@ -180,32 +186,32 @@ int log_get_count(void)
   return s_count;
 }
 
-/* 記録した i 行目を、元の単位に戻して 1 行に出す。time_s はその行の時刻 [s] */
-static void print_row(int i, float time_s)
+/* 記録した row 行目を、元の単位に戻して 1 行に出す。time_s はその行の時刻 [s] */
+static void print_row(int row, float time_s)
 {
-  float wall_p = s_rows[i].wall_p / SCALE_PID;
-  float wall_d = s_rows[i].wall_d / SCALE_PID;
+  float wall_p = s_rows[row].wall_p / SCALE_PID;
+  float wall_d = s_rows[row].wall_d / SCALE_PID;
   printf("%.3f,%.1f,%d,%d,%.1f,%.1f,%.1f,%d,%d,%.1f,%.1f,%d,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.2f,%d\r\n",
          time_s,
-         s_rows[i].distance_mm,
-         s_rows[i].speed,
-         s_rows[i].speed_target,
-         s_rows[i].omega / SCALE_OMEGA,
-         s_rows[i].omega_target / SCALE_OMEGA,
-         s_rows[i].angle / SCALE_OMEGA,
-         s_rows[i].sensor_left,
-         s_rows[i].sensor_right,
-         s_rows[i].wall_dist_left / SCALE_DIST,
-         s_rows[i].wall_dist_right / SCALE_DIST,
-         s_rows[i].wall_used,
-         s_rows[i].wall_error / SCALE_ERROR,
+         s_rows[row].distance_mm,
+         s_rows[row].speed,
+         s_rows[row].speed_target,
+         s_rows[row].omega / SCALE_OMEGA,
+         s_rows[row].omega_target / SCALE_OMEGA,
+         s_rows[row].angle / SCALE_OMEGA,
+         s_rows[row].sensor_left,
+         s_rows[row].sensor_right,
+         s_rows[row].wall_dist_left / SCALE_DIST,
+         s_rows[row].wall_dist_right / SCALE_DIST,
+         s_rows[row].wall_used,
+         s_rows[row].wall_error / SCALE_ERROR,
          wall_p,
          wall_d,
          wall_p + wall_d,
-         s_rows[i].voltage_left / SCALE_VOLT,
-         s_rows[i].voltage_right / SCALE_VOLT,
-         s_rows[i].battery / SCALE_BATT,
-         s_rows[i].phase);
+         s_rows[row].voltage_left / SCALE_VOLT,
+         s_rows[row].voltage_right / SCALE_VOLT,
+         s_rows[row].battery / SCALE_BATT,
+         s_rows[row].phase);
 }
 
 /* 記録したログを、KOGUMA のビューアで読める形で出す（記録していないときに呼ぶ）。
