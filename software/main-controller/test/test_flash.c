@@ -7,7 +7,8 @@
  * ■ しくみ
  * flash.c が使う Flash の関数（drv/flash_memory.h）を、ここで仮に作る。Flash の代わりに配列を使う。
  *   - 消すと、全部の語が 0xFFFFFFFF になる（本物と同じ）
- *   - 消していない語に書こうとしたら、数えておいて、その語を壊す（本物の Flash では、前の値と混ざった値になる）
+ *   - 消していない語に書こうとしたら、数えておく。前と同じ値なら変わらず、違う値ならその語を壊す（0 にする）。
+ *     本物の Flash も、同じ値を書き直しても変わらず、違う値だと前の値と混ざった値になる。HAL もエラーにしない
  *   - 「消すのに失敗する」「何語か書いたところで止まる（電源が切れたときのまね）」もできる
  *
  * ■ テストの内容
@@ -54,11 +55,13 @@ static void check(bool ok, const char *message)
 
 static bool s_led_on[LED_COUNT + 1];  /* [1]〜[7] を使う */
 
+/* LED を点ける・消す：点いているかを覚える */
 void led_set(uint8_t num, bool on)
 {
   s_led_on[num] = on;
 }
 
+/* LED を全部消す */
 void led_all_off(void)
 {
   for (int i = 1; i <= LED_COUNT; i++) {
@@ -134,6 +137,7 @@ static void set_word(flash_area_t area, int index, uint32_t value)
   }
 }
 
+/* 保存場所を消す：全部の語を 0xFFFFFFFF にする。消す瞬間に、外側の 4 個の LED だけが点いていたかも数える */
 bool flash_memory_erase(flash_area_t area)
 {
   if (only_outer_leds_on()) {
@@ -153,6 +157,7 @@ bool flash_memory_erase(flash_area_t area)
   return true;
 }
 
+/* 1 語書く：消したあとの語なら書く。決めた語数を書いたあとは書けない（電源が切れたときのまね） */
 bool flash_memory_write_word(flash_area_t area, int index, uint32_t value)
 {
   if (index < 0 || index >= FLASH_AREA_WORD_COUNT) {
@@ -164,13 +169,16 @@ bool flash_memory_write_word(flash_area_t area, int index, uint32_t value)
   s_write_count = s_write_count + 1;
   if (get_word(area, index) != FLASH_ERASED_WORD) {
     s_rewrite_count = s_rewrite_count + 1;
-    set_word(area, index, 0);  /* 消していない語に書くと、おかしな値になる */
-    return false;
+    if (get_word(area, index) != value) {
+      set_word(area, index, 0);  /* 違う値を書くと、おかしな値になる */
+    }
+    return true;  /* 本物の HAL も、うまくいったと答える */
   }
   set_word(area, index, value);
   return true;
 }
 
+/* 1 語読む：保存場所の外なら、消したあとの値を返す */
 uint32_t flash_memory_read_word(flash_area_t area, int index)
 {
   if (index < 0 || index >= FLASH_AREA_WORD_COUNT) {
@@ -213,7 +221,7 @@ static int random_below(int limit)
 {
   s_random_seed = s_random_seed * 1103515245u + 12345u;
   int value = s_random_seed / 65536u;
-  return value % limit;
+  return value % limit;  /* limit で割った余りは 0〜(limit - 1) になる（一周させるためではなく、範囲を決めるため） */
 }
 
 /* でたらめな壁の状態 */
@@ -517,8 +525,13 @@ static void test_saving_leds(void)
   check(s_erase_with_leds == 1, "迷路を保存するとき、消す前に外側の 4 個（LED1・2・6・7）を点ける");
   check(all_leds_off(), "迷路を保存し終わったら、LED を消す");
 
-  flash_save_goal(3, 4);
-  check(s_erase_with_leds == 2, "ゴールを保存するときも、消す前に外側の 4 個を点ける");
+  /* ゴールを入れたあとは、LED3〜7 にゴールの値が出ている（例：y = 15 → LED4〜7 が点いている）。その状態から保存する */
+  led_set(4, true);
+  led_set(5, true);
+  led_set(6, true);
+  led_set(7, true);
+  flash_save_goal(3, 15);
+  check(s_erase_with_leds == 2, "ゴールを保存するときも、それまでの表示を消して、外側の 4 個だけを点ける");
   check(all_leds_off(), "ゴールを保存し終わったら、LED を消す");
 
   int goal_x = 0;

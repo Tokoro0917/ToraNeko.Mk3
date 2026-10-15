@@ -160,7 +160,7 @@ static bool read_maze_lines(void)
 /* value の i 番目の桁（2 進数）が 1 か。2 で i 回割ると、i 番目の桁がいちばん下の桁になるので、それが奇数か調べる */
 static bool digit_is_one(unsigned long value, int i)
 {
-  for (int k = 0; k < i; k++) {
+  for (int step = 0; step < i; step++) {
     value = value / 2;
   }
   if (value % 2 == 1) {
@@ -380,6 +380,7 @@ static void test_maze_output(void)
 {
   printf("[1] 迷路：出力を読み直すと、元の迷路と同じになる\n");
   int fail_count = 0;
+  int goal_x = 10;  /* ゴールの x を 10、11、…、14、10、… と順に変える */
   for (int i = 0; i < 50; i++) {
     s_random_seed = (unsigned int)(i + 1);
     make_random_map(i * 2, 40);   /* 見たことのある壁の割合を、0% から 98% まで変える */
@@ -387,8 +388,12 @@ static void test_maze_output(void)
     int unknown_count = count_unknown();
 
     begin_capture();
-    output_maze(10 + i % 5, 12);
+    output_maze(goal_x, 12);
     end_capture();
+    goal_x = goal_x + 1;
+    if (goal_x > 14) {
+      goal_x = 10;
+    }
 
     bool ok = read_maze_lines();
     int unknown_line = find_line("unknown walls:");
@@ -419,9 +424,14 @@ static void test_maze_output(void)
   printf("[2] 迷路：読み直した迷路でもう一度計算した最短経路が、出力と同じ（--dump の確かめ方）\n");
   int differ_count = 0;
   int path_count = 0;
+  int known_percent = 90;  /* 見たことのある壁の割合を、90、91、…、100、90、… と順に変える */
   for (int i = 0; i < 50; i++) {
     s_random_seed = (unsigned int)(i + 101);
-    make_random_map(90 + i % 11, 15);   /* ほとんど見てあり、壁が少ない（最短経路があることが多い） */
+    make_random_map(known_percent, 15);   /* ほとんど見てあり、壁が少ない（最短経路があることが多い） */
+    known_percent = known_percent + 1;
+    if (known_percent > 100) {
+      known_percent = 90;
+    }
     begin_capture();
     output_maze(14, 15);
     end_capture();
@@ -454,6 +464,10 @@ static void test_maze_output(void)
   make_random_map(100, 15);
   const char *dump_path = "test_output_dump.txt";
   FILE *dump_file = fopen(dump_path, "w");
+  if (dump_file == NULL) {
+    check(false, "--dump を試すためのファイルが作れない");
+    return;
+  }
   fflush(stdout);
   int saved = dup(fileno(stdout));
   dup2(fileno(dump_file), fileno(stdout));

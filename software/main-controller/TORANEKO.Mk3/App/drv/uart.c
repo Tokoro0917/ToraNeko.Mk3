@@ -22,7 +22,7 @@
  * バッファの位置（s_write_pos など）は、通常の処理と割り込みの両方から書き換える。途中で割り込みが入って
  * 同時に書き換えると壊れるので、書き換えている間だけ割り込みを禁止する。
  *   - 禁止する前の状態を覚えておき、終わったら元に戻す（すでに禁止されている場所から呼ばれても、
- *     勝手に許可しないため。例：Error_Handler の中の printf）
+ *     勝手に許可しないため。例：割り込みを禁止した中で printf を呼んだとき）
  *   - 長い文字列でも、禁止するのは 16 文字ずつにする（制御周期や壁センサの割り込みを長く待たせないため）
  *
  * ■ printf は割り込みの中で使わない
@@ -126,7 +126,9 @@ void uart_write(const uint8_t *data, uint32_t len)
 
 /* 送信待ちバッファの空き [文字]。
  * s_send_pos は DMA の送信完了の割り込みで進む（空きが増える）。読んでいるあいだに進んでも、
- * 空きを少なめに数えるだけなので困らない（割り込みは禁止しない） */
+ * 空きを少なめに数えるだけなので困らない（割り込みは禁止しない）。
+ * ただし、割り込みの中から uart_write() で書くと、そのぶん空きが減るので、uart_wait_free() で待った空きより
+ * 少なくなることがある（今は割り込みの中から書いていない。書くようにしたら、捨てた文字の数で確かめる） */
 static uint32_t get_free_count(void)
 {
   uint32_t write_pos = s_write_pos;
@@ -211,6 +213,8 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 int _write(int file, char *ptr, int len)
 {
   (void)file;  /* 使わない引数（警告を消すため） */
+  /* printf からは char の並びで来るが、uart_write は uint8_t（0〜255 の数）の並びで受け取るので、型を読み替えて渡す。
+   * どちらも 1 文字 1 バイトなので、中身は変わらない */
   uart_write((const uint8_t *)ptr, len);
   return len;
 }

@@ -5,7 +5,8 @@
  * ■ 流れ（mode_run_once() の 1 回ぶん）
  *   1. 左タイヤでモード、右タイヤで No. を選ぶ。スイッチで決定する
  *   2. スタート待ち（前センサに手をかざして離すと、1 秒後に始まる。スイッチで 1 に戻る）
- *   3. 選んだモードを走らせる。終わったら「うまくいった」を出し、同じモード・No. のまま 1 に戻る
+ *   3. 選んだモードを走らせる。終わったら、同じモード・No. のまま 1 に戻る
+ *      （最後まで走れたら「うまくいった」、フェイルセーフならスイッチで解除するまで待ち、道がなくなったら「できなかった」を出す）
  *
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す）
  *   モード0 No.1〜3  探索（往復・片道・未知壁探索）
@@ -98,6 +99,8 @@ static void select_mode(void)
     s_number = add_and_wrap(s_number, ui_read_right_steps(), NUMBER_COUNT);
     ui_show_mode_number(s_mode, s_number);
 
+    /* ui_switch_pushed() は、押されたかを毎回読む必要がある（チャタリングを取り除くため）ので、&& の左に置く。
+     * && は左が false なら右を調べないので、左右を入れ替えると、することのない番号のあいだスイッチを読まなくなる */
     if (ui_switch_pushed() && mode_has_action(s_mode, s_number)) {
       ui_blink_all(1);  /* 決定の合図 */
       return;
@@ -129,7 +132,7 @@ static void run_explore(int number)
     ui_wait_failsafe_reset();
     failsafe_clear();
   } else if (result == EXPLORE_RESULT_NO_ROUTE) {
-    ui_signal_error();  /* ゴールへ行けなかった */
+    ui_signal_error();  /* 道がなくなった（行き・帰りのどちらか）か、動きすぎた。迷路は保存しない */
   }
 }
 

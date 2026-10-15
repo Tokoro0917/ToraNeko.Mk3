@@ -63,6 +63,16 @@ static void stop_here(void)
   s_stopped = true;
 }
 
+/* 止まったあとに返す結果。止まる途中でぶつかって（フェイルセーフで止まって）いたら、
+ * result の代わりに EXPLORE_RESULT_FAILSAFE を返す（5 区画ぶんを戻して保存するため） */
+static explore_result_t result_after_stop(explore_result_t result)
+{
+  if (failsafe_is_stopped()) {
+    return EXPLORE_RESULT_FAILSAFE;
+  }
+  return result;
+}
+
 /* 動き action をしたあとの向き */
 static direction_t direction_after(direction_t dir, action_t action)
 {
@@ -108,9 +118,11 @@ static void move(action_t action)
   } else if (action == ACTION_TURN_RIGHT) {
     run_search_turn_right();
   } else {
-    /* ACTION_UTURN */
+    /* ACTION_UTURN：止まってから、後ろを向いて発進する（止まる途中でぶつかったら、発進しない） */
     run_search_stop_at_center();
-    run_search_go_from_center(RUN_TURN_BACK);
+    if (!failsafe_is_stopped()) {
+      run_search_go_from_center(RUN_TURN_BACK);
+    }
   }
 
   s_stopped = false;
@@ -137,7 +149,7 @@ static explore_result_t run_to_target(void)
     action_t action = search_decide_action(s_x, s_y, s_dir);
     if (action == ACTION_STOP) {
       stop_here();  /* どこへ進んでも目的地に着けない */
-      return EXPLORE_RESULT_NO_ROUTE;
+      return result_after_stop(EXPLORE_RESULT_NO_ROUTE);
     }
 
     move(action);
@@ -148,15 +160,20 @@ static explore_result_t run_to_target(void)
   }
 
   stop_here();  /* 動きすぎた */
-  return EXPLORE_RESULT_NO_ROUTE;
+  return result_after_stop(EXPLORE_RESULT_NO_ROUTE);
 }
 
 /* 未知壁探索の経路を、止まって計算し直す（ダイクストラは重いので、止まっているときだけ計算する）。
- * ゴールへの道が見つからなければ、このあとの search_check_unknown_walls() が UNKNOWN_WALL_NO_PLAN を返す */
-static void stop_and_plan(int goal_x, int goal_y, int goal_width, int goal_height)
+ * ゴールへの道が見つからなければ、このあとの search_check_unknown_walls() が UNKNOWN_WALL_NO_PLAN を返す。
+ * 止まる途中でぶつかった（フェイルセーフで止まった）ときは、計算せずに false を返す */
+static bool stop_and_plan(int goal_x, int goal_y, int goal_width, int goal_height)
 {
   stop_here();
+  if (failsafe_is_stopped()) {
+    return false;
+  }
   search_plan_unknown_walls(goal_x, goal_y, goal_width, goal_height);
+  return true;
 }
 
 /* 未知壁探索（流れは KOGUMA_PORTING.md の「ToraNeko の未知壁探索の流れ」）。ゴールの区画の入口の辺に着いたところから呼ぶ。
@@ -167,7 +184,9 @@ static void stop_and_plan(int goal_x, int goal_y, int goal_width, int goal_heigh
 static explore_result_t scan_unknown_walls(int goal_x, int goal_y, int goal_width, int goal_height)
 {
   /* ゴールの区画の真ん中で止まって、見に行く壁を計算する */
-  stop_and_plan(goal_x, goal_y, goal_width, goal_height);
+  if (!stop_and_plan(goal_x, goal_y, goal_width, goal_height)) {
+    return EXPLORE_RESULT_FAILSAFE;
+  }
 
   for (int move_count = 0; move_count < MOVE_LIMIT; move_count++) {
     int cell_x;
@@ -182,11 +201,13 @@ static explore_result_t scan_unknown_walls(int goal_x, int goal_y, int goal_widt
     if (result == UNKNOWN_WALL_NO_PLAN) {
       /* ゴールへの道が見つからなかった（壁の読み間違いなど）：未知壁探索をやめる */
       stop_here();
-      return EXPLORE_RESULT_DONE;
+      return result_after_stop(EXPLORE_RESULT_DONE);
     }
     if (result == UNKNOWN_WALL_BLOCKED) {
       /* 経路の上に壁があった（経路がふさがれた）：止まって計算し直す */
-      stop_and_plan(goal_x, goal_y, goal_width, goal_height);
+      if (!stop_and_plan(goal_x, goal_y, goal_width, goal_height)) {
+        return EXPLORE_RESULT_FAILSAFE;
+      }
       continue;
     }
 
@@ -202,12 +223,16 @@ static explore_result_t scan_unknown_walls(int goal_x, int goal_y, int goal_widt
       if (s_stopped) {
         return EXPLORE_RESULT_DONE;
       }
-      stop_and_plan(goal_x, goal_y, goal_width, goal_height);
+      if (!stop_and_plan(goal_x, goal_y, goal_width, goal_height)) {
+        return EXPLORE_RESULT_FAILSAFE;
+      }
       continue;
     }
     if (action == ACTION_UTURN && !s_stopped) {
       /* U ターンでは止まるので、止まったついでに計算し直す（行き先が変わるかもしれない） */
-      stop_and_plan(goal_x, goal_y, goal_width, goal_height);
+      if (!stop_and_plan(goal_x, goal_y, goal_width, goal_height)) {
+        return EXPLORE_RESULT_FAILSAFE;
+      }
       continue;
     }
 
@@ -219,7 +244,7 @@ static explore_result_t scan_unknown_walls(int goal_x, int goal_y, int goal_widt
   }
 
   stop_here();  /* 動きすぎた：未知壁探索をやめる */
-  return EXPLORE_RESULT_DONE;
+  return result_after_stop(EXPLORE_RESULT_DONE);
 }
 
 /* 途中で終わったときの後始末をして、result をそのまま返す。
@@ -241,7 +266,7 @@ static explore_result_t finish_done(void)
   if (failsafe_is_stopped()) {
     return finish_early(EXPLORE_RESULT_FAILSAFE);  /* 止まる途中でぶつかった */
   }
-  flash_save_maze();
+  flash_save_maze();  /* 止まったあとはモーターの出力が 0 なので、CPU が止まっても動かない（run.h） */
   return EXPLORE_RESULT_DONE;
 }
 

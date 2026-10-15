@@ -90,5 +90,5 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 )
 
 # printf で小数（%f）を出せるようにする（走行ログの出力に使う。KOGUMA_PORTING.md の B6）。
-# nano.specs（小さい printf）は、そのままだと %f を出さないので、小数を出す部分をリンクに入れさせる。Flash が約 10KB 増える
+# nano.specs（小さい printf）は、そのままだと %f を出さないので、小数を出す部分をリンクに入れさせる。Flash が約 13KB 増える（測った値：28.6KB → 42.1KB）
 target_link_options(${CMAKE_PROJECT_NAME} PRIVATE -u _printf_float)

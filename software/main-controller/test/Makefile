@@ -11,6 +11,9 @@ APP_DIR = ../TORANEKO.Mk3/App
 
 CFLAGS = -std=c11 -Wall -Wextra -Werror -O2 -g -I$(APP_DIR)
 
+# App/ のヘッダ全部。どれかを書き換えたら、全部のテストを作り直す（古いテストのまま通ってしまわないように）
+APP_HEADERS = $(wildcard $(APP_DIR)/*/*.h)
+
 MAZE_SOURCES = \
 	$(APP_DIR)/maze/maze_map.c \
 	$(APP_DIR)/maze/search.c \
@@ -42,16 +45,16 @@ test: test_maze test_mode test_output test_flash
 	./test_maze
 
 # dijkstra.c は test_maze.c の中で #include している（テストで中の関数を使うため）
-test_maze: test_maze.c $(MAZE_SOURCES) $(APP_DIR)/maze/dijkstra.c
+test_maze: test_maze.c $(MAZE_SOURCES) $(APP_DIR)/maze/dijkstra.c $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_maze.c $(MAZE_SOURCES)
 
-test_mode: test_mode.c $(MODE_SOURCES)
+test_mode: test_mode.c $(MODE_SOURCES) $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_mode.c $(MODE_SOURCES)
 
-test_output: test_output.c $(OUTPUT_SOURCES)
+test_output: test_output.c $(OUTPUT_SOURCES) $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_output.c $(OUTPUT_SOURCES)
 
-test_flash: test_flash.c $(FLASH_SOURCES)
+test_flash: test_flash.c $(FLASH_SOURCES) $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_flash.c $(FLASH_SOURCES)
 
 clean:
