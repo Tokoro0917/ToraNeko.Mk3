@@ -21,6 +21,7 @@ mechanical/
 |---|---|
 | [skirt_slider/](./skirt_slider/) | 吸引ファン用スカート枠（前後のスライダー付き、両面テープで貼る）と、スカートなしで使う前後のスライダー |
 | [battery_holder/](./battery_holder/) | バッテリー 2 本を上部固定基板の上に固定するホルダー |
+| [case_insert/](./case_insert/) | ケース（お弁当箱）の中子に入れて、機体を動かないように納める受け台。中子の寸法は仮の値 |
 | [jigs/maintenance_stand/](./jigs/maintenance_stand/) | 機体を載せるとタイヤが浮くメンテナンス用スタンド |
 | [jigs/centering_plate/](./jigs/centering_plate/) | 機体を区画の決まった位置に置くセンタリング板。まっすぐ版（区画の中心）と斜め版（辺の中点に 45°、左右）。位置決めに要るところだけの細い枠で、置いたままスタートできる |
 | [jigs/encoder_solder_jig/](./jigs/encoder_solder_jig/) | エンコーダ基板はんだ付け治具 |
