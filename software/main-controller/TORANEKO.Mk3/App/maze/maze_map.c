@@ -199,6 +199,16 @@ bool maze_map_is_visited(int x, int y)
   return s_visited[x][y];
 }
 
+/* その区画に入ったことがあるかを書き込む（Flash に保存した迷路を読み込むときに使う。
+ * 探索中は maze_map_record_walls() が書き込むので、これは使わない） */
+void maze_map_set_visited(int x, int y, bool visited)
+{
+  if (!maze_is_inside(x, y)) {
+    return;
+  }
+  s_visited[x][y] = visited;
+}
+
 /* (x, y) が迷路の中か */
 bool maze_is_inside(int x, int y)
 {

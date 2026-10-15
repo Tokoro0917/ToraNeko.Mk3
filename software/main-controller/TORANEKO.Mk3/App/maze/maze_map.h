@@ -37,6 +37,7 @@ void maze_map_set_wall(int x, int y, direction_t dir, wall_state_t state);
 wall_state_t maze_map_get_wall(int x, int y, direction_t dir);
 void maze_map_record_walls(int x, int y, direction_t dir, bool wall_front, bool wall_left, bool wall_right);
 bool maze_map_is_visited(int x, int y);
+void maze_map_set_visited(int x, int y, bool visited);
 
 /* フェイルセーフで止まったときに戻す区画の数（MODES.md の 5） */
 #define MAZE_UNDO_CELL_COUNT 5
