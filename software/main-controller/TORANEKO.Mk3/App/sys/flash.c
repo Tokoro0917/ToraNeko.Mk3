@@ -22,12 +22,17 @@
  * - 迷路を読むときは、まず全部を読んで確かめの数が合うかを調べ、合ったときだけ迷路に入れる
  *   （途中まで入れて、おかしな迷路になるのを防ぐ）
  * - 書く形を変えたときは、目印の数も変える（前の形で保存したものを、間違えて読まないように）
+ *
+ * ■ 保存しているあいだの表示（MODES.md の 3）
+ * 外側の 4 個の LED（LED1・2・6・7）を点けておき、終わったら消す。Flash を消しているあいだは CPU が止まって
+ * LED を動かせないので、始める前に点けておく（「今は電源を切らないで」の合図）。
  */
 #include "sys/flash.h"
 
 #include <stdint.h>
 
 #include "drv/flash_memory.h"
+#include "drv/led.h"
 #include "maze/maze_map.h"
 
 #define GOAL_MARK 0x474F4131  /* ゴールを保存した目印（"GOA1" の文字コード。ほかと重ならない数なら何でもよい） */
@@ -40,6 +45,19 @@ static flash_area_t s_area = FLASH_AREA_GOAL;
 static int s_index = 0;
 static uint32_t s_sum = 0;
 static bool s_write_ok = true;  /* ここまで全部うまく書けたか */
+
+/* ---------------------------------------------------------------------------
+ * 保存しているあいだの表示
+ * ------------------------------------------------------------------------- */
+
+/* 外側の 4 個の LED（LED1・2・6・7）を点ける（on が true）・消す（false） */
+static void show_saving(bool on)
+{
+  led_set(1, on);
+  led_set(2, on);
+  led_set(6, on);
+  led_set(7, on);
+}
 
 /* ---------------------------------------------------------------------------
  * 順に書く・読む
@@ -119,6 +137,7 @@ static void write_cell(int x, int y)
  * 消しているあいだ（約 1〜2 秒）は CPU が止まるので、モーターを止めているときだけ呼ぶ */
 void flash_save_maze(void)
 {
+  show_saving(true);
   start_writing(FLASH_AREA_MAZE);
   write_number(MAZE_MARK);
   write_number(MAZE_SIZE);
@@ -128,6 +147,7 @@ void flash_save_maze(void)
     }
   }
   finish_writing();
+  show_saving(false);
 }
 
 /* 保存した迷路が使えるか（目印、大きさ、確かめの数が合うか）を調べる。読むだけで、迷路は変えない */
@@ -198,11 +218,13 @@ bool flash_load_maze(void)
  * 消しているあいだ（約 1〜2 秒）は CPU が止まるので、モーターを止めているときだけ呼ぶ */
 void flash_save_goal(int goal_x, int goal_y)
 {
+  show_saving(true);
   start_writing(FLASH_AREA_GOAL);
   write_number(GOAL_MARK);
   write_number(goal_x);
   write_number(goal_y);
   finish_writing();
+  show_saving(false);
 }
 
 /* 保存したゴールの位置を goal_x、goal_y に入れて true。保存したことがない・壊れているときは、

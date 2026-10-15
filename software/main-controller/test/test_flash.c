@@ -17,12 +17,14 @@
  *   4. 壊れた迷路（中の 1 語が違う、途中で止まった、消すのに失敗した、大きさが違う）は読まない。今の迷路も変わらない
  *   5. ゴールを保存して読み込む。壊れたもの・迷路の外の値は読まない
  *   6. 迷路とゴールは別の場所：片方を保存しても、もう片方は消えない
+ *   7. 保存しているあいだは、外側の 4 個の LED（LED1・2・6・7）が点いていて、終わったら消える
  */
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 
 #include "drv/flash_memory.h"
+#include "drv/led.h"
 #include "maze/maze_map.h"
 #include "sys/flash.h"
 
@@ -47,6 +49,41 @@ static void check(bool ok, const char *message)
 }
 
 /* ---------------------------------------------------------------------------
+ * 仮の LED（点いているかを覚えておく）
+ * ------------------------------------------------------------------------- */
+
+static bool s_led_on[LED_COUNT + 1];  /* [1]〜[7] を使う */
+
+void led_set(uint8_t num, bool on)
+{
+  s_led_on[num] = on;
+}
+
+void led_all_off(void)
+{
+  for (int i = 1; i <= LED_COUNT; i++) {
+    s_led_on[i] = false;
+  }
+}
+
+/* 外側の 4 個（LED1・2・6・7）だけが点いていれば true */
+static bool only_outer_leds_on(void)
+{
+  return s_led_on[1] && s_led_on[2] && !s_led_on[3] && !s_led_on[4] && !s_led_on[5] && s_led_on[6] && s_led_on[7];
+}
+
+/* 7 個とも消えていれば true */
+static bool all_leds_off(void)
+{
+  for (int i = 1; i <= LED_COUNT; i++) {
+    if (s_led_on[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/* ---------------------------------------------------------------------------
  * 仮の Flash（drv/flash_memory.h の関数を、配列で作る）
  * ------------------------------------------------------------------------- */
 
@@ -59,6 +96,7 @@ static int s_rewrite_count = 0;     /* 消していない語に書こうとし�
 static bool s_erase_fails = false;  /* true なら、消すのに失敗する */
 static int s_write_limit = -1;      /* 0 以上なら、この語数を書いたあとは書けない（電源が切れたときのまね） */
 static int s_write_count = 0;       /* 書いた語の数 */
+static int s_erase_with_leds = 0;   /* 外側の 4 個の LED だけが点いているときに消した回数 */
 
 /* 仮の Flash を、一度も保存していない状態（全部消した状態）にする */
 static void reset_flash(void)
@@ -73,6 +111,8 @@ static void reset_flash(void)
   s_erase_fails = false;
   s_write_limit = -1;
   s_write_count = 0;
+  s_erase_with_leds = 0;
+  led_all_off();
 }
 
 /* 仮の Flash の area の index 番目の語 */
@@ -96,6 +136,9 @@ static void set_word(flash_area_t area, int index, uint32_t value)
 
 bool flash_memory_erase(flash_area_t area)
 {
+  if (only_outer_leds_on()) {
+    s_erase_with_leds = s_erase_with_leds + 1;
+  }
   if (s_erase_fails) {
     return false;
   }
@@ -461,6 +504,31 @@ static void test_separate_areas(void)
 }
 
 /* ---------------------------------------------------------------------------
+ * 7. 保存しているあいだの表示
+ * ------------------------------------------------------------------------- */
+
+static void test_saving_leds(void)
+{
+  printf("[7] 保存しているあいだの LED\n");
+  reset_flash();
+
+  make_random_maze();
+  flash_save_maze();
+  check(s_erase_with_leds == 1, "迷路を保存するとき、消す前に外側の 4 個（LED1・2・6・7）を点ける");
+  check(all_leds_off(), "迷路を保存し終わったら、LED を消す");
+
+  flash_save_goal(3, 4);
+  check(s_erase_with_leds == 2, "ゴールを保存するときも、消す前に外側の 4 個を点ける");
+  check(all_leds_off(), "ゴールを保存し終わったら、LED を消す");
+
+  int goal_x = 0;
+  int goal_y = 0;
+  flash_load_maze();
+  flash_load_goal(&goal_x, &goal_y);
+  check(all_leds_off(), "読み込むときは、LED を点けない");
+}
+
+/* ---------------------------------------------------------------------------
  * main
  * ------------------------------------------------------------------------- */
 
@@ -472,6 +540,7 @@ int main(void)
   test_broken_maze();
   test_goal();
   test_separate_areas();
+  test_saving_leds();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");
