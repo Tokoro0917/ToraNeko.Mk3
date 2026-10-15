@@ -22,7 +22,7 @@ mechanical/
 | [skirt_slider/](./skirt_slider/) | 吸引ファン用スカート枠（前後のスライダー付き、両面テープで貼る）と、スカートなしで使う前後のスライダー |
 | [battery_holder/](./battery_holder/) | バッテリー 2 本を上部固定基板の上に固定するホルダー |
 | [jigs/maintenance_stand/](./jigs/maintenance_stand/) | 機体を載せるとタイヤが浮くメンテナンス用スタンド |
-| [jigs/centering_plate/](./jigs/centering_plate/) | 機体を区画の真ん中に合わせるセンタリング板 |
+| [jigs/centering_plate/](./jigs/centering_plate/) | 機体を区画の真ん中に置くセンタリング板（前が開いていて、置いたままスタートできる） |
 | [jigs/encoder_solder_jig/](./jigs/encoder_solder_jig/) | エンコーダ基板はんだ付け治具 |
 
 CADツールは **Fusion 360** を使用しています。
