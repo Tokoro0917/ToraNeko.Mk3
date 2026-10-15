@@ -39,11 +39,13 @@ CELL_PITCH = 90.0      # 区画の大きさ（柱の中心から次の柱の中�
 WALL_GAP = 0.3         # 板と壁のすきま（片側）
 BOARD_GAP = 0.3        # 縁と基板の外形のすきま
 PLATE_T = 3.0          # 板の厚さ（細いので、曲がらないように厚めにする）
-RIM_W = 1.6            # 基板の角を受ける縁の幅
+RIM_W = 2.4            # 基板の角を受ける縁の幅（0.4mm ノズルで 6 周）
 RIM_H = 4.0            # 縁の高さ（床から）。基板の端（床から 2.36〜2.96mm）に当たる高さ
-RIM_LEN = 10.0         # 縁が基板の横を受ける長さ（基板の後ろの端から前へ）
-REAR_BAR_W = 6.0       # 斜め版の、機体の後ろの辺に沿う棒の幅（縁の後ろから）
-SIDE_BAR_W = 8.0       # 斜め版の、横の壁に沿う棒の幅
+RIM_LEN = 15.0         # 縁が基板の横を受ける長さ（基板の後ろの端から前へ）
+RIM_BASE_W = 4.0       # 縁の外側に付ける土台（板と同じ厚さ）の幅。縁が根もとで折れないようにする
+REAR_BAR_W = 8.0       # 斜め版の、機体の後ろの辺に沿う棒の幅（縁の後ろから）
+SIDE_BAR_W = 10.0      # 斜め版の、横の壁に沿う棒の幅
+GUSSET_LEN = 20.0      # 斜め版の、2 本の棒のつなぎ目に入れる三角の補強の大きさ
 
 # ---- 機体の寸法（STEP 座標）-----------------------------------------------
 FLOOR_Z = -2.36                # 床の高さ（基板の下面から）
@@ -120,16 +122,40 @@ def board_shape(margin, z0, z1):
 
 
 def rim():
-    """基板の後ろの 2 つの角を受ける L 字の縁（後ろの端と、横の後ろ RIM_LEN だけ）。"""
-    outer = board_shape(BOARD_GAP + RIM_W, FLOOR_Z, FLOOR_Z + RIM_H)
+    """基板の後ろの 2 つの角を受ける L 字の縁（後ろの端と、横の後ろ RIM_LEN だけ）。
+
+    縁の外側には、板と同じ厚さの土台（幅 RIM_BASE_W）を付けて、断面を L 字にする。
+    縁だけだと細い壁が床に立っているだけになり、根もとで折れやすいため。
+    """
+    wall = board_shape(BOARD_GAP + RIM_W, FLOOR_Z, FLOOR_Z + RIM_H)
+    base = board_shape(BOARD_GAP + RIM_W + RIM_BASE_W, FLOOR_Z, FLOOR_Z + PLATE_T)
     keep = robot_rect(-50, 50, BOARD_REAR - RIM_LEN, BOARD_REAR + 10, -10, 10)
-    return outer.intersect(keep)
+    return wall.union(base).intersect(keep)
 
 
 def straight_frame():
     """まっすぐ版の枠: 機体の後ろの縁から後ろの壁までの帯（左右は壁まで）と、縁。"""
     band = robot_rect(-HALF_CELL, HALF_CELL, RIM_INNER_V, HALF_CELL, FLOOR_Z, FLOOR_Z + PLATE_T)
     return band.union(rim())
+
+
+def gusset():
+    """斜め版（右）の、横の壁に沿う棒と機体の後ろの棒のつなぎ目に入れる三角の補強。
+
+    区画の座標で考える。機体の後ろの棒の後ろの面は、機体から後ろへ rear_v の線
+    （区画の座標では x + y = −rear_v × √2）。横の棒の内側の面は x = 西の壁 + SIDE_BAR_W。
+    この 2 本の線が交わる点を角にして、横の棒に沿って GUSSET_LEN、後ろの棒に沿って GUSSET_LEN の三角形を作る。
+    """
+    rear_v = RIM_INNER_V + RIM_W + REAR_BAR_W
+    corner_x = CELL_B_WEST + SIDE_BAR_W
+    corner_y = -rear_v * math.sqrt(2) - corner_x
+    step = GUSSET_LEN / math.sqrt(2)   # 後ろの棒に沿って進むと、x と y が同じだけ変わる
+    points = [
+        cell_to_step(corner_x - 1.0, corner_y + 1.0),   # 棒の中に少し入れて、すきまなくつなぐ
+        cell_to_step(corner_x - 1.0, corner_y - GUSSET_LEN),
+        cell_to_step(corner_x + step, corner_y - step + 1.0),
+    ]
+    return prism(points, FLOOR_Z, FLOOR_Z + PLATE_T)
 
 
 def diagonal_frame():
@@ -139,7 +165,7 @@ def diagonal_frame():
                           FLOOR_Z, FLOOR_Z + PLATE_T)
     side_bar = cell_rect(CELL_B_WEST, CELL_B_WEST + SIDE_BAR_W, CELL_B_SOUTH, CELL_B_NORTH,
                          FLOOR_Z, FLOOR_Z + PLATE_T)
-    frame = rear_bar.union(side_bar).union(rim())
+    frame = rear_bar.union(side_bar).union(gusset()).union(rim())
     cell_b = cell_rect(CELL_B_WEST, CELL_B_EAST, CELL_B_SOUTH, CELL_B_NORTH,
                        FLOOR_Z - 1, FLOOR_Z + RIM_H + 1)
     return frame.intersect(cell_b)
