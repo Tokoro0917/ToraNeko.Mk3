@@ -113,7 +113,7 @@ software/main-controller/
     └── （build/ はビルド成果物。.gitignore で除外）
 
 software/main-controller/test/    ── PC 上で動かすテスト（CI で実行）。ホストの gcc でビルドするので、ARM 向けの CMake プロジェクトとは分ける
-    ├── test_maze.c               迷路探索・最短経路のテスト（../TORANEKO.Mk3/App/maze/*.c をリンク）。`make` で実行
+    ├── test_maze.c               迷路探索・最短経路・探索走行のテスト（../TORANEKO.Mk3/App/maze/*.c と sys/explore.c をリンク。探索走行は、本当の迷路の上を動く「仮の機体」で走らせる）。`make` で実行
     ├── Makefile
     └── mazes/                    テスト用の迷路（32×32 のテキスト。開けば迷路の形が見える）と、それを作る gen_maze.py
 ```
@@ -161,7 +161,7 @@ sys（explore / mode / ...）
 | 6 | 壁センサ（2組ずつ点灯） | `drv/wall.c`, `ctrl/wall_ctrl.c` | `PL_sensor.c`, `Wallsensor.c` | 未着手 |
 | 7 | 速度・角度制御（PID、フィードフォワード） | `ctrl/odometry.c`, `ctrl/pid.c`, `ctrl/trajectory.c`, `ctrl/run.c` | `motor.c`, `Move.c` | 未着手 |
 | 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | **迷路の処理は完了**（PC テスト済み）：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）、既知区間の経路と大回り・最短経路の斜め（`path.c`）、ダイクストラ（`dijkstra.c`）、未知壁探索（`search_plan_unknown_walls` / `search_check_unknown_walls`）。2026-10-13 に KOGUMA の最新版（ダイクストラの不具合修正、既知区間は小回りだけ、ダイクストラは止まっているときだけ計算）に合わせた。ダイクストラは、KOGUMA と違い「同じ向きに続けて進む区間」ごとに広げて、いつも本当の最短を返すようにした（2026-10-14）。走りながら呼び出す部分（`sys/explore.c`）はステップ9 |
-| 9 | 探索走行、走行モード、ログ、フェイルセーフ、保存 | `sys/explore.c`, `sys/mode.c`, `sys/ui.c`, `sys/log.c`, `sys/failsafe.c`, `sys/flash.c` | `main.c`, `UI.c`, `LOG.c`, `Failsafe.c` | 未着手。操作とモードは [MODES.md](MODES.md)、ログ・出力・フェイルセーフは [KOGUMA_PORTING.md](KOGUMA_PORTING.md) の B・F で決定済み |
+| 9 | 探索走行、走行モード、ログ、フェイルセーフ、保存 | `sys/explore.c`, `sys/mode.c`, `sys/ui.c`, `sys/log.c`, `sys/failsafe.c`, `sys/flash.c` | `main.c`, `UI.c`, `LOG.c`, `Failsafe.c` | **探索走行（`sys/explore.c`）は作った**（PC テスト済み）：往復・片道・未知壁探索、U ターンと計算のときに止まる、スタート着・片道のゴール着・フェイルセーフで Flash に保存、フェイルセーフでは最後の 5 区画ぶんの壁を戻す（`maze_map_undo_recent_cells`）。機体を動かす部分などは、使う関数の形（`ctrl/run.h`、`ctrl/wall_ctrl.h`、`sys/failsafe.h`、`sys/flash.h`）だけを決めてあり、中身はステップ6・7・9 で作る。中身ができるまで、`explore.c` はファームウェアのビルドには入れない（PC テストだけでビルドする）。そのほか（モード、操作、ログ、フェイルセーフ、保存）は未着手。操作とモードは [MODES.md](MODES.md)、ログ・出力・フェイルセーフは [KOGUMA_PORTING.md](KOGUMA_PORTING.md) の B・F で決定済み |
 
 ### KOGUMA のファイルとの対応
 

@@ -14,7 +14,7 @@
  *   - 走りながら      ：search_check_unknown_walls() で、覚えた経路の壁を見直す（軽い）
  *       UNKNOWN_WALL_FOUND ：見ていない壁がある。その手前の区画を目的地にして、壁を見るまで走る（止まらない）
  *       UNKNOWN_WALL_BLOCKED：経路の上に壁があった（ふさがれた）。次の区画で止まって計算し直す
- *       UNKNOWN_WALL_NONE  ：経路の壁を全部見た。その場で止まって path_make_shortest() で最短経路を計算する
+ *       UNKNOWN_WALL_NONE  ：経路の壁を全部見た。止まらずにスタートへ戻る
  *       UNKNOWN_WALL_NO_PLAN：経路を覚えていない。search_plan_unknown_walls() が false だった（ゴールへの道がない）など
  * U ターンするときも止まるので、そのときにも計算し直す。
  */
