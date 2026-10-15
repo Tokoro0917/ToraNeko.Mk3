@@ -24,7 +24,6 @@
 
 #include "ctrl/run.h"
 #include "ctrl/wall_ctrl.h"
-#include "maze/dijkstra.h"
 #include "maze/maze_map.h"
 #include "maze/search.h"
 #include "sys/failsafe.h"
@@ -161,8 +160,8 @@ static void stop_and_plan(int goal_x, int goal_y, int goal_width, int goal_heigh
 }
 
 /* 未知壁探索（流れは KOGUMA_PORTING.md の「ToraNeko の未知壁探索の流れ」）。ゴールの区画の入口の辺に着いたところから呼ぶ。
- * 最短経路の上の見ていない壁を、なくなるまで見に行く。なくなったらその場で止まって最短経路を計算し、
- * EXPLORE_RESULT_DONE を返す（止まったまま）。
+ * 最短経路の上の見ていない壁を、なくなるまで見に行く。なくなったら、止まらずに EXPLORE_RESULT_DONE を返す
+ * （このあと、そのままスタートへ戻る）。
  * ゴールへの道が見つからないなど、おかしなことが起きたときも、未知壁探索をやめて EXPLORE_RESULT_DONE を返す
  * （止まったまま。このあとスタートへ戻る） */
 static explore_result_t scan_unknown_walls(int goal_x, int goal_y, int goal_width, int goal_height)
@@ -177,9 +176,7 @@ static explore_result_t scan_unknown_walls(int goal_x, int goal_y, int goal_widt
     unknown_wall_result_t result = search_check_unknown_walls(&cell_x, &cell_y, &wall_dir);
 
     if (result == UNKNOWN_WALL_NONE) {
-      /* 見に行く壁がなくなった：その場で止まって、最短経路を計算する */
-      stop_here();
-      dijkstra_find_route(goal_x, goal_y, goal_width, goal_height, true);
+      /* 見に行く壁がなくなった：止まらずにスタートへ戻る（最短経路は、最短走行のときに計算する） */
       return EXPLORE_RESULT_DONE;
     }
     if (result == UNKNOWN_WALL_NO_PLAN) {

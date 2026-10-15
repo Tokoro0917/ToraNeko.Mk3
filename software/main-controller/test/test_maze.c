@@ -9,8 +9,8 @@
  *   2. 歩数マップ（search）の基本動作
  *   3. 既知区間の経路（path_make_known）：小さな迷路で、正しい動きの並びになるか
  *   6. 未知壁探索（KOGUMA のモード0 No.7）：ゴールに着いたあと最短経路の上の見ていない壁を見に行く。
- *      見に行く壁がなくなったらその場で止まって最短経路を計算し、全部の壁を知っているときと
- *      同じ速さの最短経路になるか
+ *      見に行く壁がなくなった時点の最短経路が、全部の壁を知っているときと同じ速さになるか
+ *      （実機は、見に行く壁がなくなったら止まらずにスタートへ戻る。最短経路は最短走行のときに計算する）
  *   7. ランダムな迷路（たくさん）：全部の壁を知っているときの最短経路が、どれも壁を通らずにゴールに着くか
  *   8. ダイクストラの答えが本当の最短か：時間はかかるが確実な方法（総当たりに近い計算）で求めたコストと比べる
  *   5. 最短経路（path_make_shortest）：何もない迷路と、探索したあとの迷路で、
@@ -917,7 +917,7 @@ static void test_shortest_maze(const char *file_path)
  * 6. 未知壁探索のテスト
  * ------------------------------------------------------------------------- */
 
-/* 今の本当の迷路で、未知壁探索の流れ（行き → 見ていない壁を見に行く → 止まって最短経路を計算 → 帰り）を走らせる。
+/* 今の本当の迷路で、未知壁探索の流れ（行き → 見ていない壁を見に行く → 帰り）を走らせる。
  * 最後の最短経路が、全部の壁を知っているときと同じ速さなら true。verbose が true なら途中経過を表示する */
 static bool run_unknown_wall_flow(bool verbose)
 {
@@ -1001,14 +1001,14 @@ static bool run_unknown_wall_flow(bool verbose)
     }
   }
 
-  /* 4. 見に行く壁がなくなったら、その場で止まって最短経路を計算する
-   *    （走りながら計算しない。計算が終わってから動き出す） */
+  /* 4. 見に行く壁がなくなった。実機は止まらずに帰りに入る。
+   *    テストでは、この時点の最短経路を計算して、もう全部の壁を知っているときと同じになっているかを確かめる */
   if (verbose) {
-    printf("  見に行く壁がなくなった：(%d,%d) で止まって最短経路を計算する\n", x, y);
+    printf("  見に行く壁がなくなった：(%d,%d)\n", x, y);
   }
   static path_t s_shortest;
   bool found = path_make_shortest(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &s_shortest);
-  check(found, "止まった場所で最短経路を計算できる");
+  check(found, "見に行く壁がなくなった時点で、最短経路を計算できる");
   int cost_final = dijkstra_get_route_cost();
 
   /* 5. 帰り：スタートへ（最短走行はスタートから始まるので） */
@@ -1017,13 +1017,13 @@ static bool run_unknown_wall_flow(bool verbose)
   check(moves_to_start >= 0, "スタートに戻る");
   check(count_wrong_walls() == 0, "記録した壁が本当の迷路と同じ");
 
-  /* 結果：止まった場所で計算した最短経路が、全部の壁を知っているときと同じ速さか。
+  /* 結果：見に行く壁がなくなった時点の最短経路が、全部の壁を知っているときと同じ速さか。
    * 帰りに新しい壁を見ても、最短経路は変わらない（もう一度計算して確かめる） */
   bool found_after_return = dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
   check(found_after_return, "帰ったあとも、ゴールへの道がある");
-  check(dijkstra_get_route_cost() == cost_final, "帰りに壁を見ても、止まった場所で計算した最短経路は変わらない");
+  check(dijkstra_get_route_cost() == cost_final, "帰りに壁を見ても、見に行く壁がなくなった時点の最短経路は変わらない");
   if (verbose) {
-    printf("  ゴールに着いた時点の最短経路のコスト %d → 止まった場所で計算 %d（全部の壁を知っているとき %d）\n",
+    printf("  ゴールに着いた時点の最短経路のコスト %d → 見に行く壁がなくなった時点 %d（全部の壁を知っているとき %d）\n",
            cost_after_goal, cost_final, best_cost);
   }
   if (verbose) {
