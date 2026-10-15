@@ -18,7 +18,7 @@
  *   3. ゴール（電源を入れたときに Flash から読む、使える位置か）
  *   4. モードを選んで、スタートして、探索を呼ぶまで（LED の表示と時刻も）
  *   5. No.0 では決定しない、スタート待ちでの選び直し、走ったあとも同じモード・No.、フェイルセーフ、ゴールへ行けなかった
- *   6. 出力、ゴールの位置の入力（使えない位置のときは x に戻る）、迷路の読み込み
+ *   6. ログ出力、ゴールの位置の入力（使えない位置のときは x に戻る）、迷路呼び出し
  */
 #include <stdbool.h>
 #include <stdint.h>
@@ -534,16 +534,17 @@ static void test_wrap(void)
   mode_init();
 
   rotate_left_at(100, -1);    /* モード7 */
-  rotate_right_at(100, -1);   /* No.15 */
-  press_switch_at(500);       /* モード7・No.15 は何もない：決定しない */
-  rotate_right_at(1000, 4);   /* No.15 + 4 = No.3（迷路の読み込み） */
+  rotate_right_at(100, 3);    /* No.3 */
+  press_switch_at(500);       /* モード7・No.3 は何もない：決定しない */
+  rotate_right_at(1000, -4);  /* No.3 - 4 = No.15（迷路呼び出し） */
   press_switch_at(1500);
   hand_at(2500, 500);
   mode_run_once();
 
-  check_leds_at(300, "1111111", "モード7・No.15 は全部点く");
-  check(mode_get_mode() == 7 && mode_get_number() == 3, "モード7・No.3 になる");
-  check(s_flash_maze_load_count == 1, "迷路の読み込みが 1 回だけ呼ばれる（No.15 では決定しない）");
+  check_leds_at(300, "0011111", "モード7・No.3 は LED3〜7 が点く");
+  check_leds_at(1200, "1111111", "モード7・No.15 は全部点く");
+  check(mode_get_mode() == 7 && mode_get_number() == 15, "モード7・No.15 になる");
+  check(s_flash_maze_load_count == 1, "迷路呼び出しが 1 回だけ呼ばれる（No.3 では決定しない）");
 }
 
 /* スタート待ちでスイッチを押すと、選び直しに戻る（走らない） */
@@ -606,7 +607,7 @@ static void test_no_route(void)
 }
 
 /* ---------------------------------------------------------------------------
- * 6. ゴールの位置の入力、迷路の読み込み
+ * 6. ログ出力、ゴールの位置の入力、迷路呼び出し
  * ------------------------------------------------------------------------- */
 
 /* モード7 No.2 を選んで、x = 20、y = 3 を入れる */
@@ -658,10 +659,10 @@ static void test_goal_input_invalid(void)
   check(goal_get_x() == 16 && goal_get_y() == 15, "ゴールが (16, 15) になる");
 }
 
-/* 出力：モード7 No.1 を選んでスタートすると、今のゴールを渡して出力を呼ぶ */
+/* ログ出力：モード7 No.1 を選んでスタートすると、今のゴールを渡して出力を呼ぶ */
 static void test_output(void)
 {
-  printf("[6] 出力\n");
+  printf("[6] ログ出力\n");
   reset_world();
   s_flash_has_goal = true;
   s_flash_goal_x = 8;
@@ -677,30 +678,30 @@ static void test_output(void)
   check(s_explore_count == 0, "走らない");
 }
 
-/* 迷路の読み込み：保存した迷路があれば全部を 1 秒点け、なければ外側の 4 個を速く点滅させる */
+/* 迷路呼び出し（モード7 No.15）：保存した迷路があれば全部を 1 秒点け、なければ外側の 4 個を速く点滅させる */
 static void test_load_maze(void)
 {
-  printf("[6] 迷路の読み込み\n");
+  printf("[6] 迷路呼び出し\n");
   reset_world();
   mode_init();
   s_flash_has_maze = true;
-  rotate_left_at(100, -1);
-  rotate_right_at(100, 3);
+  rotate_left_at(100, -1);    /* モード7 */
+  rotate_right_at(100, -1);   /* No.15 */
   press_switch_at(500);
   hand_at(1500, 500);
   mode_run_once();
-  check(s_flash_maze_load_count == 1, "迷路の読み込みを 1 回呼ぶ");
-  check_leds_at(s_now_ms - 500, "1111111", "読み込めたら、全部を点ける");
+  check(s_flash_maze_load_count == 1, "迷路呼び出しで、Flash の迷路を 1 回読む");
+  check_leds_at(s_now_ms - 500, "1111111", "呼び出せたら、全部を点ける");
 
   reset_world();
   mode_init();
   s_flash_has_maze = false;
-  rotate_left_at(100, -1);
-  rotate_right_at(100, 3);
+  rotate_left_at(100, -1);    /* モード7 */
+  rotate_right_at(100, -1);   /* No.15 */
   press_switch_at(500);
   hand_at(1500, 500);
   mode_run_once();
-  check(s_flash_maze_load_count == 1, "保存した迷路がなくても、読み込みを呼ぶ");
+  check(s_flash_maze_load_count == 1, "保存した迷路がなくても、Flash を読みに行く");
   check_leds_at(s_now_ms - 160 + 40, "1100011", "保存した迷路がなければ、外側の 4 個を速く点滅させる");
 }
 
