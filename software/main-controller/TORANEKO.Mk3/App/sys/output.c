@@ -1,6 +1,6 @@
 /*
  * output.c
- * 出力（MODES.md のモード7 No.1、KOGUMA_PORTING.md の B4・B5）
+ * ログ出力（MODES.md のモード7 No.1、KOGUMA_PORTING.md の B4・B5）
  *
  * RAM に残っているデータを、迷路 → 走行ログ の順に出し、最後に #DONE を出す（ないものは出さない）。
  * どれも KOGUMA のビューア（tools/viewer.html）で読める形にする。

@@ -9,9 +9,9 @@
  *
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す）
  *   モード0 No.1〜3  探索（往復・片道・未知壁探索）
- *   モード7 No.1     出力（迷路と走行ログを PC へ出す）
+ *   モード7 No.1     ログ出力（迷路と走行ログを PC へ出す）
  *   モード7 No.2     ゴールの位置を入れる
- *   モード7 No.3     迷路の読み込み
+ *   モード7 No.15    迷路呼び出し（Flash に保存した迷路を RAM に戻す）
  * No.0 と、まだ何もない番号では、スイッチを押しても決定しない（何も起きない）。
  */
 #include "sys/mode.h"
@@ -60,8 +60,11 @@ bool mode_has_action(int mode, int number)
     return false;
   }
   if (mode == 7) {
-    if (number >= 1 && number <= 3) {
-      return true;  /* 出力、ゴールの位置、迷路の読み込み */
+    if (number == 1 || number == 2) {
+      return true;  /* ログ出力、ゴールの位置 */
+    }
+    if (number == 15) {
+      return true;  /* 迷路呼び出し */
     }
     return false;
   }
@@ -120,7 +123,7 @@ static void run_explore(int number)
   explore_result_t result = explore_run(type, goal_get_x(), goal_get_y(), GOAL_WIDTH, GOAL_HEIGHT);
 
   if (result == EXPLORE_RESULT_FAILSAFE) {
-    /* 7 個全部を点けて、前センサに手をかざして離すまで待ち、フェイルセーフを解除する */
+    /* 7 個全部を点滅させて、スイッチが押されるまで待ち（押したら「ロード中」を出す）、フェイルセーフを解除する */
     ui_wait_failsafe_reset();
     failsafe_clear();
   } else if (result == EXPLORE_RESULT_NO_ROUTE) {
@@ -166,7 +169,7 @@ static void input_goal(void)
   }
 }
 
-/* Flash に保存した迷路を読み込む（MODES.md のモード7 No.3） */
+/* Flash に保存した迷路を RAM に戻す（MODES.md のモード7 No.15 迷路呼び出し） */
 static void load_maze(void)
 {
   if (flash_load_maze()) {
@@ -176,14 +179,14 @@ static void load_maze(void)
   }
 }
 
-/* 出力と設定（No.1 出力、No.2 ゴールの位置、No.3 迷路の読み込み） */
+/* 出力と設定（No.1 ログ出力、No.2 ゴールの位置、No.15 迷路呼び出し） */
 static void run_setting(int number)
 {
   if (number == 1) {
     output_all(goal_get_x(), goal_get_y());
   } else if (number == 2) {
     input_goal();
-  } else if (number == 3) {
+  } else if (number == 15) {
     load_maze();
   }
 }

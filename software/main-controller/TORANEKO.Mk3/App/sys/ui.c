@@ -29,6 +29,8 @@
 #define SIGNAL_ERROR_TIMES 5     /* 「できなかった」の点滅の回数 */
 #define START_DELAY_MS     1000  /* 手を離してから走り出すまで [ms] */
 #define HAND_STABLE_COUNT  3     /* 手をかざした／離したとみなすまでに、同じ値が続く回数（UI_POLL_MS ごと） */
+#define FAILSAFE_BLINK_MS  500   /* フェイルセーフで止まったときに、全部を点滅させる間隔 [ms] */
+#define LOADING_STEP_MS    150   /* 「ロード中」で、LED を 1 個ずつ点けていく間隔 [ms]（7 個で約 1 秒） */
 
 /* タイヤ：前に読んだときの回った量と、まだ 1 段にならない回転量 [カウント] */
 static int32_t s_left_last_count = 0;
@@ -150,6 +152,29 @@ void ui_signal_error(void)
     set_outer_leds(false);
     ui_wait_ms(SIGNAL_ERROR_MS);
   }
+}
+
+/* wait_ms [ms] 待つ。待っているあいだに押されたスイッチは読み捨てる（あとで「押された」と答えないようにする） */
+static void wait_ignoring_switch(uint32_t wait_ms)
+{
+  uint32_t waited_ms = 0;
+  while (waited_ms < wait_ms) {
+    ui_switch_pushed();  /* 読むだけで、答えは使わない */
+    ui_wait_ms(UI_POLL_MS);
+    waited_ms = waited_ms + UI_POLL_MS;
+  }
+}
+
+/* 「ロード中」：LED1 から LED7 へ 1 個ずつ順に点けていき（左下 → 上 → 右下）、全部点いたら消す（約 1 秒）。
+ * このあいだはスイッチを押しても何も起きない（続けて押したときに、次の決定にならないようにする） */
+void ui_show_loading(void)
+{
+  ui_all_off();
+  for (uint8_t num = 1; num <= LED_COUNT; num++) {
+    led_set(num, true);
+    wait_ignoring_switch(LOADING_STEP_MS);
+  }
+  ui_all_off();
 }
 
 /* ---------------------------------------------------------------------------
@@ -284,11 +309,30 @@ bool ui_wait_start(int mode, int number)
   return true;
 }
 
-/* フェイルセーフで止まったあと（MODES.md の 3）。7 個全部を点けて、前センサに手をかざして離すまで待つ */
+/* フェイルセーフで止まったあと（MODES.md の 3）。
+ *   1. 7 個全部を FAILSAFE_BLINK_MS ごとに点滅させて、スイッチが押されるのを待つ
+ *   2. 押されたら「ロード中」を出す。このあいだはスイッチを押しても何も起きない
+ *   3. 全部消して戻る */
 void ui_wait_failsafe_reset(void)
 {
-  ui_all_on();
-  wait_hand(true);
-  wait_hand(false);
-  ui_all_off();
+  bool lit = true;
+  uint32_t next_toggle_ms = timebase_get_ms() + FAILSAFE_BLINK_MS;
+
+  /* 1. スイッチが押されるのを待つ */
+  while (!ui_switch_pushed()) {
+    /* FAILSAFE_BLINK_MS ごとに、点ける・消すを入れ替える */
+    if (timebase_get_ms() >= next_toggle_ms) {
+      lit = !lit;
+      next_toggle_ms = next_toggle_ms + FAILSAFE_BLINK_MS;
+    }
+    if (lit) {
+      ui_all_on();
+    } else {
+      ui_all_off();
+    }
+    ui_wait_ms(UI_POLL_MS);
+  }
+
+  /* 2・3. 「ロード中」を出して、全部消す */
+  ui_show_loading();
 }
