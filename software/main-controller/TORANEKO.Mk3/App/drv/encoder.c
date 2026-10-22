@@ -30,9 +30,9 @@
 #include "main.h"
 #include "spi.h"
 
-/* 前に進むと角度が増えるなら 1、減るなら -1。2026-10-22 に実機で、機体を前に転がして確かめた
- * （左も右も、前に転がすと角度が増える） */
-#define ENCODER_LEFT_SIGN  1   /* 左 */
+/* 前に進むと角度が増えるなら 1、減るなら -1。2026-10-22 に実機で確かめた
+ * （前に転がすと、左の角度は減り、右の角度は増える。total は両方とも増える） */
+#define ENCODER_LEFT_SIGN  -1  /* 左 */
 #define ENCODER_RIGHT_SIGN 1   /* 右 */
 
 #define READ_ANGLE_COMMAND_HIGH 0xFF  /* 角度を頼む命令 0xFFFF の上の 1 バイト */
