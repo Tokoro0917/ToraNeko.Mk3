@@ -30,6 +30,10 @@ int32_t encoder_get_right_total(void);
 uint16_t encoder_get_left_angle(void);
 uint16_t encoder_get_right_angle(void);
 
+/* 読んだままの角度を、config/encoder_correction.h の表で直した角度（0〜16383）にする。歪みを測るときに使う */
+int32_t encoder_correct_left_angle(uint16_t raw_angle);
+int32_t encoder_correct_right_angle(uint16_t raw_angle);
+
 /* エンコーダがエラーを返した回数（電源を入れてから）と、最後のエラーの中身。動作確認用 */
 uint32_t encoder_get_left_error_count(void);
 uint32_t encoder_get_right_error_count(void);

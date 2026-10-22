@@ -10,6 +10,8 @@
  * 何回転ぶんも平均するので、速さの小さなふらつきは打ち消し合う。
  * 最後に、64 個の平均を全部ならしたもの（全体のずれ）を引く。全体が同じだけずれているのは、
  * 回った量には関係ないため。
+ * 同じやり方で、今の config/encoder_correction.h の表で直した角度のずれ（直したあとに残るずれ）も測る。
+ * 表を入れたあとにもう一度測ると、表がどれだけ効いているかがわかる。
  *
  * ■ 流れ
  *   1. 左は -、右は + の電圧で回す（どちらも、読んだ角度が増える向き。drv/encoder.c の先頭のコメント）
@@ -51,6 +53,8 @@ static int s_wrap_count = 0;
 static float s_bin_sum[ENCODER_CORRECTION_BIN_COUNT];  /* 場所ごとの、ずれの合計 [カウント] */
 static int s_bin_samples[ENCODER_CORRECTION_BIN_COUNT];  /* 場所ごとの、足した数 */
 static float s_bin_error[ENCODER_CORRECTION_BIN_COUNT];  /* 場所ごとの、ずれの平均（全体のずれを引いたもの） [カウント] */
+static float s_bin_sum_after[ENCODER_CORRECTION_BIN_COUNT];    /* 今の表で直した角度の、場所ごとのずれの合計 [カウント] */
+static float s_bin_error_after[ENCODER_CORRECTION_BIN_COUNT];  /* 今の表で直した角度の、場所ごとのずれの平均 [カウント] */
 
 /* 制御周期ごとに（割り込みの中から）呼ぶ。記録中なら、左右の今の角度を 1 つずつ記録する */
 void encoder_cal_record(void)
@@ -100,12 +104,36 @@ static void clear_bins(void)
 {
   for (int i = 0; i < ENCODER_CORRECTION_BIN_COUNT; i++) {
     s_bin_sum[i] = 0.0f;
+    s_bin_sum_after[i] = 0.0f;
     s_bin_samples[i] = 0;
   }
 }
 
-/* 区切り wrap と wrap + 1 のあいだ（1 回転ぶん）の記録の、ずれを場所ごとに足す */
-static void add_revolution(const volatile uint16_t samples[], int wrap)
+/* 読んだままの角度 raw_angle を、今の表で直した角度にする。is_left が true なら左の表、false なら右の表を使う */
+static int32_t corrected_angle(bool is_left, uint16_t raw_angle)
+{
+  if (is_left) {
+    return encoder_correct_left_angle(raw_angle);
+  }
+  return encoder_correct_right_angle(raw_angle);
+}
+
+/* 直した角度のずれ error_after を、-8192〜8192 の中にする。直した角度は 0 と 16383 の境目をまたぐことがあり
+ * （例：読んだ角度 5 が、直すと 16380 になる）、そのときは 1 回転ぶんずれて見えるため */
+static float wrap_error(float error_after)
+{
+  if (error_after > HALF_REV_COUNT) {
+    error_after = error_after - ENCODER_COUNT_PER_REV;
+  }
+  if (error_after < -HALF_REV_COUNT) {
+    error_after = error_after + ENCODER_COUNT_PER_REV;
+  }
+  return error_after;
+}
+
+/* 区切り wrap と wrap + 1 のあいだ（1 回転ぶん）の記録の、ずれを場所ごとに足す。
+ * 読んだままの角度のずれと、今の表で直した角度のずれの両方を足す（場所は、どちらも読んだままの角度で決める） */
+static void add_revolution(const volatile uint16_t samples[], bool is_left, int wrap)
 {
   float start_time = s_wrap_time[wrap];
   float end_time = s_wrap_time[wrap + 1];
@@ -114,26 +142,37 @@ static void add_revolution(const volatile uint16_t samples[], int wrap)
     float true_angle = ENCODER_COUNT_PER_REV * (i - start_time) / (end_time - start_time);
     float error = samples[i] - true_angle;
     int bin = samples[i] / ENCODER_CORRECTION_BIN_WIDTH;  /* 0〜63：どの場所か */
+    float error_after = wrap_error(corrected_angle(is_left, samples[i]) - true_angle);
     s_bin_sum[bin] = s_bin_sum[bin] + error;
+    s_bin_sum_after[bin] = s_bin_sum_after[bin] + error_after;
     s_bin_samples[bin] = s_bin_samples[bin] + 1;
   }
 }
 
-/* 場所ごとの平均を出し、全体のずれ（64 個の平均）を引く。記録が 1 つもない場所があれば false */
-static bool average_bins(void)
+/* 合計 sum から場所ごとの平均を出して error に入れ、全体のずれ（64 個の平均）を引く */
+static void average_one(const float sum[], float error[])
 {
   float total = 0.0f;
+  for (int i = 0; i < ENCODER_CORRECTION_BIN_COUNT; i++) {
+    error[i] = sum[i] / s_bin_samples[i];
+    total = total + error[i];
+  }
+  float mean = total / ENCODER_CORRECTION_BIN_COUNT;
+  for (int i = 0; i < ENCODER_CORRECTION_BIN_COUNT; i++) {
+    error[i] = error[i] - mean;
+  }
+}
+
+/* 読んだままの角度と、直した角度の、場所ごとのずれの平均を出す。記録が 1 つもない場所があれば false */
+static bool average_bins(void)
+{
   for (int i = 0; i < ENCODER_CORRECTION_BIN_COUNT; i++) {
     if (s_bin_samples[i] == 0) {
       return false;
     }
-    s_bin_error[i] = s_bin_sum[i] / s_bin_samples[i];
-    total = total + s_bin_error[i];
   }
-  float mean = total / ENCODER_CORRECTION_BIN_COUNT;
-  for (int i = 0; i < ENCODER_CORRECTION_BIN_COUNT; i++) {
-    s_bin_error[i] = s_bin_error[i] - mean;
-  }
+  average_one(s_bin_sum, s_bin_error);
+  average_one(s_bin_sum_after, s_bin_error_after);
   return true;
 }
 
@@ -146,17 +185,17 @@ static int round_to_int(float value)
   return (int)(value - 0.5f);
 }
 
-/* ずれのいちばん大きいところと、いちばん小さいところの差 [カウント] */
-static float error_peak_to_peak(void)
+/* 場所ごとのずれ error の、いちばん大きいところと、いちばん小さいところの差 [カウント] */
+static float error_peak_to_peak(const float error[])
 {
-  float min_error = s_bin_error[0];
-  float max_error = s_bin_error[0];
+  float min_error = error[0];
+  float max_error = error[0];
   for (int i = 1; i < ENCODER_CORRECTION_BIN_COUNT; i++) {
-    if (s_bin_error[i] < min_error) {
-      min_error = s_bin_error[i];
+    if (error[i] < min_error) {
+      min_error = error[i];
     }
-    if (s_bin_error[i] > max_error) {
-      max_error = s_bin_error[i];
+    if (error[i] > max_error) {
+      max_error = error[i];
     }
   }
   return max_error - min_error;
@@ -178,7 +217,7 @@ static void print_table(const char *table_name)
 }
 
 /* 1 つのエンコーダの記録から、ずれの表を作ってシリアルに出す。作れなかったら false */
-static bool make_table(const volatile uint16_t samples[], const char *name, const char *table_name)
+static bool make_table(const volatile uint16_t samples[], bool is_left, const char *name, const char *table_name)
 {
   find_wraps(samples);
   int rev_count = s_wrap_count - 1;  /* 区切りと区切りのあいだが 1 回転 */
@@ -189,7 +228,7 @@ static bool make_table(const volatile uint16_t samples[], const char *name, cons
 
   clear_bins();
   for (int wrap = 0; wrap < rev_count; wrap++) {
-    add_revolution(samples, wrap);
+    add_revolution(samples, is_left, wrap);
   }
   if (!average_bins()) {
     printf("Encoder %s: some bins have no samples\r\n", name);
@@ -198,9 +237,12 @@ static bool make_table(const volatile uint16_t samples[], const char *name, cons
 
   float samples_per_rev = (s_wrap_time[rev_count] - s_wrap_time[0]) / rev_count;
   float rev_per_s = CTRL_FREQ_HZ / samples_per_rev;
-  printf("Encoder %s: %d revs, %.1f rev/s, %.1f samples/rev, error p-p = %.1f counts (%.2f deg)\r\n",
-         name, rev_count, rev_per_s, samples_per_rev,
-         error_peak_to_peak(), error_peak_to_peak() * 360.0f / ENCODER_COUNT_PER_REV);
+  float raw_p_p = error_peak_to_peak(s_bin_error);          /* 読んだままの角度のずれ */
+  float after_p_p = error_peak_to_peak(s_bin_error_after);  /* 今の表で直したあとに残るずれ */
+  printf("Encoder %s: %d revs, %.1f rev/s, %.1f samples/rev\r\n", name, rev_count, rev_per_s, samples_per_rev);
+  printf("  raw error p-p = %.1f counts (%.2f deg), after correction p-p = %.1f counts (%.2f deg)\r\n",
+         raw_p_p, raw_p_p * 360.0f / ENCODER_COUNT_PER_REV,
+         after_p_p, after_p_p * 360.0f / ENCODER_COUNT_PER_REV);
   print_table(table_name);
   return true;
 }
@@ -214,8 +256,8 @@ void encoder_cal_run(void)
   record_samples();
   motor_stop();
 
-  bool left_ok = make_table(s_left_samples, "L", "ENCODER_LEFT_CORRECTION");
-  bool right_ok = make_table(s_right_samples, "R", "ENCODER_RIGHT_CORRECTION");
+  bool left_ok = make_table(s_left_samples, true, "L", "ENCODER_LEFT_CORRECTION");
+  bool right_ok = make_table(s_right_samples, false, "R", "ENCODER_RIGHT_CORRECTION");
   printf("Errors: L=%lu R=%lu\r\n", encoder_get_left_error_count(), encoder_get_right_error_count());
 
   if (left_ok && right_ok) {

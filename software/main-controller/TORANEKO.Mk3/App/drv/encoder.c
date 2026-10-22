@@ -280,6 +280,19 @@ uint16_t encoder_get_right_angle(void)
   return s_right_angle;
 }
 
+/* 読んだままの左の角度 raw_angle を、表で直した角度（0〜16383）にする。歪みを測るとき（sys/encoder_cal.c）に、
+ * 今の表で直したあとに残るずれを調べるのに使う */
+int32_t encoder_correct_left_angle(uint16_t raw_angle)
+{
+  return correct_angle(raw_angle, ENCODER_LEFT_CORRECTION);
+}
+
+/* 読んだままの右の角度 raw_angle を、表で直した角度（0〜16383）にする */
+int32_t encoder_correct_right_angle(uint16_t raw_angle)
+{
+  return correct_angle(raw_angle, ENCODER_RIGHT_CORRECTION);
+}
+
 /* 左のエンコーダがエラーを返した回数（電源を入れてから） */
 uint32_t encoder_get_left_error_count(void)
 {
