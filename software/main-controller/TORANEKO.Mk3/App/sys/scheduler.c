@@ -27,6 +27,7 @@
 #include <stdbool.h>
 
 #include "config/robot_params.h"
+#include "drv/encoder.h"
 #include "drv/timebase.h"
 #include "main.h"
 #include "tim.h"
@@ -41,9 +42,10 @@ static volatile uint32_t s_period_max_us = 0;
 static volatile uint32_t s_last_start_us = 0;          /* 前の回が始まった時刻 [µs] */
 static volatile bool s_has_last_start = false;         /* 前の回の時刻があるか（最初の 1 回は間隔を測れない） */
 
-/* 制御の処理。制御周期ごとに 1 回呼ばれる。今は何もしない（ステップ3 以降で、センサを読む・モーターを動かす処理を足す） */
+/* 制御の処理。制御周期ごとに 1 回呼ばれる（ステップ4 以降で、ジャイロ・壁センサ・モーターの処理を足していく） */
 static void run_control(void)
 {
+  encoder_update();
 }
 
 /* 割り込みの間隔を記録する */
