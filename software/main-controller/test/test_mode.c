@@ -5,7 +5,7 @@
  * ビルドと実行（このフォルダで）:  make
  *
  * ■ しくみ
- * mode.c・ui.c・goal.c が使う関数（時計、LED、タイヤ、スイッチ、前センサの手、Flash、探索、ログ出力、
+ * mode.c・ui.c・goal.c が使う関数（時計、LED、タイヤ、スイッチ、前センサの手、Flash、探索、ログ出力、センサ値の表示、
  * フェイルセーフの解除）を、ここで仮に作る。
  *   - 時計：timebase_wait_ms() が呼ばれると、その分だけ仮の時計を進める
  *   - 入力：「何 ms に、タイヤを何段回す・スイッチを押す・手をかざす」という予定を先に作っておき、
@@ -21,7 +21,8 @@
  *   4. モードを選んで、スタートして、探索を呼ぶまで（LED の表示と時刻、走り終わったら「うまくいった」、走ったあとも同じモード・No.）
  *   5. No.0 では決定しない、モードと No. は一周する、スタート待ちでの選び直し、前センサの手のチャタリング、
  *      フェイルセーフ（点滅、スイッチで解除、ロード中）、道がなくなった
- *   6. ログ出力（終わったら「うまくいった」）、ゴールの位置の入力（使えない位置のときは x に戻る）、迷路呼び出し
+ *   6. ログ出力（終わったら「うまくいった」）、ゴールの位置の入力（使えない位置のときは x に戻る）、迷路呼び出し、
+ *      センサ値の表示（スタート待ちをしない）
  */
 #include <stdbool.h>
 #include <stdint.h>
@@ -209,6 +210,8 @@ static int s_flash_maze_load_count = 0;
 static int s_failsafe_clear_count = 0;
 
 static int s_output_count = 0;    /* 出力が呼ばれた回数 */
+static int s_sensor_view_count = 0;         /* センサ値の表示が呼ばれた回数 */
+static uint32_t s_sensor_view_time_ms = 0;  /* センサ値の表示が呼ばれた時刻 [ms] */
 static int s_output_goal_x = 0;   /* 出力に渡されたゴール */
 static int s_output_goal_y = 0;
 
@@ -238,6 +241,8 @@ static void reset_world(void)
   s_flash_has_maze = false;
   s_flash_maze_load_count = 0;
   s_failsafe_clear_count = 0;
+  s_sensor_view_count = 0;
+  s_sensor_view_time_ms = 0;
   s_output_count = 0;
   s_explore_result = EXPLORE_RESULT_DONE;
   s_explore_count = 0;
@@ -355,6 +360,13 @@ void output_all(int goal_x, int goal_y)
   s_output_goal_y = goal_y;
 }
 
+/* センサ値の表示：出さずに、呼ばれた時刻を覚える */
+void sensor_view_run(void)
+{
+  s_sensor_view_count = s_sensor_view_count + 1;
+  s_sensor_view_time_ms = s_now_ms;
+}
+
 /* 探索：走らずに、呼ばれたことを覚える。走っているあいだはタイヤが回るので、回った量も足す */
 explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int goal_width, int goal_height)
 {
@@ -412,9 +424,9 @@ static void test_inputs(void)
   /* タイヤ：1 段に足りない回転は覚えておき、足すと 1 段になる。後ろに回すと負 */
   reset_world();
   ui_init();
-  add_event(100, INPUT_RIGHT_COUNT, 150);
-  add_event(200, INPUT_RIGHT_COUNT, 150);
-  add_event(300, INPUT_RIGHT_COUNT, -350);
+  add_event(100, INPUT_RIGHT_COUNT, UI_TIRE_COUNT_PER_STEP / 2);         /* 半段 */
+  add_event(200, INPUT_RIGHT_COUNT, UI_TIRE_COUNT_PER_STEP / 2);         /* もう半段 */
+  add_event(300, INPUT_RIGHT_COUNT, -(UI_TIRE_COUNT_PER_STEP + 50));    /* 後ろに 1 段と少し */
   ui_wait_ms(150);
   check(ui_read_right_steps() == 0, "半段だけ回しても、まだ 0 段");
   ui_wait_ms(100);
@@ -662,8 +674,25 @@ static void test_no_route(void)
 }
 
 /* ---------------------------------------------------------------------------
- * 6. ログ出力、ゴールの位置の入力、迷路呼び出し
+ * 6. ログ出力、ゴールの位置の入力、迷路呼び出し、センサ値の表示
  * ------------------------------------------------------------------------- */
+
+/* センサ値の表示（モード5 No.1）は、スタート待ちをせずに、決定したらすぐ始まる */
+static void test_sensor_view(void)
+{
+  printf("[6] センサ値の表示はスタート待ちをしない\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 5);    /* モード5 */
+  rotate_right_at(100, 1);   /* No.1 */
+  press_switch_at(500);      /* 決定（手はかざさない） */
+  mode_run_once();
+
+  check(s_sensor_view_count == 1, "センサ値の表示が 1 回呼ばれる");
+  check(s_sensor_view_time_ms < 500 + 1000, "手をかざさなくても、決定してすぐ始まる");
+  check(s_explore_count == 0, "探索は呼ばれない");
+}
 
 /* モード7 No.2 を選んで、x = 20、y = 3 を入れる */
 static void test_goal_input(void)
@@ -781,6 +810,7 @@ int main(void)
   test_goal_input();
   test_goal_input_invalid();
   test_load_maze();
+  test_sensor_view();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

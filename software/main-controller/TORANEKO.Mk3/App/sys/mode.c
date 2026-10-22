@@ -4,12 +4,14 @@
  *
  * ■ 流れ（mode_run_once() の 1 回ぶん）
  *   1. 左タイヤでモード、右タイヤで No. を選ぶ。スイッチで決定する
- *   2. スタート待ち（前センサに手をかざして離すと、1 秒後に始まる。スイッチで 1 に戻る）
+ *   2. スタート待ち（前センサに手をかざして離すと、1 秒後に始まる。スイッチで 1 に戻る）。
+ *      センサ値の表示（モード5 No.1）は、前センサの値を見たいので、スタート待ちをせずにすぐ始める
  *   3. 選んだモードを走らせる。終わったら、同じモード・No. のまま 1 に戻る
  *      （最後まで走れたら「うまくいった」、フェイルセーフならスイッチで解除するまで待ち、道がなくなったら「できなかった」を出す）
  *
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す）
  *   モード0 No.1〜3  探索（往復・片道・未知壁探索）
+ *   モード5 No.1     センサ値の表示（スイッチを押すと終わる）
  *   モード7 No.1     ログ出力（迷路と走行ログを PC へ出す）
  *   モード7 No.2     ゴールの位置を入れる
  *   モード7 No.15    迷路呼び出し（Flash に保存した迷路を RAM に戻す）
@@ -23,6 +25,7 @@
 #include "sys/flash.h"
 #include "sys/goal.h"
 #include "sys/output.h"
+#include "sys/sensor_view.h"
 #include "sys/ui.h"
 
 /* 選んでいるモードと No.（走り終わっても、そのまま残す） */
@@ -57,6 +60,12 @@ bool mode_has_action(int mode, int number)
   if (mode == 0) {
     if (number >= 1 && number <= 3) {
       return true;  /* 探索 */
+    }
+    return false;
+  }
+  if (mode == 5) {
+    if (number == 1) {
+      return true;  /* センサ値の表示 */
     }
     return false;
   }
@@ -206,6 +215,12 @@ static void run_setting(int number)
 void mode_run_once(void)
 {
   select_mode();
+
+  if (s_mode == 5 && s_number == 1) {
+    sensor_view_run();  /* スタート待ちをしない */
+    return;
+  }
+
   if (!ui_wait_start(s_mode, s_number)) {
     return;
   }

@@ -2,7 +2,7 @@
  * wall_ctrl.h
  * 壁のあり・なしの判定と、壁に沿って走るための補正
  *
- * 中身（wall_ctrl.c）はステップ6で作る。今は、探索（sys/explore.c）とモード選択（sys/ui.c）が使う関数の形だけを先に決めておく。
+ * 中身（wall_ctrl.c）は、壁のあり・なしと手の判定まで作った（しきい値は仮。実機で決め直す）。壁に沿う補正はステップ6・7で作る。
  * PC のテストでは、test/ の中の仮の関数（test_maze.c の「仮の機体」、test_mode.c）がこの関数を持っている。
  *
  * ■ 壁があるか
@@ -16,10 +16,17 @@
 #define CTRL_WALL_CTRL_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 bool wall_ctrl_has_wall_front(void);
 bool wall_ctrl_has_wall_left(void);
 bool wall_ctrl_has_wall_right(void);
 bool wall_ctrl_is_hand_front(void);
+
+/* 4 つの壁センサの値（ON−OFF。LED の光の分だけ）。センサ値の表示などで使う */
+int32_t wall_ctrl_get_front_left(void);
+int32_t wall_ctrl_get_left(void);
+int32_t wall_ctrl_get_right(void);
+int32_t wall_ctrl_get_front_right(void);
 
 #endif /* CTRL_WALL_CTRL_H */
