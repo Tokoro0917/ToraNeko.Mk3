@@ -35,6 +35,8 @@ static uint32_t s_last_sensor_print_ms = 0;  /* 最後にエンコーダ・ジ�
 static bool s_offset_printed = false;        /* ジャイロのゼロ点を出したか */
 static uint8_t s_led_num = 1;         /* 今点けている LED の番号（1〜7） */
 
+/* シリアルに出す文字は英数字だけにする（日本語は、表示するソフトによって文字化けするため） */
+
 /* 起動時に 1 回だけ呼ばれる */
 void app_init(void)
 {
@@ -46,9 +48,9 @@ void app_init(void)
   if (imu_init()) {
     printf("IMU OK (LSM6DSR)\r\n");
   } else {
-    printf("IMU NG: WHO_AM_I=0x%02X（0x6B のはず。配線・はんだを確かめる）\r\n", imu_get_who_am_i());
+    printf("IMU NG: WHO_AM_I=0x%02X (expected 0x6B)\r\n", imu_get_who_am_i());
   }
-  printf("ジャイロのゼロ点を測ります。0.5 秒、機体を動かさないでください\r\n");
+  printf("Measuring gyro offset. Keep still for 0.5 s\r\n");
   scheduler_start();
 }
 
@@ -73,7 +75,7 @@ void app_loop(void)
   /* ジャイロのゼロ点を測り終えたら、1 回だけ出す */
   if (imu_is_offset_ready() && !s_offset_printed) {
     s_offset_printed = true;
-    printf("ジャイロのゼロ点 %.3f deg/s\r\n", imu_get_gyro_offset_dps());
+    printf("Gyro offset %.3f deg/s\r\n", imu_get_gyro_offset_dps());
   }
 
   /* エンコーダとジャイロ・加速度の値をシリアルに出す */
