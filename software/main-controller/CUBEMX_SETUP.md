@@ -206,5 +206,7 @@ set_source_files_properties(${APP_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-We
 |---|---|
 | 拡張機能 | **STM32Cube for Visual Studio Code**（ST 公式。CMake Tools・Cortex-Debug 相当の機能を含む） |
 | 必要なツール | arm-none-eabi-gcc、CMake、Ninja、STM32CubeProgrammer（拡張機能の案内に従ってインストール） |
+| arm-none-eabi-gcc の版 | **gcc 11 以降**（2026-10-22 は Arm GNU Toolchain 13.3.Rel1 で確認）。CubeMX が作るリンカスクリプト（`STM32F411xx_FLASH.ld`）の `READONLY` は gcc 10 以前では読めず、リンクで `non constant or forward reference address expression for section .ARM.extab` と出る。古い版が入っていると先に見つかって使われるので、アンインストールする。版を変えたら `build` フォルダを消してから構成し直す（古い道具の場所が残っているため） |
+| シリアルを見る | VS Code の拡張機能 **Serial Monitor**（Microsoft）。ポートは「STLink Virtual COM Port」、115200bps。1 つの COM ポートは 1 つのソフトしか開けない |
 | プロジェクトを開く | `software/main-controller/TORANEKO.Mk3/` を VS Code で開き、CMake のプリセット `Debug` を選ぶ |
-| 書き込み・デバッグ | 拡張機能が `.vscode/launch.json` を作る（ST-LINK GDB server 経由）。`.vscode/` は個人設定なのでコミットしない |
+| 書き込み・デバッグ | 拡張機能が `.vscode/launch.json` を作る（ST-LINK GDB server 経由）。F5 で書き込んで `main()` で止まり、もう一度 F5 で動く。`.vscode/` は個人設定なのでコミットしない。ST-LINK は機体に電気を送らないので、書き込むときも機体の電源を入れる。`could not connect` と出たら、STM32CubeProgrammer の「Target voltage」が約 3.3V かを見る（0.5V 前後なら、機体の 3.3V が ST-LINK に届いていない） |

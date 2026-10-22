@@ -161,7 +161,7 @@ sys（explore / mode / ...）
 | # | 内容 | 作るファイル | KOGUMA側の対応ファイル | 状態 |
 |---|---|---|---|---|
 | 0 | F411 用の空プロジェクト作成（CubeMX → CMake、クロック設定） | `.ioc`, `Core/`, `App/app.c`, `CMakeLists.txt` | `KOGUMA.MkIIl.ioc` | **完了**。CubeMX で生成、`App/app.c` を `main.c` から呼ぶところまで。CI でビルドを確認 |
-| 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c`, `drv/timebase.c` | `UI.c`, `syscalls.c` | 実装済み・実機確認待ち（LED1→7 の順送り、1 秒ごとに経過時間を出力） |
+| 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c`, `drv/timebase.c` | `UI.c`, `syscalls.c` | **完了**（2026-10-22 に実機で確認）：LED1→7 の順送り、1 秒ごとに経過時間をシリアルに出力。書き込みは VS Code の F5、シリアルは VS Code の Serial Monitor 拡張で見られた |
 | 2 | 2kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | 未着手 |
 | 3 | エンコーダ読み取り（AS5047P） | `drv/spi_bus.c`, `drv/encoder.c` | `PL_encoder.c` | 未着手 |
 | 4 | IMU 読み取り（LSM6DSR） | `drv/imu.c` | `lsm6dsr.c` | 未着手 |
