@@ -5,12 +5,14 @@
  * ■ 測定の流れ（README の決定事項「TIM3 で ADC を起動し、DMA 完了割り込みで次の LED に進める連鎖」）
  * LED を点けてから受光の値が落ち着くまで、約 25µs かかる（LTR-209 の立ち上がり 10µs・立ち下がり 15µs）。
  * CPU で待つと、その間ほかの処理ができないので、待つのはタイマーに任せる。
- *   1. wall_start_measure()：組A の LED を点け、AD 変換の準備（HAL_ADC_Start_DMA）をして、TIM3 を動かす
+ *   1. wall_start_measure()：AD 変換の準備（HAL_ADC_Start_DMA）をして、TIM3 を動かす（最初は LED を全部消したまま）
  *   2. TIM3 は 35µs 数えると止まり、そのとき AD 変換を始める合図（TRGO）を出す（CubeMX で設定済み）
  *   3. AD 変換は 5 つの入力（電池、受光 4〜1）を順に変換し、DMA が結果を s_adc_buffer に書く（約 5µs）
  *   4. 書き終わると DMA の割り込みが来て、HAL が HAL_ADC_ConvCpltCallback()（このファイル）を呼ぶ
  *   5. 結果を写し、次の LED に切り替えて、また 1 の「準備して TIM3 を動かす」をする
- * これを 組A → 組B → 全部消す の 3 回くり返して終わる。
+ * これを 全部消す → 組A → 組B の 3 回くり返して終わる。
+ * 全部消して測るのを最初にするのは、LED を消したあとも受光の値がすぐには下がりきらず（35µs では足りない）、
+ * LED のあとに測ると「消したときの値」が大きく出てしまうため（2026-10-22 に、ON−OFF がマイナスになって気づいた）
  *
  * ■ 割り込みの優先度
  * DMA の割り込み（優先度 1）は制御周期の割り込み（優先度 2）より強いので、制御の処理の途中でも測定は進む。
@@ -41,9 +43,9 @@
 /* 今どの測定をしているか */
 typedef enum {
   STAGE_IDLE = 0,  /* 測っていない */
+  STAGE_DARK,      /* 全部消して測っている */
   STAGE_LED_A,     /* 組A を点けて測っている */
   STAGE_LED_B,     /* 組B を点けて測っている */
-  STAGE_DARK,      /* 全部消して測っている */
 } wall_stage_t;
 
 /* DMA が AD 変換の結果を書く場所 */
@@ -102,15 +104,14 @@ void wall_init(void)
   s_stage = STAGE_IDLE;
 }
 
-/* 制御周期ごとに呼ぶ。組A を点けて、測定の 1 回目を始める */
+/* 制御周期ごとに呼ぶ。LED を全部消したまま、測定の 1 回目を始める */
 void wall_start_measure(void)
 {
   if (s_stage != STAGE_IDLE) {
     s_overrun_count = s_overrun_count + 1;  /* 前の測定がまだ終わっていない */
     return;
   }
-  s_stage = STAGE_LED_A;
-  set_led_a(true);
+  s_stage = STAGE_DARK;
   start_conversion_after_wait();
 }
 
@@ -123,7 +124,12 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
   HAL_ADC_Stop_DMA(&hadc1);  /* 次の準備のために、いったん止める */
   s_battery_raw = s_adc_buffer[0];
 
-  if (s_stage == STAGE_LED_A) {
+  if (s_stage == STAGE_DARK) {
+    copy_sensors(s_dark);
+    set_led_a(true);
+    s_stage = STAGE_LED_A;
+    start_conversion_after_wait();
+  } else if (s_stage == STAGE_LED_A) {
     copy_sensors(s_lit_a);
     set_led_a(false);
     set_led_b(true);
@@ -132,10 +138,6 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
   } else if (s_stage == STAGE_LED_B) {
     copy_sensors(s_lit_b);
     set_led_b(false);
-    s_stage = STAGE_DARK;
-    start_conversion_after_wait();
-  } else if (s_stage == STAGE_DARK) {
-    copy_sensors(s_dark);
     s_stage = STAGE_IDLE;  /* 3 回とも終わった */
   }
 }
