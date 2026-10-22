@@ -163,7 +163,7 @@ sys（explore / mode / ...）
 | 0 | F411 用の空プロジェクト作成（CubeMX → CMake、クロック設定） | `.ioc`, `Core/`, `App/app.c`, `CMakeLists.txt` | `KOGUMA.MkIIl.ioc` | **完了**。CubeMX で生成、`App/app.c` を `main.c` から呼ぶところまで。CI でビルドを確認 |
 | 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c`, `drv/timebase.c` | `UI.c`, `syscalls.c` | **完了**（2026-10-22 に実機で確認）：LED1→7 の順送り、1 秒ごとに経過時間をシリアルに出力。書き込みは VS Code の F5、シリアルは VS Code の Serial Monitor 拡張で見られた |
 | 2 | 2kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | **完了**（2026-10-22 に実機で確認。tick=2000、period=500-500us、busy=1us）（TIM11 の割り込みで 0.5ms ごとに呼ぶ。TIM5 で µs を数え、1 回の処理時間と割り込みの間隔を 1 秒ごとにシリアルに出す。周期は `CTRL_FREQ_HZ` から決める） |
-| 3 | エンコーダ読み取り（AS5047P） | `drv/encoder.c` | `PL_encoder.c` | 実装済み・実機確認待ち（制御周期ごとに左右の角度を読み、回った量を足す。0.2 秒ごとにシリアルに出す。前に進む向きの符号は 2026-10-22 に実機で合わせた） |
+| 3 | エンコーダ読み取り（AS5047P） | `drv/encoder.c` | `PL_encoder.c` | **完了**（2026-10-22 に実機で確認）：制御周期ごとに左右の角度を読み、回った量を足す。0.2 秒ごとにシリアルに出す。前に転がすと左の角度は減り、右の角度は増えるので、左だけ符号を逆にして、両方の total が前で増えるようにした |
 | 4 | IMU 読み取り（LSM6DSR） | `drv/imu.c` | `lsm6dsr.c` | 未着手 |
 | 5 | モータ PWM | `drv/motor.c` | `motor.c`（出力部分） | 未着手 |
 | 6 | 壁センサ（2組ずつ点灯） | `drv/wall.c`, `ctrl/wall_ctrl.c` | `PL_sensor.c`, `Wallsensor.c` | 未着手 |
