@@ -15,6 +15,7 @@
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す）
  *   モード0 No.1〜3  探索（往復・片道・未知壁探索）
  *   モード5 No.1     センサ値の表示（スイッチを押すと終わる）
+ *   モード6 No.6     エンコーダの歪みを測る（タイヤを浮かせて、左右のモーターを回す）
  *   モード7 No.1     ログ出力（迷路と走行ログを PC へ出す）
  *   モード7 No.2     ゴールの位置を入れる
  *   モード7 No.15    迷路呼び出し（Flash に保存した迷路を RAM に戻す）
@@ -23,6 +24,7 @@
 #include "sys/mode.h"
 
 #include "maze/maze_map.h"
+#include "sys/encoder_cal.h"
 #include "sys/explore.h"
 #include "sys/failsafe.h"
 #include "sys/flash.h"
@@ -69,6 +71,12 @@ bool mode_has_action(int mode, int number)
   if (mode == 5) {
     if (number == 1) {
       return true;  /* センサ値の表示 */
+    }
+    return false;
+  }
+  if (mode == 6) {
+    if (number == 6) {
+      return true;  /* エンコーダの歪みを測る */
     }
     return false;
   }
@@ -218,6 +226,8 @@ static void run_selected(void)
 {
   if (s_mode == 0) {
     run_explore(s_number);
+  } else if (s_mode == 6 && s_number == 6) {
+    encoder_cal_run();
   } else if (s_mode == 7) {
     run_setting(s_number);
   }

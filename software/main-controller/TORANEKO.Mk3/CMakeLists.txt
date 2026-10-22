@@ -60,6 +60,7 @@ set(APP_SOURCES
     App/maze/search.c
     App/maze/path.c
     App/maze/dijkstra.c
+    App/sys/encoder_cal.c
     App/sys/explore.c
     App/sys/failsafe.c
     App/sys/flash.c

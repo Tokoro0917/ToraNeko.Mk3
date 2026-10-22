@@ -18,6 +18,11 @@
  * 左右のモーターは向かい合わせに付いているので、機体が前に進むとき、片方の角度は増え、もう片方は減る。
  * 前に進むと total が増えるように、ENCODER_*_SIGN で向きを合わせる（実機で確かめた値）。
  *
+ * ■ 歪みの補正
+ * 読んだ角度は、磁石の付け方のずれなどで本当の角度から少しずれている。config/encoder_correction.h の表で
+ * 直した角度で、回った量（total）を数える。表はモード6 No.6（sys/encoder_cal.c）で測って作る。
+ * get_left_angle・get_right_angle は、直す前の読んだままの角度を返す（表を作るときに使うため）。
+ *
  * ■ 割り込み
  * encoder_update() は制御周期の割り込み（sys/scheduler.c）から呼ぶ。読んだ値は volatile の変数に入れ、
  * メインの処理は get の関数で読む。
@@ -27,6 +32,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include "config/encoder_correction.h"
 #include "drv/timebase.h"
 #include "main.h"
 #include "spi.h"
@@ -58,8 +64,10 @@ typedef enum {
 } encoder_side_t;
 
 /* 割り込みの中で書き換える値（volatile の理由は sys/scheduler.c の先頭のコメント） */
-static volatile uint16_t s_left_angle = 0;
+static volatile uint16_t s_left_angle = 0;   /* 読んだままの角度 */
 static volatile uint16_t s_right_angle = 0;
+static volatile int32_t s_left_corrected = 0;   /* 歪みを直した角度 */
+static volatile int32_t s_right_corrected = 0;
 static volatile int32_t s_left_total = 0;
 static volatile int32_t s_right_total = 0;
 static volatile uint32_t s_left_error_count = 0;
@@ -140,7 +148,7 @@ static bool read_angle(encoder_side_t side, uint16_t *angle)
 }
 
 /* 前の角度から今の角度への変化 [カウント]。0 と 16383 の境目をまたいだときは、近い向きに直す */
-static int32_t angle_change(uint16_t last_angle, uint16_t now_angle)
+static int32_t angle_change(int32_t last_angle, int32_t now_angle)
 {
   int32_t change = now_angle;
   change = change - last_angle;  /* int32_t で引き算するので、マイナスにもなれる */
@@ -151,6 +159,43 @@ static int32_t angle_change(uint16_t last_angle, uint16_t now_angle)
     change = change + ENCODER_COUNT_PER_REV;  /* 例：16380 → 10 は、-16370 ではなく +14 */
   }
   return change;
+}
+
+/* 読んだ角度 raw_angle を、表 table で直した角度（0〜16383）にする。
+ * 表は 256 カウントごとの場所のまん中（128、384、…）でのずれなので、raw_angle の両どなりの 2 つを、
+ * 近いほうを重く足し合わせる（直線でつなぐ）。16383 の次は 0 なので、いちばん後ろの場所のとなりは、いちばん前の場所 */
+static int32_t correct_angle(uint16_t raw_angle, const int16_t table[])
+{
+  /* 場所のまん中から測った位置にする（例：raw 128 → 0、raw 384 → 256）。マイナスになったら 1 回転足す */
+  int32_t position = raw_angle - ENCODER_CORRECTION_BIN_WIDTH / 2;
+  if (position < 0) {
+    position = position + ENCODER_COUNT_PER_REV;
+  }
+  int lower_bin = position / ENCODER_CORRECTION_BIN_WIDTH;  /* 手前の場所（0〜63） */
+  int upper_bin = lower_bin + 1;                            /* 先の場所 */
+  if (upper_bin >= ENCODER_CORRECTION_BIN_COUNT) {
+    upper_bin = 0;
+  }
+  float distance = position - lower_bin * ENCODER_CORRECTION_BIN_WIDTH;  /* 手前の場所のまん中から何カウント先か（0〜255） */
+  float ratio = distance / ENCODER_CORRECTION_BIN_WIDTH;                  /* 0〜1：先の場所にどれだけ近いか */
+  float error = table[lower_bin] + (table[upper_bin] - table[lower_bin]) * ratio;
+
+  /* ずれを引いて、いちばん近い整数にする。(int32_t) は小数点より下を切り捨てて整数にする書き方なので、
+   * 0.5 を足してから（マイナスなら引いてから）切り捨てる */
+  float corrected = raw_angle - error;
+  int32_t corrected_angle = 0;
+  if (corrected >= 0.0f) {
+    corrected_angle = (int32_t)(corrected + 0.5f);
+  } else {
+    corrected_angle = (int32_t)(corrected - 0.5f);
+  }
+  if (corrected_angle < 0) {
+    corrected_angle = corrected_angle + ENCODER_COUNT_PER_REV;
+  }
+  if (corrected_angle >= ENCODER_COUNT_PER_REV) {
+    corrected_angle = corrected_angle - ENCODER_COUNT_PER_REV;
+  }
+  return corrected_angle;
 }
 
 /* side のエンコーダの磁石の状態（DIAAGC）を読んで、シリアルに出す。起動時の確認用
@@ -181,25 +226,32 @@ void encoder_init(void)
   uint16_t angle = 0;
   if (read_angle(ENCODER_LEFT, &angle)) {
     s_left_angle = angle;
+    s_left_corrected = correct_angle(angle, ENCODER_LEFT_CORRECTION);
   }
   if (read_angle(ENCODER_RIGHT, &angle)) {
     s_right_angle = angle;
+    s_right_corrected = correct_angle(angle, ENCODER_RIGHT_CORRECTION);
   }
   s_left_total = 0;
   s_right_total = 0;
 }
 
-/* 制御周期ごとに呼ぶ。左右の角度を読み、前の回からの変化を回った量に足す。エラーのときは、その回は足さない */
+/* 制御周期ごとに呼ぶ。左右の角度を読み、歪みを直した角度の、前の回からの変化を回った量に足す。
+ * エラーのときは、その回は足さない */
 void encoder_update(void)
 {
   uint16_t angle = 0;
 
   if (read_angle(ENCODER_LEFT, &angle)) {
-    s_left_total = s_left_total + ENCODER_LEFT_SIGN * angle_change(s_left_angle, angle);
+    int32_t corrected = correct_angle(angle, ENCODER_LEFT_CORRECTION);
+    s_left_total = s_left_total + ENCODER_LEFT_SIGN * angle_change(s_left_corrected, corrected);
+    s_left_corrected = corrected;
     s_left_angle = angle;
   }
   if (read_angle(ENCODER_RIGHT, &angle)) {
-    s_right_total = s_right_total + ENCODER_RIGHT_SIGN * angle_change(s_right_angle, angle);
+    int32_t corrected = correct_angle(angle, ENCODER_RIGHT_CORRECTION);
+    s_right_total = s_right_total + ENCODER_RIGHT_SIGN * angle_change(s_right_corrected, corrected);
+    s_right_corrected = corrected;
     s_right_angle = angle;
   }
 }
@@ -216,13 +268,13 @@ int32_t encoder_get_right_total(void)
   return s_right_total;
 }
 
-/* 左の今の角度 [カウント]（0〜16383） */
+/* 左の今の角度 [カウント]（0〜16383。歪みを直す前の、読んだままの角度） */
 uint16_t encoder_get_left_angle(void)
 {
   return s_left_angle;
 }
 
-/* 右の今の角度 [カウント]（0〜16383） */
+/* 右の今の角度 [カウント]（0〜16383。歪みを直す前の、読んだままの角度） */
 uint16_t encoder_get_right_angle(void)
 {
   return s_right_angle;

@@ -26,7 +26,7 @@ void encoder_update(void);
 int32_t encoder_get_left_total(void);
 int32_t encoder_get_right_total(void);
 
-/* 今の角度 [カウント]（0〜16383）。動作確認用 */
+/* 今の角度 [カウント]（0〜16383）。歪みを直す前の、読んだままの角度。動作確認と、歪みを測るとき（sys/encoder_cal.c）に使う */
 uint16_t encoder_get_left_angle(void);
 uint16_t encoder_get_right_angle(void);
 

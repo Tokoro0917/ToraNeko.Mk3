@@ -215,6 +215,7 @@ static int s_failsafe_clear_count = 0;
 static int s_output_count = 0;    /* 出力が呼ばれた回数 */
 static int s_sensor_view_count = 0;         /* センサ値の表示が呼ばれた回数 */
 static uint32_t s_sensor_view_time_ms = 0;  /* センサ値の表示が呼ばれた時刻 [ms] */
+static int s_encoder_cal_count = 0;         /* エンコーダの歪みを測るのが呼ばれた回数 */
 static int s_output_goal_x = 0;   /* 出力に渡されたゴール */
 static int s_output_goal_y = 0;
 
@@ -246,6 +247,7 @@ static void reset_world(void)
   s_failsafe_clear_count = 0;
   s_sensor_view_count = 0;
   s_sensor_view_time_ms = 0;
+  s_encoder_cal_count = 0;
   s_output_count = 0;
   s_explore_result = EXPLORE_RESULT_DONE;
   s_explore_count = 0;
@@ -368,6 +370,12 @@ void sensor_view_run(void)
 {
   s_sensor_view_count = s_sensor_view_count + 1;
   s_sensor_view_time_ms = s_now_ms;
+}
+
+/* エンコーダの歪みを測る：回さずに、呼ばれたことを覚える */
+void encoder_cal_run(void)
+{
+  s_encoder_cal_count = s_encoder_cal_count + 1;
 }
 
 /* 探索：走らずに、呼ばれたことを覚える。走っているあいだはタイヤが回るので、回った量も足す */
@@ -702,6 +710,23 @@ static void test_sensor_view(void)
   check(s_now_ms >= s_sensor_view_time_ms + LOADING_MS, "センサ値の表示を終えたあとも「ロード中」を出して戻る");
 }
 
+/* エンコーダの歪みを測る（モード6 No.6）は、ほかと同じくスタート待ちのあとに始まる */
+static void test_encoder_cal(void)
+{
+  printf("[6] エンコーダの歪みを測る\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 6);    /* モード6 */
+  rotate_right_at(100, 6);   /* No.6 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_encoder_cal_count == 1, "エンコーダの歪みを測るのが 1 回呼ばれる");
+  check(s_explore_count == 0 && s_sensor_view_count == 0, "ほかのモードは呼ばれない");
+}
+
 /* モード7 No.2 を選んで、x = 20、y = 3 を入れる */
 static void test_goal_input(void)
 {
@@ -819,6 +844,7 @@ int main(void)
   test_goal_input_invalid();
   test_load_maze();
   test_sensor_view();
+  test_encoder_cal();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");
