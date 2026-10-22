@@ -164,7 +164,7 @@ sys（explore / mode / ...）
 | 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c`, `drv/timebase.c` | `UI.c`, `syscalls.c` | **完了**（2026-10-22 に実機で確認）：LED1→7 の順送り、1 秒ごとに経過時間をシリアルに出力。書き込みは VS Code の F5、シリアルは VS Code の Serial Monitor 拡張で見られた |
 | 2 | 2kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | **完了**（2026-10-22 に実機で確認。tick=2000、period=500-500us、busy=1us）（TIM11 の割り込みで 0.5ms ごとに呼ぶ。TIM5 で µs を数え、1 回の処理時間と割り込みの間隔を 1 秒ごとにシリアルに出す。周期は `CTRL_FREQ_HZ` から決める） |
 | 3 | エンコーダ読み取り（AS5047P） | `drv/encoder.c` | `PL_encoder.c` | **完了**（2026-10-22 に実機で確認）：制御周期ごとに左右の角度を読み、回った量を足す。0.2 秒ごとにシリアルに出す。前に転がすと左の角度は減り、右の角度は増えるので、左だけ符号を逆にして、両方の total が前で増えるようにした |
-| 4 | IMU 読み取り（LSM6DSR） | `drv/imu.c` | `lsm6dsr.c` | 実装済み・実機確認待ち（SPI1 で角速度 Z と加速度 X・Y を 1 回のやり取りで読む。BDU を有効にして、上位・下位が混ざる飛び（KOGUMA で 10-20 に見つかったもの）を最初から防ぐ。起動後 0.5 秒の平均をゼロ点にして、角度を積分する。左回りが + になる向きは実機で確かめる） |
+| 4 | IMU 読み取り（LSM6DSR） | `drv/imu.c` | `lsm6dsr.c` | **完了**（2026-10-22 に実機で確認）：SPI1 で角速度 Z と加速度 X・Y を 1 回のやり取りで読む。BDU を有効にして、上位・下位が混ざる飛び（KOGUMA で 10-20 に見つかったもの）を防ぐ。最初のやり取りの前に `__HAL_SPI_ENABLE` で SPI を動かしておく（しないと最初の WHO_AM_I がずれて 0xFF になり、設定が書かれなかった）。ジャイロが落ち着くのを 150ms 待ってから、0.5 秒の平均をゼロ点にする。左回りが +（KOGUMA と同じ）。加速度は Y が前後の軸。前後・左右の符号は、使うとき（ステップ7）に確かめる |
 | 5 | モータ PWM | `drv/motor.c` | `motor.c`（出力部分） | 未着手 |
 | 6 | 壁センサ（2組ずつ点灯） | `drv/wall.c`, `ctrl/wall_ctrl.c` | `PL_sensor.c`, `Wallsensor.c` | 未着手 |
 | 7 | 速度・角度制御（PID、フィードフォワード） | `ctrl/odometry.c`, `ctrl/pid.c`, `ctrl/trajectory.c`, `ctrl/run.c` | `motor.c`, `Move.c` | 未着手 |
