@@ -51,6 +51,7 @@
 #define ACCEL_MPS2_PER_LSB    0.0023928f  /* ±8g のとき、1 あたり 0.244mg = 0.244 × 9.80665 / 1000 m/s² */
 #define GYRO_Z_SIGN           1           /* 左回りで + になるなら 1、- になるなら -1（実機で確かめる） */
 #define OFFSET_SAMPLE_COUNT   1000        /* ゼロ点を測る回数（制御周期 1000 回 = 0.5 秒） */
+#define GYRO_SETTLE_MS        150         /* ジャイロを動かし始めてから、ゼロ点を測り始めるまで待つ時間 [ms] */
 #define SPI_TIMEOUT_MS        1           /* SPI のやり取りを待つ上限 [ms] */
 
 /* 割り込みの中で書き換える値（volatile の理由は sys/scheduler.c の先頭のコメント） */
@@ -122,6 +123,9 @@ bool imu_init(void)
   write_register(REG_CTRL3_C, CTRL3_C_VALUE);
   write_register(REG_CTRL1_XL, CTRL1_XL_VALUE);
   write_register(REG_CTRL2_G, CTRL2_G_VALUE);
+  /* ジャイロは、動かし始めてから値が落ち着くまで約 70ms かかる（データシートの turn-on time）。
+   * 落ち着く前の値でゼロ点を測るとずれて、角度が止まっていても増え続けるので、待ってから測り始める */
+  timebase_wait_ms(GYRO_SETTLE_MS);
   return true;
 }
 
