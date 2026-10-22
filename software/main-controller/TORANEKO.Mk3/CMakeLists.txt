@@ -52,6 +52,7 @@ set(APP_SOURCES
     App/drv/switch.c
     App/drv/timebase.c
     App/drv/uart.c
+    App/drv/wall.c
     App/maze/maze_map.c
     App/maze/search.c
     App/maze/path.c
