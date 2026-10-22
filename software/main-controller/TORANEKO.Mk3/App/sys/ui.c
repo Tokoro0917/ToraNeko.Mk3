@@ -335,3 +335,21 @@ void ui_wait_failsafe_reset(void)
 
   ui_all_off();
 }
+
+/* 電池が少ないとき（MODES.md の 2-1・3）。外側の 4 個（LED1・2・6・7）を FAILSAFE_BLINK_MS ごとに点滅させ続ける。
+ * 何もできないようにするため、戻らない。電池を替えて電源を入れ直す */
+void ui_stop_for_low_battery(void)
+{
+  bool lit = true;
+  while (true) {
+    ui_all_off();
+    if (lit) {
+      led_set(1, true);
+      led_set(2, true);
+      led_set(6, true);
+      led_set(7, true);
+    }
+    lit = !lit;
+    ui_wait_ms(FAILSAFE_BLINK_MS);
+  }
+}

@@ -44,5 +44,6 @@ void ui_wait_ms(uint32_t wait_ms);
 /* 待つ */
 bool ui_wait_start(int mode, int number);
 void ui_wait_failsafe_reset(void);
+void ui_stop_for_low_battery(void);
 
 #endif /* SYS_UI_H */
