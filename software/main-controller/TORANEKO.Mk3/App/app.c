@@ -11,6 +11,7 @@
 
 #include "config/robot_params.h"
 
+#include "ctrl/odometry.h"
 #include "drv/encoder.h"
 #include "drv/imu.h"
 #include "drv/led.h"
@@ -48,6 +49,7 @@ void app_init(void)
   printf("\r\nToraNeko.Mk3 boot (SYSCLK %lu Hz)\r\n", timebase_get_sysclk_hz());
   wall_init();
   encoder_init();
+  odometry_init();
   motor_init();
   if (imu_init()) {
     printf("IMU OK (LSM6DSR)\r\n");

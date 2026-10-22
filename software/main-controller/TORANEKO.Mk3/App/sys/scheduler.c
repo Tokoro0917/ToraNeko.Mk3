@@ -27,6 +27,8 @@
 #include <stdbool.h>
 
 #include "config/robot_params.h"
+#include "ctrl/control.h"
+#include "ctrl/odometry.h"
 #include "drv/encoder.h"
 #include "drv/imu.h"
 #include "drv/wall.h"
@@ -45,12 +47,14 @@ static volatile uint32_t s_period_max_us = 0;
 static volatile uint32_t s_last_start_us = 0;          /* 前の回が始まった時刻 [µs] */
 static volatile bool s_has_last_start = false;         /* 前の回の時刻があるか（最初の 1 回は間隔を測れない） */
 
-/* 制御の処理。制御周期ごとに 1 回呼ばれる（ステップ5 以降で、モーターの処理を足していく） */
+/* 制御の処理。制御周期ごとに 1 回呼ばれる */
 static void run_control(void)
 {
   encoder_update();
   encoder_cal_record();  /* エンコーダの歪みを測っているときだけ、角度を記録する（モード6 No.6） */
   imu_update();
+  odometry_update();     /* エンコーダから、速さと距離を求める */
+  control_update();      /* 走っているときだけ、目標の速さ・向きになるようにモーターの電圧を決める */
   /* 壁センサの測定は、エンコーダと IMU を読み終えてから始める（裏で進み、約 0.16ms で終わる）。
    * LED に流れる 155mA のパルスが、読み取りに混ざらないようにするため */
   wall_start_measure();

@@ -6,6 +6,7 @@
 #   test_mode  モード選択と操作（App/sys/mode.c、ui.c、goal.c）
 #   test_output  出力と走行ログ（App/sys/output.c、log.c）。./test_output --dump ファイル で実機の出力を確かめる
 #   test_flash  迷路とゴールの位置の保存（App/sys/flash.c）。Flash は仮の配列
+#   test_trajectory  目標の速さを作る処理（App/ctrl/trajectory.c）
 
 APP_DIR = ../TORANEKO.Mk3/App
 
@@ -38,8 +39,9 @@ FLASH_SOURCES = \
 	$(APP_DIR)/sys/flash.c \
 	$(APP_DIR)/maze/maze_map.c
 
-test: test_maze test_mode test_output test_flash
+test: test_maze test_mode test_output test_flash test_trajectory
 	./test_mode
+	./test_trajectory
 	./test_output
 	./test_flash
 	./test_maze
@@ -54,10 +56,13 @@ test_mode: test_mode.c $(MODE_SOURCES) $(APP_HEADERS)
 test_output: test_output.c $(OUTPUT_SOURCES) $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_output.c $(OUTPUT_SOURCES)
 
+test_trajectory: test_trajectory.c $(APP_DIR)/ctrl/trajectory.c $(APP_HEADERS)
+	$(CC) $(CFLAGS) -o $@ test_trajectory.c $(APP_DIR)/ctrl/trajectory.c -lm
+
 test_flash: test_flash.c $(FLASH_SOURCES) $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_flash.c $(FLASH_SOURCES)
 
 clean:
-	rm -f test_maze test_mode test_output test_flash
+	rm -f test_maze test_mode test_output test_flash test_trajectory
 
 .PHONY: test clean

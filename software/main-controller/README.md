@@ -76,7 +76,7 @@ software/main-controller/
     │   ├── config/               機体の定数
     │   │   ├── robot_params.h    タイヤ径、ギア比、トレッド幅、制御周期など
     │   │   ├── encoder_correction.h  エンコーダの角度の歪みを直す表（モード6 No.6 で測って貼る）
-    │   │   └── ctrl_gains.h      PID ゲイン、フィードフォワード係数（予定）
+    │   │   └── ctrl_gains.h      速度・角度の制御の係数（フィードフォワード、P・I、止める条件）
     │   │
     │   ├── drv/                  ハードに直接触れる層（HAL を呼ぶのは、ここと sys/scheduler.c だけ）
     │   │   ├── encoder.c/.h      AS5047P ×2（SPI2）：角度の読み取りと、回った量の積算
@@ -93,9 +93,9 @@ software/main-controller/
     │   │   └── uart.c/.h         ログ送信（DMA 送信・リングバッファ）。printf の出力先（`_write`）もここ
     │   │
     │   ├── ctrl/                 制御
-    │   │   ├── odometry.c/.h     エンコーダと IMU から速度・距離・角度を求める（予定）
-    │   │   ├── pid.c/.h          汎用の PID 計算（予定）
-    │   │   ├── trajectory.c/.h   台形加減速などの目標速度の生成（予定）
+    │   │   ├── odometry.c/.h     エンコーダからタイヤの速さと走った距離を求める
+    │   │   ├── trajectory.c/.h   台形加減速の目標の速さを作る（PC テストあり）
+    │   │   ├── control.c/.h      速度と角度の制御（目標の速さ・向きになるように、モーターの電圧を決める。走行ログもここで渡す）
     │   │   ├── wall_ctrl.c/.h    壁のあり・なし判定、壁に沿った姿勢の補正（.h だけ）
     │   │   └── run.c/.h          直進・スラローム・斜めなどの動作（.h だけ。run.c で守ることも run.h に書いた）
     │   │
@@ -107,6 +107,7 @@ software/main-controller/
     │   │
     │   └── sys/                  全体の管理
     │       ├── scheduler.c/.h    制御周期（2kHz）の割り込みで制御の処理を呼び、処理時間と間隔を記録する（中身の処理はステップ3 以降で足す）
+    │       ├── adjust.c/.h       基本調整（モード6）：No.1 直進
     │       ├── encoder_cal.c/.h  エンコーダの歪みを測り、config/encoder_correction.h に貼る表をシリアルに出す（モード6 No.6）
     │       ├── explore.c/.h      探索走行：maze に次の行き先を聞き、run で 1 区画動かす（maze と ctrl をつなぐ唯一の場所）
     │       ├── mode.c/.h         走行モードの選択と実行（モード表）
@@ -169,7 +170,7 @@ sys（explore / mode / ...）
 | 4 | IMU 読み取り（LSM6DSR） | `drv/imu.c` | `lsm6dsr.c` | **完了**（2026-10-22 に実機で確認）：SPI1 で角速度 Z と加速度 X・Y を 1 回のやり取りで読む。BDU を有効にして、上位・下位が混ざる飛び（KOGUMA で 10-20 に見つかったもの）を防ぐ。最初のやり取りの前に `__HAL_SPI_ENABLE` で SPI を動かしておく（しないと最初の WHO_AM_I がずれて 0xFF になり、設定が書かれなかった）。ジャイロが落ち着くのを 150ms 待ってから、0.5 秒の平均をゼロ点にする。左回りが +（KOGUMA と同じ）。加速度は Y が前後の軸。前後・左右の符号は、使うとき（ステップ7）に確かめる |
 | 5 | モータ PWM | `drv/motor.c` | `motor.c`（出力部分） | **完了**（2026-10-22 に実機で確認。SW1 の試しで、左は + で前に回り、右は逆だったので符号を -1 にした）：TIM4（100kHz）で MP6551 の IN1/IN2 に出す（KOGUMA と同じ、片方 High のまま、もう片方を PWM。止めるときは両方 High でブレーキ）。かける電圧 ÷ 今の電池の電圧で PWM の割合を決める。上限 3.7V |
 | 6 | 壁センサ（2組ずつ点灯） | `drv/wall.c`, `ctrl/wall_ctrl.c` | `PL_sensor.c`, `Wallsensor.c` | AD 値の読み取り（`drv/wall.c`）：制御周期ごとに 全部消す → 組A → 全部消して待つ → 組B の 4 回を、TIM3（35µs 待ち）→ ADC → DMA 完了割り込みの連鎖で測る。電池の電圧も同じ変換で測る。受光 1 = 左前、2 = 右の壁、3 = 左の壁、4 = 右前（2026-10-22 に実機で確認）。壁のあり・なしと手の判定（`ctrl/wall_ctrl.c`）：壁のしきい値は、区画のまん中に置いて、壁を 1 枚ずつ外して測った値から決めた（2026-10-22。値の表は `wall_ctrl.c` の先頭）。走らせるようになったら見直す。手のしきい値は仮。組A と組B のあいだに、全部消して待つ 1 回を足した（組A の光の残りを組B で測らないように）。壁までの距離の表と、壁に沿う補正はこのあと |
-| 7 | 速度・角度制御（PID、フィードフォワード） | `ctrl/odometry.c`, `ctrl/pid.c`, `ctrl/trajectory.c`, `ctrl/run.c` | `motor.c`, `Move.c` | 未着手 |
+| 7 | 速度・角度制御（PID、フィードフォワード） | `ctrl/odometry.c`, `ctrl/trajectory.c`, `ctrl/control.c`, `ctrl/run.c` | `motor.c`, `Move.c` | **直進を作った**（2026-10-22。実機はまだ）：台形加減速で目標の速さを作り（`trajectory.c`。KOGUMA の sin 形ではなく、加速度一定）、前に進む分はフィードフォワード（速さ・加速度）＋速さと位置のずれの P・I、向きはジャイロの角速度と角度のずれの P・I で電圧を決める（`control.c`）。係数は `config/ctrl_gains.h`。速さ 1V あたり約 315mm/s はエンコーダの歪みの測定から。位置か角度のずれが大きすぎるとフェイルセーフで止まる。汎用の PID（`pid.c`）は作らず、`control.c` に 2 つの制御をそのまま書いた。モード6 No.1 で 360mm を 200mm/s で走って止まり、3ms ごとの走行ログを残す。ターンと `run.c`（探索の動き）はこのあと |
 | 8 | 迷路探索と最短経路 | `maze/*`, `../test/` | `Maze.c` | **迷路の処理は完了**（PC テスト済み）：壁の地図・歩数マップ・足立法（`maze_map.c`, `search.c`）、既知区間の経路（直進・小回り・U ターン）と最短経路の大回り・斜め（`path.c`）、ダイクストラ（`dijkstra.c`）、未知壁探索（`search_plan_unknown_walls` / `search_check_unknown_walls`）。2026-10-13 に KOGUMA の最新版（ダイクストラの不具合修正、既知区間は小回りだけ、ダイクストラは止まっているときだけ計算）に合わせた。ダイクストラは、KOGUMA と違い「同じ向きに続けて進む区間」ごとに広げて、いつも本当の最短を返すようにした（2026-10-14）。走りながら呼び出す部分（`sys/explore.c`）はステップ9 |
 | 9 | 探索走行、走行モード、ログ、フェイルセーフ、保存 | `sys/explore.c`, `sys/mode.c`, `sys/ui.c`, `sys/goal.c`, `sys/log.c`, `sys/output.c`, `sys/failsafe.c`, `sys/flash.c`, `drv/flash_memory.c`, `drv/switch.c` | `main.c`, `UI.c`, `LOG.c`, `Failsafe.c` | **探索走行（`sys/explore.c`）は作った**（PC テスト済み）：往復・片道・未知壁探索、U ターンと計算のときに止まる、スタート着・片道のゴール着・フェイルセーフで Flash に保存、フェイルセーフでは最後の 5 区画ぶんの壁を戻す（`maze_map_undo_recent_cells`）。機体を動かす部分（`ctrl/run.c`）は、ステップ7まで仮（頼まれたらフェイルセーフで止まる）。2026-10-22 から `explore.c` もファームウェアのビルドに入れた。**モード選択と操作（`sys/mode.c`・`sys/ui.c`・`sys/goal.c`）も作った**（PC テスト済み。2026-10-22 にファームウェアに入れた。起動するとモードを選べる。モード5 No.1 のセンサ値の表示も作った。走る部分（`ctrl/run.c`）はステップ7まで仮で、モード0 を始めるとすぐフェイルセーフで止まる）：タイヤで選んでスイッチで決定、前センサに手をかざして離すと 1 秒後に始まる、LED の表示と合図、モード0 の探索、モード7 のゴールの位置の入力（No.2）と迷路呼び出し（No.15）。フェイルセーフの解除はスイッチ（2026-10-15 に決定）。`sys/failsafe.c` は今は止まっているかを覚えるだけで、異常を見つける部分はこのあと作る。**走行ログと出力（`sys/log.c`・`sys/output.c`）も作った**（PC テスト済み。ファームウェアのビルドに入れた）：1000 行、間隔は走らせる処理ごと、8 秒を超えたら記録をやめるだけ（`full=1`）、KOGUMA のビューアで読める形、ログ出力はモード7 No.1。小数の printf のためにリンクに `-u _printf_float` を足した。ログの値を集めて `log_record()` を呼ぶのは、制御（ステップ7）を作るとき。**迷路とゴールの位置の Flash への保存（`sys/flash.c`・`drv/flash_memory.c`）も作った**（PC テスト済み。ファームウェアのビルドに入れた）：ゴールはセクタ6、迷路はセクタ7、目印と確かめの数で壊れた保存を読まない。本物の Flash で確かめるのは、モード7 をファームウェアに入れたとき。モード選択をファームウェアに入れたので、迷路の処理・ログ・Flash もリンクされる（2026-10-22 のビルドで RAM 約 106KB / 128KB）。フェイルセーフの異常の見つけ方は未着手。操作とモードは [MODES.md](MODES.md)、ログ・出力・フェイルセーフは [KOGUMA_PORTING.md](KOGUMA_PORTING.md) の B・F で決定済み |
 
@@ -181,7 +182,7 @@ sys（explore / mode / ...）
 | `lsm6dsr.c` | `drv/imu.c`、`drv/spi_bus.c` |
 | `PL_sensor.c` | `drv/wall.c`（LED点灯・AD読み取り）、`drv/battery.c` |
 | `Wallsensor.c` | `ctrl/wall_ctrl.c` |
-| `motor.c` | `drv/motor.c`（PWM出力）、`ctrl/pid.c`、`ctrl/odometry.c`、`drv/fan.c` |
+| `motor.c` | `drv/motor.c`（PWM出力）、`ctrl/control.c`、`ctrl/odometry.c`、`drv/fan.c` |
 | `Move.c` | `ctrl/trajectory.c`、`ctrl/run.c`（動作）、`sys/explore.c`（`Robot_Maze_*_Action` の迷路判断部分） |
 | `Maze.c` | `maze/maze_map.c`、`maze/search.c`、`maze/path.c`、`maze/dijkstra.c` |
 | `PL_timer.c` | `sys/scheduler.c` |

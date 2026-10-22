@@ -45,7 +45,10 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # User sources (App/). Add one file per line as each step is implemented
 set(APP_SOURCES
     App/app.c
+    App/ctrl/control.c
+    App/ctrl/odometry.c
     App/ctrl/run.c
+    App/ctrl/trajectory.c
     App/ctrl/wall_ctrl.c
     App/drv/encoder.c
     App/drv/flash_memory.c
@@ -60,6 +63,7 @@ set(APP_SOURCES
     App/maze/search.c
     App/maze/path.c
     App/maze/dijkstra.c
+    App/sys/adjust.c
     App/sys/encoder_cal.c
     App/sys/explore.c
     App/sys/failsafe.c
