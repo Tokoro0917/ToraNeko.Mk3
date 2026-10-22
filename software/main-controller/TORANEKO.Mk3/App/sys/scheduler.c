@@ -51,7 +51,7 @@ static void run_control(void)
   encoder_update();
   encoder_cal_record();  /* エンコーダの歪みを測っているときだけ、角度を記録する（モード6 No.6） */
   imu_update();
-  /* 壁センサの測定は、エンコーダと IMU を読み終えてから始める（裏で進み、約 0.15ms で終わる）。
+  /* 壁センサの測定は、エンコーダと IMU を読み終えてから始める（裏で進み、約 0.16ms で終わる）。
    * LED に流れる 155mA のパルスが、読み取りに混ざらないようにするため */
   wall_start_measure();
 }

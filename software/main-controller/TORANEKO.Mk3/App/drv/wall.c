@@ -10,9 +10,17 @@
  *   3. AD 変換は 5 つの入力（電池、受光 4〜1）を順に変換し、DMA が結果を s_adc_buffer に書く（約 5µs）
  *   4. 書き終わると DMA の割り込みが来て、HAL が HAL_ADC_ConvCpltCallback()（このファイル）を呼ぶ
  *   5. 結果を写し、次の LED に切り替えて、また 1 の「準備して TIM3 を動かす」をする
- * これを 全部消す → 組A → 組B の 3 回くり返して終わる。
- * 全部消して測るのを最初にするのは、LED を消したあとも受光の値がすぐには下がりきらず（35µs では足りない）、
- * LED のあとに測ると「消したときの値」が大きく出てしまうため（2026-10-22 に、ON−OFF がマイナスになって気づいた）
+ * これを次の 4 回くり返して終わる（1 回 約 40µs、全部で約 0.16ms）。
+ *   1. 全部消したまま 35µs 待って測る（消したときの値）
+ *   2. 組A を点けて 35µs 待って測る
+ *   3. 組A を消して 35µs 待つ（変換はするが、結果は使わない）
+ *   4. 組B を点けて 35µs 待って測り、組B を消す
+ *
+ * - 全部消して測るのを最初にするのは、LED を消したあとも受光の値がすぐには下がりきらず（35µs では足りない）、
+ *   LED のあとに測ると「消したときの値」が大きく出てしまうため（2026-10-22 に、ON−OFF がマイナスになって気づいた）。
+ *   最初なら、前の周期の組B を消してから 0.3ms 以上たっているので、下がりきっている
+ * - 組A と組B のあいだに「全部消して待つだけ」を入れるのも同じ理由。組A の光が受光 3・4 に残ったまま
+ *   組B を測らないように、組A を消してから組B を点けるまで約 40µs あける（2026-10-22 に追加。結果は使わない）
  *
  * ■ 割り込みの優先度
  * DMA の割り込み（優先度 1）は制御周期の割り込み（優先度 2）より強いので、制御の処理の途中でも測定は進む。
@@ -45,6 +53,7 @@ typedef enum {
   STAGE_IDLE = 0,  /* 測っていない */
   STAGE_DARK,      /* 全部消して測っている */
   STAGE_LED_A,     /* 組A を点けて測っている */
+  STAGE_GAP,       /* 組A を消して、組B を点けるまで待っている（測った結果は使わない） */
   STAGE_LED_B,     /* 組B を点けて測っている */
 } wall_stage_t;
 
@@ -132,13 +141,16 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
   } else if (s_stage == STAGE_LED_A) {
     copy_sensors(s_lit_a);
     set_led_a(false);
+    s_stage = STAGE_GAP;
+    start_conversion_after_wait();  /* 全部消したまま待つ（TIM3 で待つので、もう 1 回変換するが、結果は使わない） */
+  } else if (s_stage == STAGE_GAP) {
     set_led_b(true);
     s_stage = STAGE_LED_B;
     start_conversion_after_wait();
   } else if (s_stage == STAGE_LED_B) {
     copy_sensors(s_lit_b);
     set_led_b(false);
-    s_stage = STAGE_IDLE;  /* 3 回とも終わった */
+    s_stage = STAGE_IDLE;  /* 4 回とも終わった */
   }
 }
 
