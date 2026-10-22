@@ -47,9 +47,12 @@ static volatile bool s_has_last_start = false;         /* 前の回の時刻が�
 /* 制御の処理。制御周期ごとに 1 回呼ばれる（ステップ5 以降で、モーターの処理を足していく） */
 static void run_control(void)
 {
-  wall_start_measure();  /* 壁センサの測定を始める（裏で進み、約 0.15ms で終わる） */
   encoder_update();
   imu_update();
+  /* 壁センサの測定は、エンコーダと IMU を読み終えてから始める（裏で進み、約 0.15ms で終わる）。
+   * 壁センサの LED を点けているあいだにエンコーダを読むと、値が大きく飛んだため（2026-10-22。
+   * LED に流れる 155mA のパルスの影響と考えている） */
+  wall_start_measure();
 }
 
 /* 割り込みの間隔を記録する */
