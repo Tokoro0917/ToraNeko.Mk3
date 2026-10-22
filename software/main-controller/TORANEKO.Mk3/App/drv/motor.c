@@ -21,7 +21,7 @@
  *
  * ■ 向き
  * どちら向きが「機体が前に進む向き」かは、モーターの配線で決まる。前に進むときに + になるように、
- * MOTOR_*_SIGN で合わせる（2026-10-22 に実機で確かめ、左右とも 1 のままで前に回った）。
+ * MOTOR_*_SIGN で合わせる（2026-10-22 に実機で確かめた。左は 1、右は -1）。
  */
 #include "drv/motor.h"
 
@@ -30,7 +30,7 @@
 #include "tim.h"
 
 #define MOTOR_LEFT_SIGN  1     /* 左：+ の電圧で前に回るなら 1、後ろに回るなら -1（2026-10-22 に実機で確かめた） */
-#define MOTOR_RIGHT_SIGN 1     /* 右：同じく */
+#define MOTOR_RIGHT_SIGN -1    /* 右：1 のままでは後ろに回ったので -1 にした */
 #define PWM_PERIOD       100   /* TIM4 が 1 周で数える数（CubeMX の Period 99 + 1） */
 #define MOTOR_LIMIT_V    3.7f  /* モーターにかける電圧の上限 [V]（NFP-D0812-1-3.7 の定格） */
 #define BATTERY_MIN_V    5.0f  /* 電池の電圧がこれより低く読めたら回さない（まだ測れていない、など） */
