@@ -49,7 +49,6 @@ void app_init(void)
     printf("IMU OK (LSM6DSR)\r\n");
   } else {
     printf("IMU NG: WHO_AM_I=0x%02X (expected 0x6B)\r\n", imu_get_who_am_i());
-    imu_print_probe();  /* 原因を調べるため（一時的） */
   }
   printf("Measuring gyro offset. Keep still for 0.5 s\r\n");
   scheduler_start();

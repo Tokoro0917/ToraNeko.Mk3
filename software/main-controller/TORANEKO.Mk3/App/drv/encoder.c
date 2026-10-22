@@ -148,6 +148,11 @@ static int32_t angle_change(uint16_t last_angle, uint16_t now_angle)
 /* 起動時に 1 回だけ呼ぶ。今の角度を読んで、ここを 0 として数え始める */
 void encoder_init(void)
 {
+  /* SPI2 を先に動かしておく。HAL は最初のやり取りのときに SPI を動かし始めるので、それまでクロックの線の
+   * 高さが決まっておらず、最初のやり取りがずれることがある（IMU で 2026-10-22 に起きたのと同じ。drv/imu.c）。
+   * __HAL_SPI_ENABLE は SPI を動かし始めるだけの HAL の命令 */
+  __HAL_SPI_ENABLE(&hspi2);
+
   uint16_t angle = 0;
   if (read_angle(ENCODER_LEFT, &angle)) {
     s_left_angle = angle;

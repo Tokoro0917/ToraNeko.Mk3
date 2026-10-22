@@ -14,7 +14,6 @@
 bool imu_init(void);
 void imu_update(void);
 uint8_t imu_get_who_am_i(void);
-void imu_print_probe(void);  /* 原因を調べるための一時的なもの */
 
 /* ゼロ点（止まっているときに出る角速度のずれ）を測り終えたら true。測り終えるまで、角度は 0 のまま */
 bool imu_is_offset_ready(void);

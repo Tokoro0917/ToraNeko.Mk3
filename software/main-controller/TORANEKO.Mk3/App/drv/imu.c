@@ -27,8 +27,6 @@
  */
 #include "drv/imu.h"
 
-#include <stdio.h>
-
 #include "config/robot_params.h"
 #include "drv/timebase.h"
 #include "main.h"
@@ -112,6 +110,11 @@ static int32_t to_signed(uint8_t low, uint8_t high)
 bool imu_init(void)
 {
   timebase_wait_ms(20);  /* LSM6DSR は電源が入ってから動けるまで約 10ms かかるので、念のため待つ */
+  /* SPI1 を先に動かしておく。HAL は最初のやり取りのときに SPI を動かし始めるが、そのときクロックの線が
+   * Low から High（モード3 の待ちの高さ）に変わる。CS を Low にしたあとでこれが起きると、LSM6DSR は
+   * 余計なクロックが 1 回来たと思い、最初のやり取りがずれる（2026-10-22 に WHO_AM_I が 0xFF になった原因）。
+   * __HAL_SPI_ENABLE は SPI を動かし始めるだけの HAL の命令で、こうしておくとクロックの線は High で待つ */
+  __HAL_SPI_ENABLE(&hspi1);
   s_who_am_i = read_register(REG_WHO_AM_I);
   if (s_who_am_i != WHO_AM_I_VALUE) {
     return false;
@@ -200,67 +203,3 @@ float imu_get_accel_y_mps2(void)
   return s_accel_y_mps2;
 }
 
-/* ---------------------------------------------------------------------------
- * 原因を調べるための、一時的な処理（IMU と話せるようになったら消す）
- *
- * SPI の読み方（モード・速さ）と、IMU → MCU の線（MISO、PB4）の引き上げ・引き下げを変えながら
- * WHO_AM_I を読み、結果をシリアルに出す。
- *   - モードや速さを変えると 0x6B が読める → 読み方の問題
- *   - MISO を引き下げると 0x00、引き上げると 0xFF に変わる → IMU が線を動かしていない（返事がない）
- *   - 引き上げ・引き下げで変わらず 0xFF のまま → 線がどこかで 3.3V につながっている
- * ------------------------------------------------------------------------- */
-
-/* SPI1 を、決めたモードと速さで設定し直す */
-static void probe_set_spi(uint32_t polarity, uint32_t phase, uint32_t prescaler)
-{
-  HAL_SPI_DeInit(&hspi1);
-  hspi1.Init.CLKPolarity = polarity;
-  hspi1.Init.CLKPhase = phase;
-  hspi1.Init.BaudRatePrescaler = prescaler;
-  HAL_SPI_Init(&hspi1);
-}
-
-/* MISO（PB4）の引き上げ・引き下げを変える（SPI1 の線のまま） */
-static void probe_set_miso_pull(uint32_t pull)
-{
-  GPIO_InitTypeDef gpio = {0};
-  gpio.Pin = GPIO_PIN_4;
-  gpio.Mode = GPIO_MODE_AF_PP;
-  gpio.Pull = pull;
-  gpio.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  gpio.Alternate = GPIO_AF5_SPI1;
-  HAL_GPIO_Init(GPIOB, &gpio);
-}
-
-/* 今の設定で WHO_AM_I を 3 回読んで、シリアルに出す */
-static void probe_read(const char *name)
-{
-  uint8_t value1 = read_register(REG_WHO_AM_I);
-  uint8_t value2 = read_register(REG_WHO_AM_I);
-  uint8_t value3 = read_register(REG_WHO_AM_I);
-  printf("  %-32s WHO_AM_I = 0x%02X 0x%02X 0x%02X\r\n", name, value1, value2, value3);
-}
-
-/* いろいろな読み方で WHO_AM_I を読んで、結果をシリアルに出す。最後に元の設定に戻す */
-void imu_print_probe(void)
-{
-  printf("IMU probe:\r\n");
-
-  probe_set_spi(SPI_POLARITY_HIGH, SPI_PHASE_2EDGE, SPI_BAUDRATEPRESCALER_16);
-  probe_read("mode3 6.25MHz");
-  probe_set_spi(SPI_POLARITY_HIGH, SPI_PHASE_2EDGE, SPI_BAUDRATEPRESCALER_128);
-  probe_read("mode3 0.78MHz");
-  probe_set_spi(SPI_POLARITY_LOW, SPI_PHASE_1EDGE, SPI_BAUDRATEPRESCALER_16);
-  probe_read("mode0 6.25MHz");
-  probe_set_spi(SPI_POLARITY_LOW, SPI_PHASE_1EDGE, SPI_BAUDRATEPRESCALER_128);
-  probe_read("mode0 0.78MHz");
-
-  probe_set_spi(SPI_POLARITY_HIGH, SPI_PHASE_2EDGE, SPI_BAUDRATEPRESCALER_128);
-  probe_set_miso_pull(GPIO_PULLDOWN);
-  probe_read("mode3 0.78MHz MISO pull-down");
-  probe_set_miso_pull(GPIO_PULLUP);
-  probe_read("mode3 0.78MHz MISO pull-up");
-
-  /* 元の設定（CubeMX の設定と同じ）に戻す */
-  probe_set_spi(SPI_POLARITY_HIGH, SPI_PHASE_2EDGE, SPI_BAUDRATEPRESCALER_16);
-}
