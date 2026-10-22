@@ -30,7 +30,9 @@ int32_t encoder_get_right_total(void);
 uint16_t encoder_get_left_angle(void);
 uint16_t encoder_get_right_angle(void);
 
-/* エンコーダがエラーを返した回数（電源を入れてから）。動作確認用 */
-uint32_t encoder_get_error_count(void);
+/* エンコーダがエラーを返した回数（電源を入れてから）と、最後のエラーの中身。動作確認用 */
+uint32_t encoder_get_left_error_count(void);
+uint32_t encoder_get_right_error_count(void);
+uint16_t encoder_get_last_error_flags(void);
 
 #endif /* DRV_ENCODER_H */

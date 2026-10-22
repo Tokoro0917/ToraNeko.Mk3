@@ -28,6 +28,8 @@
 
 #include "config/robot_params.h"
 #include "drv/encoder.h"
+#include "drv/imu.h"
+#include "drv/wall.h"
 #include "drv/timebase.h"
 #include "main.h"
 #include "tim.h"
@@ -42,10 +44,14 @@ static volatile uint32_t s_period_max_us = 0;
 static volatile uint32_t s_last_start_us = 0;          /* 前の回が始まった時刻 [µs] */
 static volatile bool s_has_last_start = false;         /* 前の回の時刻があるか（最初の 1 回は間隔を測れない） */
 
-/* 制御の処理。制御周期ごとに 1 回呼ばれる（ステップ4 以降で、ジャイロ・壁センサ・モーターの処理を足していく） */
+/* 制御の処理。制御周期ごとに 1 回呼ばれる（ステップ5 以降で、モーターの処理を足していく） */
 static void run_control(void)
 {
   encoder_update();
+  imu_update();
+  /* 壁センサの測定は、エンコーダと IMU を読み終えてから始める（裏で進み、約 0.15ms で終わる）。
+   * LED に流れる 155mA のパルスが、読み取りに混ざらないようにするため */
+  wall_start_measure();
 }
 
 /* 割り込みの間隔を記録する */

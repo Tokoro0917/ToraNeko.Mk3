@@ -25,6 +25,7 @@
 #include "drv/encoder.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 
 #include "drv/timebase.h"
 #include "main.h"
@@ -37,6 +38,15 @@
 
 #define READ_ANGLE_COMMAND_HIGH 0xFF  /* 角度を頼む命令 0xFFFF の上の 1 バイト */
 #define READ_ANGLE_COMMAND_LOW  0xFF  /* 下の 1 バイト */
+#define READ_ERRFL_COMMAND_HIGH 0x40  /* エラーの中身（ERRFL、場所 0x0001）を頼む命令 0x4001 の上の 1 バイト */
+#define READ_ERRFL_COMMAND_LOW  0x01  /* 下の 1 バイト。ERRFL は読むと 0 に戻る */
+#define READ_DIAG_COMMAND_HIGH 0xFF  /* 磁石の状態（DIAAGC、場所 0x3FFC）を頼む命令 0xFFFC の上の 1 バイト */
+#define READ_DIAG_COMMAND_LOW  0xFC  /* 下の 1 バイト */
+#define DIAG_MAGL      0x0800        /* DIAAGC の、磁石が弱すぎる（遠い・ない）の印 */
+#define DIAG_MAGH      0x0400        /* 磁石が強すぎる（近すぎる）の印 */
+#define DIAG_COF       0x0200        /* 角度の計算があふれた印 */
+#define DIAG_LF        0x0100        /* 1 になっていれば、測定の準備ができている */
+#define DIAG_AGC_MASK  0x00FF        /* 下の 8 ビット：磁石の強さに合わせた増幅の量（磁石が弱いほど大きい） */
 #define ERROR_FLAG     0x4000         /* 受け取った 16 ビットの、エラーの印のビット */
 #define ANGLE_MASK     0x3FFF         /* 受け取った 16 ビットの、角度の部分（下の 14 ビット） */
 #define HALF_REV_COUNT 8192           /* 半回転のカウント数 */
@@ -52,7 +62,9 @@ static volatile uint16_t s_left_angle = 0;
 static volatile uint16_t s_right_angle = 0;
 static volatile int32_t s_left_total = 0;
 static volatile int32_t s_right_total = 0;
-static volatile uint32_t s_error_count = 0;
+static volatile uint32_t s_left_error_count = 0;
+static volatile uint32_t s_right_error_count = 0;
+static volatile uint16_t s_last_error_flags = 0;  /* 最後に読んだエラーの中身（ERRFL）。1=フレーム、2=命令、4=確かめのビット */
 
 /* side のエンコーダの CS（このエンコーダと話す、の合図）を Low（話す）・High（話さない）にする */
 static void set_cs(encoder_side_t side, bool talk)
@@ -76,10 +88,11 @@ static void wait_between_frames(void)
   }
 }
 
-/* side のエンコーダと 1 回やり取りする（角度を頼み、前の頼みの答えを受け取る）。受け取った 16 ビットを返す */
-static uint16_t exchange_frame(encoder_side_t side)
+/* side のエンコーダと 1 回やり取りする（命令 command_high・command_low を送り、前の命令の答えを受け取る）。
+ * 受け取った 16 ビットを返す */
+static uint16_t exchange_frame(encoder_side_t side, uint8_t command_high, uint8_t command_low)
 {
-  uint8_t send[2] = {READ_ANGLE_COMMAND_HIGH, READ_ANGLE_COMMAND_LOW};
+  uint8_t send[2] = {command_high, command_low};
   uint8_t receive[2] = {0, 0};
 
   set_cs(side, true);
@@ -91,15 +104,35 @@ static uint16_t exchange_frame(encoder_side_t side)
   return receive[0] * 256 + receive[1];
 }
 
+/* side のエンコーダのエラーの数を 1 つ増やす */
+static void count_error(encoder_side_t side)
+{
+  if (side == ENCODER_LEFT) {
+    s_left_error_count = s_left_error_count + 1;
+  } else {
+    s_right_error_count = s_right_error_count + 1;
+  }
+}
+
+/* エラーの中身（ERRFL）を読んで覚えておく。ERRFL は読むと 0 に戻るので、エラーの印も消える
+ * （読まないと、エラーの印が立ったままになる） */
+static void read_and_clear_error(encoder_side_t side)
+{
+  exchange_frame(side, READ_ERRFL_COMMAND_HIGH, READ_ERRFL_COMMAND_LOW);  /* ERRFL を頼む */
+  uint16_t frame = exchange_frame(side, READ_ANGLE_COMMAND_HIGH, READ_ANGLE_COMMAND_LOW);  /* 答えを受け取る */
+  s_last_error_flags = frame & ANGLE_MASK;  /* 下の 14 ビットが ERRFL の中身 */
+}
+
 /* side のエンコーダの今の角度（0〜16383）を読む。エラーなら false を返し、angle は変えない */
 static bool read_angle(encoder_side_t side, uint16_t *angle)
 {
-  exchange_frame(side);                   /* 1 回目：角度を頼む（答えは捨てる） */
-  uint16_t frame = exchange_frame(side);  /* 2 回目：1 回目の答えを受け取る */
+  exchange_frame(side, READ_ANGLE_COMMAND_HIGH, READ_ANGLE_COMMAND_LOW);                   /* 1 回目：角度を頼む（答えは捨てる） */
+  uint16_t frame = exchange_frame(side, READ_ANGLE_COMMAND_HIGH, READ_ANGLE_COMMAND_LOW);  /* 2 回目：1 回目の答えを受け取る */
 
   /* & は、決めたビットだけを取り出す計算。ERROR_FLAG のビットが 1 ならエラー */
   if ((frame & ERROR_FLAG) != 0) {
-    s_error_count = s_error_count + 1;
+    count_error(side);
+    read_and_clear_error(side);
     return false;
   }
   *angle = frame & ANGLE_MASK;  /* 下の 14 ビットだけを取り出す（上の 2 ビットは印なので捨てる） */
@@ -120,9 +153,31 @@ static int32_t angle_change(uint16_t last_angle, uint16_t now_angle)
   return change;
 }
 
+/* side のエンコーダの磁石の状態（DIAAGC）を読んで、シリアルに出す。起動時の確認用
+ * （制御周期の割り込みが動き出す前に呼ぶ。動き出したあとだと、割り込みのやり取りと混ざるため） */
+static void print_diagnostics(encoder_side_t side, const char *name)
+{
+  exchange_frame(side, READ_DIAG_COMMAND_HIGH, READ_DIAG_COMMAND_LOW);  /* DIAAGC を頼む */
+  uint16_t frame = exchange_frame(side, READ_ANGLE_COMMAND_HIGH, READ_ANGLE_COMMAND_LOW);  /* 答えを受け取る */
+
+  /* & で、それぞれの印のビットだけを取り出す。0 でなければ印が立っている */
+  printf("Encoder %s: AGC=%u MAGL=%d MAGH=%d COF=%d LF=%d (raw 0x%04X)\r\n", name,
+         frame & DIAG_AGC_MASK,
+         (frame & DIAG_MAGL) != 0, (frame & DIAG_MAGH) != 0,
+         (frame & DIAG_COF) != 0, (frame & DIAG_LF) != 0, frame);
+}
+
 /* 起動時に 1 回だけ呼ぶ。今の角度を読んで、ここを 0 として数え始める */
 void encoder_init(void)
 {
+  /* SPI2 を先に動かしておく。HAL は最初のやり取りのときに SPI を動かし始めるので、それまでクロックの線の
+   * 高さが決まっておらず、最初のやり取りがずれることがある（IMU で 2026-10-22 に起きたのと同じ。drv/imu.c）。
+   * __HAL_SPI_ENABLE は SPI を動かし始めるだけの HAL の命令 */
+  __HAL_SPI_ENABLE(&hspi2);
+
+  print_diagnostics(ENCODER_LEFT, "L");
+  print_diagnostics(ENCODER_RIGHT, "R");
+
   uint16_t angle = 0;
   if (read_angle(ENCODER_LEFT, &angle)) {
     s_left_angle = angle;
@@ -173,8 +228,20 @@ uint16_t encoder_get_right_angle(void)
   return s_right_angle;
 }
 
-/* エンコーダがエラーを返した回数（電源を入れてから） */
-uint32_t encoder_get_error_count(void)
+/* 左のエンコーダがエラーを返した回数（電源を入れてから） */
+uint32_t encoder_get_left_error_count(void)
 {
-  return s_error_count;
+  return s_left_error_count;
+}
+
+/* 右のエンコーダがエラーを返した回数（電源を入れてから） */
+uint32_t encoder_get_right_error_count(void)
+{
+  return s_right_error_count;
+}
+
+/* 最後に読んだエラーの中身（ERRFL）。1=フレームのエラー、2=知らない命令、4=確かめのビットが合わない（足し合わせで出る） */
+uint16_t encoder_get_last_error_flags(void)
+{
+  return s_last_error_flags;
 }

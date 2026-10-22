@@ -47,10 +47,13 @@ set(APP_SOURCES
     App/app.c
     App/drv/encoder.c
     App/drv/flash_memory.c
+    App/drv/imu.c
     App/drv/led.c
+    App/drv/motor.c
     App/drv/switch.c
     App/drv/timebase.c
     App/drv/uart.c
+    App/drv/wall.c
     App/maze/maze_map.c
     App/maze/search.c
     App/maze/path.c

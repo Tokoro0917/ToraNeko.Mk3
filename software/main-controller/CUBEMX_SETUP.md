@@ -126,7 +126,7 @@ KOGUMA の設定（参考）: TIM3 PSC 9-1 / ARR 200-1（50kHz）、TIM2 PSC 18-
 | Hardware NSS | Disable（CS は GPIO で制御） | Disable |
 | Data Size | 8 bit | 8 bit（KOGUMA と同じく 2 バイトで 16bit フレームを送る） |
 | First Bit | MSB | MSB |
-| CPOL / CPHA | High / 2 Edge（モード3、KOGUMA と同じ） | High / 2 Edge（KOGUMA で動作実績あり。データシート上のモードはステップ3で確認） |
+| CPOL / CPHA | High / 2 Edge（モード3、KOGUMA と同じ） | **Low** / 2 Edge（モード1、AS5047P のデータシートの指定。2026-10-22 に High から変更：High（KOGUMA と同じ）では、角度は読めるがエラーの印が半分の読み取りで立ち、ERRFL を頼む命令も受け取られなかった） |
 | Prescaler | **/16 → 6.25 MHz**（APB2 100MHz。LSM6DSRX 上限 10MHz） | **/8 → 6.25 MHz**（APB1 50MHz。AS5047P 上限 10MHz） |
 | KOGUMA | /8（11.25MHz） | SPI3 /2（22.5MHz） |
 
