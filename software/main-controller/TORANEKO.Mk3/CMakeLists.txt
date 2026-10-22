@@ -45,6 +45,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # User sources (App/). Add one file per line as each step is implemented
 set(APP_SOURCES
     App/app.c
+    App/drv/encoder.c
     App/drv/flash_memory.c
     App/drv/led.c
     App/drv/switch.c
@@ -57,6 +58,7 @@ set(APP_SOURCES
     App/sys/flash.c
     App/sys/log.c
     App/sys/output.c
+    App/sys/scheduler.c
 )
 
 # Add sources to executable

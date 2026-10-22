@@ -78,7 +78,7 @@ software/main-controller/
     │   │   └── ctrl_gains.h      PID ゲイン、フィードフォワード係数（予定）
     │   │
     │   ├── drv/                  ハードに直接触れる層（HAL を呼ぶのは、ここと sys/scheduler.c だけ）
-    │   │   ├── encoder.c/.h      AS5047P ×2：角度の読み取り（.h だけ）
+    │   │   ├── encoder.c/.h      AS5047P ×2（SPI2）：角度の読み取りと、回った量の積算
     │   │   ├── imu.c/.h          LSM6DSR：角速度・加速度の読み取り（予定）
     │   │   ├── motor.c/.h        MP6551 ×2：PWM の出力（電圧を指定）（予定）
     │   │   ├── wall.c/.h         壁センサ：LED を2組ずつ点灯し、AD 値を読む（予定）
@@ -87,7 +87,7 @@ software/main-controller/
     │   │   ├── flash_memory.c/.h 内蔵 Flash の保存場所（セクタ6・7）を消す・書く・読む
     │   │   ├── led.c/.h          UI 用 LED
     │   │   ├── switch.c/.h       ユーザースイッチ SW1 の読み取り
-    │   │   ├── spi_bus.c/.h      SPI 転送と CS 制御の共通部分（imu / encoder から使う）（予定）
+    │   │   ├── spi_bus.c/.h      SPI 転送と CS 制御の共通部分（予定。IMU は SPI1、エンコーダは SPI2 と分かれたので、エンコーダは encoder.c の中で SPI を使っている。共通にするかは IMU を作るときに決める）
     │   │   ├── timebase.c/.h     経過時間（ms は SysTick。µs は TIM5 で、ステップ2で追加する）とシステムクロックの取得
     │   │   └── uart.c/.h         ログ送信（DMA 送信・リングバッファ）。printf の出力先（`_write`）もここ
     │   │
@@ -105,7 +105,7 @@ software/main-controller/
     │   │   └── path.c/.h         経路（動きの並び）を作る：既知区間の経路（直進・小回り・U ターン。大回りにはしない）、最短経路の大回り・斜めへの変換
     │   │
     │   └── sys/                  全体の管理
-    │       ├── scheduler.c/.h    制御周期（2kHz）の処理（センサ → 制御 → 出力の順に呼ぶ）（予定）
+    │       ├── scheduler.c/.h    制御周期（2kHz）の割り込みで制御の処理を呼び、処理時間と間隔を記録する（中身の処理はステップ3 以降で足す）
     │       ├── explore.c/.h      探索走行：maze に次の行き先を聞き、run で 1 区画動かす（maze と ctrl をつなぐ唯一の場所）
     │       ├── mode.c/.h         走行モードの選択と実行（モード表）
     │       ├── goal.c/.h         ゴールの位置（機体で入れて Flash に保存する。大きさは 2×2）
@@ -162,8 +162,8 @@ sys（explore / mode / ...）
 |---|---|---|---|---|
 | 0 | F411 用の空プロジェクト作成（CubeMX → CMake、クロック設定） | `.ioc`, `Core/`, `App/app.c`, `CMakeLists.txt` | `KOGUMA.MkIIl.ioc` | **完了**。CubeMX で生成、`App/app.c` を `main.c` から呼ぶところまで。CI でビルドを確認 |
 | 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c`, `drv/timebase.c` | `UI.c`, `syscalls.c` | **完了**（2026-10-22 に実機で確認）：LED1→7 の順送り、1 秒ごとに経過時間をシリアルに出力。書き込みは VS Code の F5、シリアルは VS Code の Serial Monitor 拡張で見られた |
-| 2 | 2kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | 未着手 |
-| 3 | エンコーダ読み取り（AS5047P） | `drv/spi_bus.c`, `drv/encoder.c` | `PL_encoder.c` | 未着手 |
+| 2 | 2kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | **完了**（2026-10-22 に実機で確認。tick=2000、period=500-500us、busy=1us）（TIM11 の割り込みで 0.5ms ごとに呼ぶ。TIM5 で µs を数え、1 回の処理時間と割り込みの間隔を 1 秒ごとにシリアルに出す。周期は `CTRL_FREQ_HZ` から決める） |
+| 3 | エンコーダ読み取り（AS5047P） | `drv/encoder.c` | `PL_encoder.c` | **完了**（2026-10-22 に実機で確認）：制御周期ごとに左右の角度を読み、回った量を足す。0.2 秒ごとにシリアルに出す。前に転がすと左の角度は減り、右の角度は増えるので、左だけ符号を逆にして、両方の total が前で増えるようにした |
 | 4 | IMU 読み取り（LSM6DSR） | `drv/imu.c` | `lsm6dsr.c` | 未着手 |
 | 5 | モータ PWM | `drv/motor.c` | `motor.c`（出力部分） | 未着手 |
 | 6 | 壁センサ（2組ずつ点灯） | `drv/wall.c`, `ctrl/wall_ctrl.c` | `PL_sensor.c`, `Wallsensor.c` | 未着手 |

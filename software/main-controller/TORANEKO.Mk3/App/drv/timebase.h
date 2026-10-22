@@ -7,7 +7,9 @@
 
 #include <stdint.h>
 
+void timebase_init(void);
 uint32_t timebase_get_ms(void);
+uint32_t timebase_get_us(void);
 void timebase_wait_ms(uint32_t wait_ms);
 uint32_t timebase_get_sysclk_hz(void);
 
