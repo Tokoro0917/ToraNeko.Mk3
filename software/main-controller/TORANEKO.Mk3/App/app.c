@@ -98,8 +98,9 @@ void app_loop(void)
     printf("t=%lu ms tick=%lu busy=%lu us period=%lu-%lu us dropped=%lu\r\n",
            now_ms, stats.tick_count, stats.busy_max_us,
            stats.period_min_us, stats.period_max_us, uart_get_dropped_count());
-    printf("  L=%ld R=%ld err=%lu/%lu angle=%.1f deg batt=%.2f V wall_overrun=%lu\r\n",
-           encoder_get_left_total(), encoder_get_right_total(),
+    printf("  L=%ld (angle %u) R=%ld (angle %u) err=%lu/%lu angle=%.1f deg batt=%.2f V wall_overrun=%lu\r\n",
+           encoder_get_left_total(), encoder_get_left_angle(),
+           encoder_get_right_total(), encoder_get_right_angle(),
            encoder_get_left_error_count(), encoder_get_right_error_count(),
            imu_get_angle_deg(), wall_get_battery_v(), wall_get_overrun_count());
   }
