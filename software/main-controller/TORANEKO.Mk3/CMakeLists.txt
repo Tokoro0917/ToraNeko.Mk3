@@ -57,6 +57,7 @@ set(APP_SOURCES
     App/sys/flash.c
     App/sys/log.c
     App/sys/output.c
+    App/sys/scheduler.c
 )
 
 # Add sources to executable

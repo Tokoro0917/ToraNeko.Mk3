@@ -105,7 +105,7 @@ software/main-controller/
     │   │   └── path.c/.h         経路（動きの並び）を作る：既知区間の経路（直進・小回り・U ターン。大回りにはしない）、最短経路の大回り・斜めへの変換
     │   │
     │   └── sys/                  全体の管理
-    │       ├── scheduler.c/.h    制御周期（2kHz）の処理（センサ → 制御 → 出力の順に呼ぶ）（予定）
+    │       ├── scheduler.c/.h    制御周期（2kHz）の割り込みで制御の処理を呼び、処理時間と間隔を記録する（中身の処理はステップ3 以降で足す）
     │       ├── explore.c/.h      探索走行：maze に次の行き先を聞き、run で 1 区画動かす（maze と ctrl をつなぐ唯一の場所）
     │       ├── mode.c/.h         走行モードの選択と実行（モード表）
     │       ├── goal.c/.h         ゴールの位置（機体で入れて Flash に保存する。大きさは 2×2）
@@ -162,7 +162,7 @@ sys（explore / mode / ...）
 |---|---|---|---|---|
 | 0 | F411 用の空プロジェクト作成（CubeMX → CMake、クロック設定） | `.ioc`, `Core/`, `App/app.c`, `CMakeLists.txt` | `KOGUMA.MkIIl.ioc` | **完了**。CubeMX で生成、`App/app.c` を `main.c` から呼ぶところまで。CI でビルドを確認 |
 | 1 | LED点灯とシリアル出力（printf） | `drv/led.c`, `drv/uart.c`, `drv/timebase.c` | `UI.c`, `syscalls.c` | **完了**（2026-10-22 に実機で確認）：LED1→7 の順送り、1 秒ごとに経過時間をシリアルに出力。書き込みは VS Code の F5、シリアルは VS Code の Serial Monitor 拡張で見られた |
-| 2 | 2kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | 未着手 |
+| 2 | 2kHz 制御周期割り込み | `sys/scheduler.c` | `PL_timer.c` | 実装済み・実機確認待ち（TIM11 の割り込みで 0.5ms ごとに呼ぶ。TIM5 で µs を数え、1 回の処理時間と割り込みの間隔を 1 秒ごとにシリアルに出す。周期は `CTRL_FREQ_HZ` から決める） |
 | 3 | エンコーダ読み取り（AS5047P） | `drv/spi_bus.c`, `drv/encoder.c` | `PL_encoder.c` | 未着手 |
 | 4 | IMU 読み取り（LSM6DSR） | `drv/imu.c` | `lsm6dsr.c` | 未着手 |
 | 5 | モータ PWM | `drv/motor.c` | `motor.c`（出力部分） | 未着手 |
