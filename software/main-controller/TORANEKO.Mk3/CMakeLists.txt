@@ -49,6 +49,7 @@ set(APP_SOURCES
     App/drv/flash_memory.c
     App/drv/imu.c
     App/drv/led.c
+    App/drv/motor.c
     App/drv/switch.c
     App/drv/timebase.c
     App/drv/uart.c

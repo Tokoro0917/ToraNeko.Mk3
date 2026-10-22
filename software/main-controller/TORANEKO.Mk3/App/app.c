@@ -2,7 +2,7 @@
  * app.c
  * App 全体の入口。main.c から app_init() と app_loop() が呼ばれる
  *
- * 今の中身はステップ1〜4・6の動作確認：
+ * 今の中身はステップ1〜6の動作確認：
  *   - LED1 → LED2 → … → LED7 → LED1 … の順に、0.1 秒ごとに 1 個ずつ点灯する
  *   - 1 秒ごとに、経過時間と、制御周期（2kHz）の割り込みの記録をシリアルに出す
  *     tick=1 秒間に割り込みが来た回数（2000 のはず）、busy=1 回の処理にかかった最大の時間、
@@ -12,6 +12,8 @@
  *     B-off=組B（右前向き＋左向き）で同じもの、off=全部消したときの値
  *   - 1 秒ごとに、エンコーダとジャイロの値と、電池の電圧も出す
  *     L・R=左右のモーターが回った量、err=エンコーダのエラーの回数、angle=角度 [deg]
+ *   - スイッチ SW1 を押して離すと、モーターの試しをする（前に 1 秒 → 止める → 後ろに 1 秒 → 止める）。
+ *     タイヤを浮かせてから押す
  *   - ジャイロのゼロ点を測り終えたら（起動して 0.5 秒）、ゼロ点を 1 回だけ出す
  */
 #include "app.h"
@@ -22,6 +24,8 @@
 #include "drv/encoder.h"
 #include "drv/imu.h"
 #include "drv/led.h"
+#include "drv/motor.h"
+#include "drv/switch.h"
 #include "drv/timebase.h"
 #include "drv/uart.h"
 #include "drv/wall.h"
@@ -37,6 +41,47 @@ static uint32_t s_last_sensor_print_ms = 0;  /* 最後に壁センサの値を�
 static bool s_offset_printed = false;        /* ジャイロのゼロ点を出したか */
 static uint8_t s_led_num = 1;         /* 今点けている LED の番号（1〜7） */
 
+#define MOTOR_TEST_V       1.0f  /* モーターの試しでかける電圧 [V] */
+#define MOTOR_TEST_MS      1000  /* モーターの試しで 1 つの向きに回す時間 [ms] */
+#define MOTOR_PAUSE_MS     500   /* 向きを変えるあいだに止めておく時間 [ms] */
+#define HAND_AWAY_MS       500   /* スイッチを離してから回し始めるまで待つ時間 [ms]（手を離すため） */
+
+/* モーターを電圧 left_v・right_v で time_ms 回して止め、そのあいだに左右のエンコーダが回った量を出す */
+static void run_motor_phase(const char *name, float left_v, float right_v, uint32_t time_ms)
+{
+  int32_t left_start = encoder_get_left_total();
+  int32_t right_start = encoder_get_right_total();
+  motor_set_voltage(left_v, right_v);
+  timebase_wait_ms(time_ms);
+  motor_stop();
+  printf("  %s: L moved %ld, R moved %ld (batt %.2f V)\r\n", name,
+         encoder_get_left_total() - left_start, encoder_get_right_total() - right_start,
+         wall_get_battery_v());
+}
+
+/* モーターの試し：前に回す → 止める → 後ろに回す → 止める */
+static void run_motor_test(void)
+{
+  printf("Motor test (%.1f V, %d ms each)\r\n", MOTOR_TEST_V, MOTOR_TEST_MS);
+  run_motor_phase("forward ", MOTOR_TEST_V, MOTOR_TEST_V, MOTOR_TEST_MS);
+  timebase_wait_ms(MOTOR_PAUSE_MS);
+  run_motor_phase("backward", -MOTOR_TEST_V, -MOTOR_TEST_V, MOTOR_TEST_MS);
+  printf("Motor test done\r\n");
+}
+
+/* スイッチが押されたら、離されるまで待ってから、モーターの試しをする */
+static void check_switch_and_run_motor_test(void)
+{
+  if (!switch_is_pressed()) {
+    return;
+  }
+  while (switch_is_pressed()) {
+    timebase_wait_ms(10);
+  }
+  timebase_wait_ms(HAND_AWAY_MS);
+  run_motor_test();
+}
+
 /* シリアルに出す文字は英数字だけにする（日本語は、表示するソフトによって文字化けするため） */
 
 /* 起動時に 1 回だけ呼ばれる */
@@ -48,6 +93,7 @@ void app_init(void)
   printf("\r\nToraNeko.Mk3 boot (SYSCLK %lu Hz)\r\n", timebase_get_sysclk_hz());
   wall_init();
   encoder_init();
+  motor_init();
   if (imu_init()) {
     printf("IMU OK (LSM6DSR)\r\n");
   } else {
@@ -74,6 +120,8 @@ void app_loop(void)
       s_led_num = 1;
     }
   }
+
+  check_switch_and_run_motor_test();
 
   /* ジャイロのゼロ点を測り終えたら、1 回だけ出す */
   if (imu_is_offset_ready() && !s_offset_printed) {
