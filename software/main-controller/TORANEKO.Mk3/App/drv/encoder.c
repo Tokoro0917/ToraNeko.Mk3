@@ -16,7 +16,7 @@
  *
  * ■ 左右と向き
  * 左右のモーターは向かい合わせに付いているので、機体が前に進むとき、片方の角度は増え、もう片方は減る。
- * 前に進むと total が増えるように、片方の向きを ENCODER_*_SIGN で逆にする（実機で確かめて決める）。
+ * 前に進むと total が増えるように、ENCODER_*_SIGN で向きを合わせる（実機で確かめた値）。
  *
  * ■ 割り込み
  * encoder_update() は制御周期の割り込み（sys/scheduler.c）から呼ぶ。読んだ値は volatile の変数に入れ、
@@ -30,8 +30,10 @@
 #include "main.h"
 #include "spi.h"
 
-#define ENCODER_LEFT_SIGN  1   /* 左：前に進むと角度が増えるなら 1、減るなら -1（実機で確かめる） */
-#define ENCODER_RIGHT_SIGN -1  /* 右：同じく（左と逆向きに付いているので、まず -1 にしてある） */
+/* 前に進むと角度が増えるなら 1、減るなら -1。2026-10-22 に実機で確かめた（左は前に転がすと角度が減り、
+ * 右は増える。符号を付ける前の total が両方とも減ったので、両方を逆にした） */
+#define ENCODER_LEFT_SIGN  -1  /* 左 */
+#define ENCODER_RIGHT_SIGN 1   /* 右 */
 
 #define READ_ANGLE_COMMAND_HIGH 0xFF  /* 角度を頼む命令 0xFFFF の上の 1 バイト */
 #define READ_ANGLE_COMMAND_LOW  0xFF  /* 下の 1 バイト */
