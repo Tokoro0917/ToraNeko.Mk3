@@ -11,7 +11,7 @@
 #define CTRL_FREQ_HZ 2000
 
 /* 電池の下限の電圧 [V]。電源を入れたときにこれより低ければ、何もせずに知らせる（MODES.md の 2-1）。
- * 2 セルのリポで、1 セル 3.5V（使い切る手前の目安）。仮の値。実機で決め直す */
-#define BATTERY_LOW_V 7.0f
+ * 2 セルのリポで、1 セル 3.75V（2026-10-22 に作者が決めた） */
+#define BATTERY_LOW_V 7.5f
 
 #endif /* CONFIG_ROBOT_PARAMS_H */
