@@ -62,6 +62,7 @@ static volatile float s_gyro_offset_dps = 0.0f;
 static volatile float s_offset_sum_dps = 0.0f;  /* ゼロ点を測っているあいだの合計 */
 static volatile int s_offset_count = 0;         /* ゼロ点を測った回数 */
 static volatile bool s_offset_ready = false;
+static uint8_t s_who_am_i = 0;                   /* 起動時に読んだ WHO_AM_I の値（動作確認用） */
 
 /* CS を Low（話す）・High（話さない）にする */
 static void set_cs(bool talk)
@@ -109,7 +110,8 @@ static int32_t to_signed(uint8_t low, uint8_t high)
 bool imu_init(void)
 {
   timebase_wait_ms(20);  /* LSM6DSR は電源が入ってから動けるまで約 10ms かかるので、念のため待つ */
-  if (read_register(REG_WHO_AM_I) != WHO_AM_I_VALUE) {
+  s_who_am_i = read_register(REG_WHO_AM_I);
+  if (s_who_am_i != WHO_AM_I_VALUE) {
     return false;
   }
   write_register(REG_CTRL3_C, CTRL3_C_VALUE);
@@ -152,6 +154,12 @@ void imu_update(void)
   s_gyro_z_dps = raw_dps - s_gyro_offset_dps;
   /* 角度 = 角速度 × 時間 を足していく（1 回は 1 / CTRL_FREQ_HZ 秒 = 0.5ms） */
   s_angle_deg = s_angle_deg + s_gyro_z_dps / CTRL_FREQ_HZ;
+}
+
+/* 起動時に読んだ WHO_AM_I の値（LSM6DSR なら 0x6B） */
+uint8_t imu_get_who_am_i(void)
+{
+  return s_who_am_i;
 }
 
 /* ゼロ点を測り終えたら true */

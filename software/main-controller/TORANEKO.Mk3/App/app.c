@@ -8,7 +8,8 @@
  *     tick=1 秒間に割り込みが来た回数（2000 のはず）、busy=1 回の処理にかかった最大の時間、
  *     period=割り込みの間隔の最小〜最大（500µs のはず）
  *   - 0.2 秒ごとに、エンコーダとジャイロ・加速度の値をシリアルに出す
- *     L・R=電源を入れてから左右のモーターが回った量（前に進む向きが +）、err=エンコーダのエラーの回数、
+ *     L・R=電源を入れてから左右のモーターが回った量（前に進む向きが +）、err=左/右のエンコーダのエラーの回数
+ *     （かっこの中は最後のエラーの中身：1=フレーム、2=知らない命令、4=確かめのビット）、
  *     gyro=角速度 [deg/s]（左回りが +）、angle=角度 [deg]、ax・ay=加速度 [m/s²]
  *   - ジャイロのゼロ点を測り終えたら（起動して 0.5 秒）、ゼロ点を 1 回だけ出す
  */
@@ -45,7 +46,7 @@ void app_init(void)
   if (imu_init()) {
     printf("IMU OK (LSM6DSR)\r\n");
   } else {
-    printf("IMU NG: WHO_AM_I が 0x6B ではない（配線・はんだを確かめる）\r\n");
+    printf("IMU NG: WHO_AM_I=0x%02X（0x6B のはず。配線・はんだを確かめる）\r\n", imu_get_who_am_i());
   }
   printf("ジャイロのゼロ点を測ります。0.5 秒、機体を動かさないでください\r\n");
   scheduler_start();
@@ -78,8 +79,9 @@ void app_loop(void)
   /* エンコーダとジャイロ・加速度の値をシリアルに出す */
   if (now_ms - s_last_sensor_print_ms >= SENSOR_PRINT_INTERVAL_MS) {
     s_last_sensor_print_ms = now_ms;
-    printf("L=%7ld R=%7ld err=%lu  gyro=%8.2f dps angle=%8.2f deg  ax=%6.2f ay=%6.2f m/s2\r\n",
-           encoder_get_left_total(), encoder_get_right_total(), encoder_get_error_count(),
+    printf("L=%7ld R=%7ld err=%lu/%lu(%X)  gyro=%8.2f dps angle=%8.2f deg  ax=%6.2f ay=%6.2f m/s2\r\n",
+           encoder_get_left_total(), encoder_get_right_total(),
+           encoder_get_left_error_count(), encoder_get_right_error_count(), encoder_get_last_error_flags(),
            imu_get_gyro_z_dps(), imu_get_angle_deg(),
            imu_get_accel_x_mps2(), imu_get_accel_y_mps2());
   }
