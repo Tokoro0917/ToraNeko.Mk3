@@ -63,6 +63,9 @@ static void check(bool ok, const char *message)
  * ------------------------------------------------------------------------- */
 
 static uint32_t s_now_ms = 0;          /* 仮の時計 [ms] */
+
+/* モード選択に戻るときに出す「ロード中」の長さ [ms]（7 個 × 0.15 秒）。mode_run_once() は最後にこれを出してから戻る */
+#define LOADING_MS 1050
 static uint32_t s_time_limit_ms = 0;   /* これを過ぎたら、終わらないとみなしてテストをやめる */
 
 /* 入力の種類 */
@@ -525,7 +528,10 @@ static void test_select_and_start(void)
   check_leds_at(1800, "1111111", "手をかざしているあいだは、全部点く");
   check_leds_at(2500, "0000000", "手を離すと、全部消える");
   check_leds_at(s_explore_time_ms + 500, "1111111", "走り終わったら、全部を 1 秒点ける（うまくいった）");
-  check(s_now_ms >= s_explore_time_ms + 1000 && s_now_ms <= s_explore_time_ms + 1020, "うまくいったの合図は 1 秒");
+  check(s_now_ms >= s_explore_time_ms + 1000 + LOADING_MS && s_now_ms <= s_explore_time_ms + 1030 + LOADING_MS,
+        "うまくいったの合図は 1 秒、そのあと「ロード中」を出して戻る");
+  check_leds_at(s_now_ms - 100, "1111111", "戻る前に「ロード中」を出す（最後は 7 個全部）");
+  check_leds_at(s_now_ms, "0000000", "「ロード中」が終わったら、全部消す");
   check_leds_at(s_now_ms, "0000000", "合図のあとは消す");
 
   /* 2 回目：選び直さずにスイッチを押せば、同じモード・No. で走る */
@@ -605,6 +611,7 @@ static void test_reselect(void)
   press_switch_at(1500);      /* スタート待ちで押す：選び直し */
   mode_run_once();
   check(s_explore_count == 0, "スタート待ちでスイッチを押すと走らない");
+  check_leds_at(s_now_ms - 100, "1111111", "選び直しに戻る前に「ロード中」を出す");
   check_leds_at(s_now_ms, "0000000", "選び直しに戻るとき、LED を消す");
 
   /* 選び直しで、そのまま決定してスタートすると、片道で走る */
@@ -692,6 +699,7 @@ static void test_sensor_view(void)
   check(s_sensor_view_count == 1, "センサ値の表示が 1 回呼ばれる");
   check(s_sensor_view_time_ms < 500 + 1000, "手をかざさなくても、決定してすぐ始まる");
   check(s_explore_count == 0, "探索は呼ばれない");
+  check(s_now_ms >= s_sensor_view_time_ms + LOADING_MS, "センサ値の表示を終えたあとも「ロード中」を出して戻る");
 }
 
 /* モード7 No.2 を選んで、x = 20、y = 3 を入れる */
@@ -760,7 +768,7 @@ static void test_output(void)
   check(s_output_count == 1, "出力を 1 回呼ぶ");
   check(s_output_goal_x == 8 && s_output_goal_y == 9, "今のゴールを渡す（ビューアがゴールを描くのに使う）");
   check(s_explore_count == 0, "走らない");
-  check_leds_at(s_now_ms - 500, "1111111", "出し終わったら、全部を 1 秒点ける（うまくいった）");
+  check_leds_at(s_now_ms - LOADING_MS - 500, "1111111", "出し終わったら、全部を 1 秒点ける（うまくいった）");
 }
 
 /* 迷路呼び出し（モード7 No.15）：保存した迷路があれば全部を 1 秒点け、なければ外側の 4 個を速く点滅させる */
@@ -776,7 +784,7 @@ static void test_load_maze(void)
   hand_at(1500, 500);
   mode_run_once();
   check(s_flash_maze_load_count == 1, "迷路呼び出しで、Flash の迷路を 1 回読む");
-  check_leds_at(s_now_ms - 500, "1111111", "呼び出せたら、全部を点ける");
+  check_leds_at(s_now_ms - LOADING_MS - 500, "1111111", "呼び出せたら、全部を点ける");
 
   reset_world();
   mode_init();
@@ -787,7 +795,7 @@ static void test_load_maze(void)
   hand_at(1500, 500);
   mode_run_once();
   check(s_flash_maze_load_count == 1, "保存した迷路がなくても、Flash を読みに行く");
-  check_leds_at(s_now_ms - 160 + 40, "1100011", "保存した迷路がなければ、外側の 4 個を速く点滅させる");
+  check_leds_at(s_now_ms - LOADING_MS - 160 + 40, "1100011", "保存した迷路がなければ、外側の 4 個を速く点滅させる");
 }
 
 /* ---------------------------------------------------------------------------

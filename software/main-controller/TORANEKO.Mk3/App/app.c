@@ -18,6 +18,7 @@
 #include "drv/wall.h"
 #include "sys/mode.h"
 #include "sys/scheduler.h"
+#include "sys/ui.h"
 
 /* シリアルに出す文字は英数字だけにする（日本語は、表示するソフトによって文字化けするため） */
 
@@ -38,6 +39,7 @@ void app_init(void)
   }
   scheduler_start();  /* ここから、制御周期ごとにエンコーダ・IMU・壁センサを読む。ジャイロのゼロ点は最初の 0.5 秒で測る */
   mode_init();
+  ui_show_loading();  /* 電源を入れたときの「ロード中」（MODES.md の 2）。このあいだに、ジャイロのゼロ点も測り終わる */
 }
 
 /* main() の while(1) から繰り返し呼ばれる。モードを選んで走らせ、終わったら戻る */

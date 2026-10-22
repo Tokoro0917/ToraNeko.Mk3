@@ -8,6 +8,9 @@
  *      センサ値の表示（モード5 No.1）は、前センサの値を見たいので、スタート待ちをせずにすぐ始める
  *   3. 選んだモードを走らせる。終わったら、同じモード・No. のまま 1 に戻る
  *      （最後まで走れたら「うまくいった」、フェイルセーフならスイッチで解除するまで待ち、道がなくなったら「できなかった」を出す）
+ *   1 に戻るときは、どの道からでも（スタート待ちで取り消したとき、センサ値の表示を終えたとき、走り終わったとき、
+ *   フェイルセーフを解除したとき）「ロード中」（約 1 秒）を出す。このあいだはスイッチを押しても何も起きないので、
+ *   続けて押したスイッチが、次の決定にならない（2026-10-22 に決定）
  *
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す）
  *   モード0 No.1〜3  探索（往復・片道・未知壁探索）
@@ -137,7 +140,7 @@ static void run_explore(int number)
   if (result == EXPLORE_RESULT_DONE) {
     ui_signal_ok();  /* 走り終わった（迷路の保存は explore_run() の中で済んでいる） */
   } else if (result == EXPLORE_RESULT_FAILSAFE) {
-    /* 7 個全部を点滅させて、スイッチが押されるまで待ち（押したら「ロード中」を出す）、フェイルセーフを解除する */
+    /* 7 個全部を点滅させて、スイッチが押されるまで待ち、フェイルセーフを解除する（「ロード中」は mode_run_once() が出す） */
     ui_wait_failsafe_reset();
     failsafe_clear();
   } else if (result == EXPLORE_RESULT_NO_ROUTE) {
@@ -210,24 +213,28 @@ static void run_setting(int number)
  * 1 回ぶん
  * ------------------------------------------------------------------------- */
 
+/* 選んだモードを走らせる（スタートしたあと） */
+static void run_selected(void)
+{
+  if (s_mode == 0) {
+    run_explore(s_number);
+  } else if (s_mode == 7) {
+    run_setting(s_number);
+  }
+}
+
 /* モードを選んで、スタートして、走らせる。走り終わったら戻る（起動後、繰り返し呼ぶ）。
- * スタート待ちでスイッチが押されたときは、何もせずに戻る（次に呼ばれたときに選び直す） */
+ * スタート待ちでスイッチが押されたときは、走らずに戻る（次に呼ばれたときに選び直す）。
+ * どの道から戻るときも、最後に「ロード中」を出す */
 void mode_run_once(void)
 {
   select_mode();
 
   if (s_mode == 5 && s_number == 1) {
     sensor_view_run();  /* スタート待ちをしない */
-    return;
+  } else if (ui_wait_start(s_mode, s_number)) {
+    run_selected();
   }
 
-  if (!ui_wait_start(s_mode, s_number)) {
-    return;
-  }
-
-  if (s_mode == 0) {
-    run_explore(s_number);
-  } else if (s_mode == 7) {
-    run_setting(s_number);
-  }
+  ui_show_loading();
 }

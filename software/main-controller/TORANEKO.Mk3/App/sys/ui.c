@@ -311,9 +311,8 @@ bool ui_wait_start(int mode, int number)
 }
 
 /* フェイルセーフで止まったあと（MODES.md の 3）。
- *   1. 7 個全部を FAILSAFE_BLINK_MS ごとに点滅させて、スイッチが押されるのを待つ
- *   2. 押されたら「ロード中」を出す。このあいだはスイッチを押しても何も起きない
- *   3. 全部消して戻る */
+ *   7 個全部を FAILSAFE_BLINK_MS ごとに点滅させて、スイッチが押されるのを待つ。押されたら全部消して戻る。
+ *   「ロード中」は、モード選択に戻るときに sys/mode.c が出す（どの道から戻るときも同じように出すため） */
 void ui_wait_failsafe_reset(void)
 {
   bool lit = true;
@@ -334,6 +333,5 @@ void ui_wait_failsafe_reset(void)
     ui_wait_ms(UI_POLL_MS);
   }
 
-  /* 2・3. 「ロード中」を出して、全部消す */
-  ui_show_loading();
+  ui_all_off();
 }
