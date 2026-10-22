@@ -34,9 +34,6 @@
 #include "main.h"
 #include "tim.h"
 
-/* 壁センサを測るか（true）、測らないか（false）。エンコーダの値が乱れる原因を調べるために一時的に置いた */
-#define MEASURE_WALL true
-
 #define TIMER_CLOCK_HZ 1000000  /* TIM11 が数える速さ [Hz]（CubeMX で 100MHz を 100 で割っている） */
 
 /* 割り込みの中で書き換える記録（volatile の理由は先頭のコメント） */
@@ -53,11 +50,8 @@ static void run_control(void)
   encoder_update();
   imu_update();
   /* 壁センサの測定は、エンコーダと IMU を読み終えてから始める（裏で進み、約 0.15ms で終わる）。
-   * 壁センサの LED を点けているあいだにエンコーダを読むと、値が大きく飛んだため（2026-10-22。
-   * LED に流れる 155mA のパルスの影響と考えている） */
-  if (MEASURE_WALL) {
-    wall_start_measure();
-  }
+   * LED に流れる 155mA のパルスが、読み取りに混ざらないようにするため */
+  wall_start_measure();
 }
 
 /* 割り込みの間隔を記録する */
