@@ -24,6 +24,10 @@ uint16_t wall_get_lit_a(int num);
 uint16_t wall_get_lit_b(int num);
 uint16_t wall_get_dark(int num);
 
+/* 受光 num（1〜4）の、点けたときの値 − 全部消したときの値（ON−OFF。LED の光の分だけ。まわりの光は引かれる） */
+int32_t wall_get_a_minus_dark(int num);
+int32_t wall_get_b_minus_dark(int num);
+
 /* 電池の電圧 [V]（壁センサと同じ AD 変換で一緒に測っている） */
 float wall_get_battery_v(void);
 

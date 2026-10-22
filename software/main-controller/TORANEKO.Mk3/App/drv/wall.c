@@ -158,6 +158,22 @@ uint16_t wall_get_dark(int num)
   return s_dark[num];
 }
 
+/* 受光 num（1〜4）の、組A を点けたときの値から、全部消したときの値を引いたもの（LED の光の分だけ） */
+int32_t wall_get_a_minus_dark(int num)
+{
+  int32_t value = s_lit_a[num];
+  value = value - s_dark[num];
+  return value;
+}
+
+/* 受光 num（1〜4）の、組B を点けたときの値から、全部消したときの値を引いたもの */
+int32_t wall_get_b_minus_dark(int num)
+{
+  int32_t value = s_lit_b[num];
+  value = value - s_dark[num];
+  return value;
+}
+
 /* 電池の電圧 [V] */
 float wall_get_battery_v(void)
 {

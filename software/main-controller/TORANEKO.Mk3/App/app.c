@@ -8,8 +8,8 @@
  *     tick=1 秒間に割り込みが来た回数（2000 のはず）、busy=1 回の処理にかかった最大の時間、
  *     period=割り込みの間隔の最小〜最大（500µs のはず）
  *   - 0.2 秒ごとに、壁センサの AD 値をシリアルに出す
- *     A=組A（左前向き＋右向き）を点けたときの受光 1〜4、B=組B（右前向き＋左向き）を点けたとき、
- *     dark=全部消したとき
+ *     A-off=組A（左前向き＋右向き）を点けたときの受光 1〜4 の値 − 全部消したときの値（ON−OFF）、
+ *     B-off=組B（右前向き＋左向き）で同じもの、off=全部消したときの値
  *   - 1 秒ごとに、エンコーダとジャイロの値と、電池の電圧も出す
  *     L・R=左右のモーターが回った量、err=エンコーダのエラーの回数、angle=角度 [deg]
  *   - ジャイロのゼロ点を測り終えたら（起動して 0.5 秒）、ゼロ点を 1 回だけ出す
@@ -84,9 +84,9 @@ void app_loop(void)
   /* 壁センサの AD 値をシリアルに出す */
   if (now_ms - s_last_sensor_print_ms >= SENSOR_PRINT_INTERVAL_MS) {
     s_last_sensor_print_ms = now_ms;
-    printf("A=%4u %4u %4u %4u  B=%4u %4u %4u %4u  dark=%4u %4u %4u %4u\r\n",
-           wall_get_lit_a(1), wall_get_lit_a(2), wall_get_lit_a(3), wall_get_lit_a(4),
-           wall_get_lit_b(1), wall_get_lit_b(2), wall_get_lit_b(3), wall_get_lit_b(4),
+    printf("A-off=%5ld %5ld %5ld %5ld  B-off=%5ld %5ld %5ld %5ld  off=%4u %4u %4u %4u\r\n",
+           wall_get_a_minus_dark(1), wall_get_a_minus_dark(2), wall_get_a_minus_dark(3), wall_get_a_minus_dark(4),
+           wall_get_b_minus_dark(1), wall_get_b_minus_dark(2), wall_get_b_minus_dark(3), wall_get_b_minus_dark(4),
            wall_get_dark(1), wall_get_dark(2), wall_get_dark(3), wall_get_dark(4));
   }
 
