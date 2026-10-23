@@ -7,5 +7,6 @@
 
 void adjust_straight(void);
 void adjust_pivot_180(void);
+void adjust_print_last_result(void);
 
 #endif /* SYS_ADJUST_H */

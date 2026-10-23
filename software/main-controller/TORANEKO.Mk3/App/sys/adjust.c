@@ -8,16 +8,21 @@
  *     TIRE_DIAMETER_MM）を小さく、長ければ大きくする（新しい直径 = 今の直径 × 測った距離 ÷ 360）
  *   - 走行ログ（3ms ごと）を残すので、モード7 No.1 で PC へ出し、KOGUMA のビューアで目標の速さと
  *     測った速さを見比べて、config/ctrl_gains.h の係数を合わせる
- *   - 走り終わったら、エンコーダで測った距離と、ジャイロで測った向きのずれをシリアルに出す
+ *   - 走り終わったら、エンコーダで測った距離と、ジャイロで測った向きのずれを覚えておく
  *
  * ■ モード2 No.4 その場 180° 旋回（adjust_pivot_180）
  * その場で左に 180° 回って止まる（U ターンの部品）。
  *   - 止まったら、本当に 180° 回ったかを目で見る（ジャイロの値と合っているか）
  *   - 走行ログ（1ms ごと）を残すので、目標の角速度と測った角速度を見比べて、config/ctrl_gains.h の係数を合わせる
- *   - 走り終わったら、ジャイロで測った角度と、エンコーダで測った前後のずれをシリアルに出す
+ *   - 走り終わったら、ジャイロで測った角度と、エンコーダで測った前後のずれを覚えておく
+ *
+ * ■ 結果の出し方
+ * 走っているあいだはケーブルを挿していないので、結果は RAM に覚えておき、ケーブルを挿してから
+ * モード7 No.1（ログ出力）で、走行ログの前に出す（adjust_print_last_result()）。電源を切ると消える。
  */
 #include "sys/adjust.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 
 #include "ctrl/control.h"
@@ -38,6 +43,25 @@
 #define PIVOT_OMEGA_DEG_S     720.0f   /* 最高の角速度 [deg/s]（KOGUMA は 2000。まずゆっくり） */
 #define PIVOT_ALPHA_DEG_S2    7200.0f  /* 角加速度 [deg/s²]（KOGUMA は 50000。まずゆっくり） */
 #define PIVOT_LOG_INTERVAL_MS 1        /* 走行ログの間隔 [ms]（約 0.65 秒なので、1000 行に入る） */
+
+/* 最後に走らせた動きの結果（走り終わったときはケーブルを挿していないので、覚えておいて、あとで出す） */
+typedef enum {
+  RESULT_NONE = 0,   /* まだ何も走らせていない */
+  RESULT_STRAIGHT,   /* 直進 */
+  RESULT_PIVOT,      /* その場旋回 */
+} result_kind_t;
+
+typedef struct {
+  result_kind_t kind;
+  float target;             /* 目標（直進は距離 [mm]、旋回は角度 [deg]） */
+  float moved_mm;           /* エンコーダで測った、進んだ距離 [mm] */
+  float turned_deg;         /* ジャイロで測った、回った角度 [deg] */
+  float position_error_mm;  /* 終わったときの位置のずれ [mm] */
+  float angle_error_deg;    /* 終わったときの角度のずれ [deg] */
+  bool failsafe;            /* フェイルセーフで止まったか */
+} run_result_t;
+
+static run_result_t s_result = {RESULT_NONE, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false};
 
 /* 決めた距離・角度を走り終えるか、フェイルセーフで止まるまで待つ */
 static void wait_until_done(void)
@@ -69,16 +93,34 @@ static void signal_end(void)
   }
 }
 
-/* 直進の結果をシリアルに出す */
-static void print_straight_result(float start_distance_mm, float start_angle_deg)
+/* 直進の結果を覚える（ケーブルは走り終わってから挿すので、あとでモード7 No.1 で出す） */
+static void save_straight_result(float start_distance_mm, float start_angle_deg)
 {
-  float moved_mm = odometry_get_distance_mm() - start_distance_mm;
-  float turned_deg = imu_get_angle_deg() - start_angle_deg;
-  printf("Straight: target %.1f mm, encoder %.1f mm, angle %.2f deg\r\n",
-         STRAIGHT_DISTANCE_MM, moved_mm, turned_deg);
+  s_result.kind = RESULT_STRAIGHT;
+  s_result.target = STRAIGHT_DISTANCE_MM;
+  s_result.moved_mm = odometry_get_distance_mm() - start_distance_mm;
+  s_result.turned_deg = imu_get_angle_deg() - start_angle_deg;
+  s_result.position_error_mm = control_get_position_error_mm();
+  s_result.angle_error_deg = control_get_angle_error_deg();
+  s_result.failsafe = failsafe_is_stopped();
+}
+
+/* 最後に走らせた動き（直進・その場旋回）の結果をシリアルに出す。モード7 No.1（ログ出力）でも呼ぶ。
+ * 電源を切ると消える（走行ログと同じ） */
+void adjust_print_last_result(void)
+{
+  if (s_result.kind == RESULT_STRAIGHT) {
+    printf("Straight: target %.1f mm, encoder %.1f mm, angle %.2f deg\r\n",
+           s_result.target, s_result.moved_mm, s_result.turned_deg);
+  } else if (s_result.kind == RESULT_PIVOT) {
+    printf("Pivot: target %.1f deg, gyro %.2f deg, moved %.2f mm\r\n",
+           s_result.target, s_result.turned_deg, s_result.moved_mm);
+  } else {
+    return;  /* まだ何も走らせていない */
+  }
   printf("  position error %.2f mm, angle error %.2f deg\r\n",
-         control_get_position_error_mm(), control_get_angle_error_deg());
-  if (failsafe_is_stopped()) {
+         s_result.position_error_mm, s_result.angle_error_deg);
+  if (s_result.failsafe) {
     printf("  stopped by failsafe\r\n");
   }
 }
@@ -95,22 +137,21 @@ void adjust_straight(void)
   wait_until_done();
   settle_and_stop();
 
-  print_straight_result(start_distance_mm, start_angle_deg);
+  save_straight_result(start_distance_mm, start_angle_deg);
+  adjust_print_last_result();  /* ケーブルを挿したまま走らせたときのために、すぐにも出す */
   signal_end();
 }
 
-/* その場旋回の結果をシリアルに出す */
-static void print_pivot_result(float start_distance_mm, float start_angle_deg)
+/* その場旋回の結果を覚える（あとでモード7 No.1 で出す） */
+static void save_pivot_result(float start_distance_mm, float start_angle_deg)
 {
-  float moved_mm = odometry_get_distance_mm() - start_distance_mm;
-  float turned_deg = imu_get_angle_deg() - start_angle_deg;
-  printf("Pivot: target %.1f deg, gyro %.2f deg, moved %.2f mm\r\n",
-         PIVOT_ANGLE_DEG, turned_deg, moved_mm);
-  printf("  position error %.2f mm, angle error %.2f deg\r\n",
-         control_get_position_error_mm(), control_get_angle_error_deg());
-  if (failsafe_is_stopped()) {
-    printf("  stopped by failsafe\r\n");
-  }
+  s_result.kind = RESULT_PIVOT;
+  s_result.target = PIVOT_ANGLE_DEG;
+  s_result.moved_mm = odometry_get_distance_mm() - start_distance_mm;
+  s_result.turned_deg = imu_get_angle_deg() - start_angle_deg;
+  s_result.position_error_mm = control_get_position_error_mm();
+  s_result.angle_error_deg = control_get_angle_error_deg();
+  s_result.failsafe = failsafe_is_stopped();
 }
 
 /* モード2 No.4 その場 180° 旋回：その場で左に 180° 回って止まる（流れは先頭のコメント） */
@@ -125,6 +166,7 @@ void adjust_pivot_180(void)
   wait_until_done();
   settle_and_stop();
 
-  print_pivot_result(start_distance_mm, start_angle_deg);
+  save_pivot_result(start_distance_mm, start_angle_deg);
+  adjust_print_last_result();
   signal_end();
 }

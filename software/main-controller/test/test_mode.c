@@ -218,6 +218,8 @@ static uint32_t s_sensor_view_time_ms = 0;  /* センサ値の表示が呼ばれ
 static int s_encoder_cal_count = 0;         /* エンコーダの歪みを測るのが呼ばれた回数 */
 static int s_straight_count = 0;            /* 直進（モード6 No.1）が呼ばれた回数 */
 static int s_pivot_count = 0;               /* その場 180° 旋回（モード2 No.4）が呼ばれた回数 */
+static int s_result_print_count = 0;        /* 調整の動きの結果を出すのが呼ばれた回数 */
+static int s_result_print_output_count = 0; /* そのとき、出力が何回呼ばれていたか（出力より前に出すことを確かめる） */
 static int s_output_goal_x = 0;   /* 出力に渡されたゴール */
 static int s_output_goal_y = 0;
 
@@ -252,6 +254,8 @@ static void reset_world(void)
   s_encoder_cal_count = 0;
   s_straight_count = 0;
   s_pivot_count = 0;
+  s_result_print_count = 0;
+  s_result_print_output_count = 0;
   s_output_count = 0;
   s_explore_result = EXPLORE_RESULT_DONE;
   s_explore_count = 0;
@@ -374,6 +378,13 @@ void sensor_view_run(void)
 {
   s_sensor_view_count = s_sensor_view_count + 1;
   s_sensor_view_time_ms = s_now_ms;
+}
+
+/* 調整の動きの結果を出す：出さずに、呼ばれたことと、そのときの出力の回数を覚える */
+void adjust_print_last_result(void)
+{
+  s_result_print_count = s_result_print_count + 1;
+  s_result_print_output_count = s_output_count;
 }
 
 /* その場 180° 旋回：回らずに、呼ばれたことを覚える */
@@ -841,6 +852,7 @@ static void test_output(void)
   hand_at(1500, 500);
   mode_run_once();
   check(s_output_count == 1, "出力を 1 回呼ぶ");
+  check(s_result_print_count == 1 && s_result_print_output_count == 0, "出力の前に、調整の動きの結果を 1 回出す");
   check(s_output_goal_x == 8 && s_output_goal_y == 9, "今のゴールを渡す（ビューアがゴールを描くのに使う）");
   check(s_explore_count == 0, "走らない");
   check_leds_at(s_now_ms - LOADING_MS - 500, "1111111", "出し終わったら、全部を 1 秒点ける（うまくいった）");

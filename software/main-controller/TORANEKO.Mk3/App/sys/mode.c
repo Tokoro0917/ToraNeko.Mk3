@@ -220,6 +220,7 @@ static void load_maze(void)
 static void run_setting(int number)
 {
   if (number == 1) {
+    adjust_print_last_result();  /* 最後に走らせた調整の動きの結果（走ったときはケーブルを挿していないので、ここで出す） */
     output_all(goal_get_x(), goal_get_y());
     ui_signal_ok();  /* 出し終わった */
   } else if (number == 2) {
