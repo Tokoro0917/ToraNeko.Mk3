@@ -7,7 +7,9 @@
  *   2. 前に進む分の電圧を決める
  *        フィードフォワード：目標の速さ × FF_SPEED + 目標の加速度 × FF_ACCEL（+ 摩擦の分）
  *        フィードバック    ：速さのずれ × SPEED_KP + 位置のずれ × SPEED_KI
- *   3. 向きを保つ分の電圧を決める（今は直進だけなので、目標の角速度は 0、目標の角度は始めたときの向き）
+ *   3. 向きの分の電圧を決める（直進のときは目標の角速度 0、その場旋回のときは ctrl/trajectory.c の目標の角速度）
+ *        フィードフォワード：目標の角速度・角加速度を、タイヤ 1 つの速さ・加速度に直して、2 と同じ係数をかける
+ *                            （角速度 [rad/s] × トレッド幅の半分 = タイヤ 1 つの速さ [mm/s]）
  *        フィードバック    ：角速度のずれ × OMEGA_KP + 角度のずれ × ANGLE_KI
  *   4. 左 = 前に進む分 − 向きの分、右 = 前に進む分 + 向きの分 をモーターにかける
  *      （左回りが + なので、左に向けたいときは右を速く、左を遅くする）
@@ -36,6 +38,8 @@
 #include "drv/wall.h"
 #include "sys/failsafe.h"
 #include "sys/log.h"
+
+#define DEG_TO_RAD (3.14159265f / 180.0f)  /* 度をラジアンに直すときにかける数 */
 
 /* 割り込みの中で書き換える（volatile の理由は sys/scheduler.c の先頭のコメント） */
 static volatile bool s_running = false;
@@ -69,6 +73,18 @@ bool control_is_running(void)
   return s_running;
 }
 
+/* 摩擦の分の電圧 [V]。目標の速さが + なら +、- なら -、0 なら 0 */
+static float friction_voltage(float target_speed)
+{
+  if (target_speed > 0.0f) {
+    return FF_FRICTION_V;
+  }
+  if (target_speed < 0.0f) {
+    return -FF_FRICTION_V;
+  }
+  return 0.0f;
+}
+
 /* 前に進む分の電圧 [V] を決める */
 static float forward_voltage(void)
 {
@@ -77,25 +93,29 @@ static float forward_voltage(void)
   s_position_error_mm = s_position_error_mm + speed_error_mm_s * CTRL_PERIOD_S;
 
   float feedforward_v = target_speed_mm_s * FF_SPEED_V_PER_MM_S
-                      + trajectory_get_accel_mm_s2() * FF_ACCEL_V_PER_MM_S2;
-  if (target_speed_mm_s > 0.0f) {
-    feedforward_v = feedforward_v + FF_FRICTION_V;
-  } else if (target_speed_mm_s < 0.0f) {
-    feedforward_v = feedforward_v - FF_FRICTION_V;
-  }
+                      + trajectory_get_accel_mm_s2() * FF_ACCEL_V_PER_MM_S2
+                      + friction_voltage(target_speed_mm_s);
 
   float feedback_v = speed_error_mm_s * SPEED_KP + s_position_error_mm * SPEED_KI;
   return feedforward_v + feedback_v;
 }
 
-/* 向きを保つ分の電圧 [V] を決める（+ なら左に向ける）。目標の角速度は 0（直進） */
+/* 向きの分の電圧 [V] を決める（+ なら左に向ける。右のタイヤに +、左のタイヤに - でかける） */
 static float turn_voltage(void)
 {
-  float target_omega_deg_s = 0.0f;
+  float target_omega_deg_s = trajectory_get_omega_deg_s();
   float omega_error_deg_s = target_omega_deg_s - imu_get_gyro_z_dps();
   s_angle_error_deg = s_angle_error_deg + omega_error_deg_s * CTRL_PERIOD_S;
 
-  return omega_error_deg_s * OMEGA_KP + s_angle_error_deg * ANGLE_KI;
+  /* 目標の角速度・角加速度で回るときの、タイヤ 1 つの速さ [mm/s]・加速度 [mm/s²] */
+  float wheel_speed_mm_s = target_omega_deg_s * DEG_TO_RAD * (TREAD_MM / 2.0f);
+  float wheel_accel_mm_s2 = trajectory_get_alpha_deg_s2() * DEG_TO_RAD * (TREAD_MM / 2.0f);
+  float feedforward_v = wheel_speed_mm_s * FF_SPEED_V_PER_MM_S
+                      + wheel_accel_mm_s2 * FF_ACCEL_V_PER_MM_S2
+                      + friction_voltage(wheel_speed_mm_s);
+
+  float feedback_v = omega_error_deg_s * OMEGA_KP + s_angle_error_deg * ANGLE_KI;
+  return feedforward_v + feedback_v;
 }
 
 /* 走行ログに、今の値を 1 行渡す */
@@ -106,14 +126,18 @@ static void record_log(void)
   values.speed_mm_s = odometry_get_speed_mm_s();
   values.speed_target_mm_s = trajectory_get_speed_mm_s();
   values.omega_deg_s = imu_get_gyro_z_dps();
-  values.omega_target_deg_s = 0.0f;
+  values.omega_target_deg_s = trajectory_get_omega_deg_s();
   values.angle_deg = imu_get_angle_deg() - s_start_angle_deg;
   values.sensor_left = wall_ctrl_get_left();
   values.sensor_right = wall_ctrl_get_right();
   values.voltage_left_v = s_left_voltage_v;
   values.voltage_right_v = s_right_voltage_v;
   values.battery_v = wall_get_battery_v();
-  values.phase = LOG_PHASE_STRAIGHT;
+  if (trajectory_is_pivot()) {
+    values.phase = LOG_PHASE_PIVOT;
+  } else {
+    values.phase = LOG_PHASE_STRAIGHT;
+  }
   log_record(values);
 }
 
@@ -156,7 +180,7 @@ float control_get_position_error_mm(void)
   return s_position_error_mm;
 }
 
-/* 角度のずれ [deg]（目標 − 測った値。+ なら目標より右を向いている） */
+/* 角度のずれ [deg]（目標 − 測った値。+ なら目標より右を向いている＝左回りが足りない） */
 float control_get_angle_error_deg(void)
 {
   return s_angle_error_deg;

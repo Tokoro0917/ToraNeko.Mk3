@@ -22,7 +22,7 @@
  *   5. No.0 では決定しない、モードと No. は一周する、スタート待ちでの選び直し、前センサの手のチャタリング、
  *      フェイルセーフ（点滅、スイッチで解除、ロード中）、道がなくなった
  *   6. ログ出力（終わったら「うまくいった」）、ゴールの位置の入力（使えない位置のときは x に戻る）、迷路呼び出し、
- *      センサ値の表示（スタート待ちをしない）、エンコーダの歪みを測る・直進（スタート待ちのあとに呼ぶ）
+ *      センサ値の表示（スタート待ちをしない）、エンコーダの歪みを測る・直進・その場 180° 旋回（スタート待ちのあとに呼ぶ）
  */
 #include <stdbool.h>
 #include <stdint.h>
@@ -217,6 +217,7 @@ static int s_sensor_view_count = 0;         /* センサ値の表示が呼ばれ
 static uint32_t s_sensor_view_time_ms = 0;  /* センサ値の表示が呼ばれた時刻 [ms] */
 static int s_encoder_cal_count = 0;         /* エンコーダの歪みを測るのが呼ばれた回数 */
 static int s_straight_count = 0;            /* 直進（モード6 No.1）が呼ばれた回数 */
+static int s_pivot_count = 0;               /* その場 180° 旋回（モード2 No.4）が呼ばれた回数 */
 static int s_output_goal_x = 0;   /* 出力に渡されたゴール */
 static int s_output_goal_y = 0;
 
@@ -250,6 +251,7 @@ static void reset_world(void)
   s_sensor_view_time_ms = 0;
   s_encoder_cal_count = 0;
   s_straight_count = 0;
+  s_pivot_count = 0;
   s_output_count = 0;
   s_explore_result = EXPLORE_RESULT_DONE;
   s_explore_count = 0;
@@ -372,6 +374,12 @@ void sensor_view_run(void)
 {
   s_sensor_view_count = s_sensor_view_count + 1;
   s_sensor_view_time_ms = s_now_ms;
+}
+
+/* その場 180° 旋回：回らずに、呼ばれたことを覚える */
+void adjust_pivot_180(void)
+{
+  s_pivot_count = s_pivot_count + 1;
 }
 
 /* 直進：走らずに、呼ばれたことを覚える */
@@ -749,7 +757,24 @@ static void test_straight(void)
   mode_run_once();
 
   check(s_straight_count == 1, "直進が 1 回呼ばれる");
-  check(s_encoder_cal_count == 0 && s_explore_count == 0, "ほかのモードは呼ばれない");
+  check(s_encoder_cal_count == 0 && s_explore_count == 0 && s_pivot_count == 0, "ほかのモードは呼ばれない");
+}
+
+/* その場 180° 旋回（モード2 No.4）は、ほかと同じくスタート待ちのあとに始まる */
+static void test_pivot(void)
+{
+  printf("[6] その場 180° 旋回\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 2);    /* モード2 */
+  rotate_right_at(100, 4);   /* No.4 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_pivot_count == 1, "その場 180° 旋回が 1 回呼ばれる");
+  check(s_straight_count == 0 && s_explore_count == 0, "ほかのモードは呼ばれない");
 }
 
 /* モード7 No.2 を選んで、x = 20、y = 3 を入れる */
@@ -871,6 +896,7 @@ int main(void)
   test_sensor_view();
   test_encoder_cal();
   test_straight();
+  test_pivot();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

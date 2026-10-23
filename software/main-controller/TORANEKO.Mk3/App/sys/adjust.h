@@ -1,10 +1,11 @@
 /*
  * adjust.h
- * 基本調整（モード6。MODES.md）
+ * 動きを 1 つずつ走らせて調整する（モード2・6。MODES.md）
  */
 #ifndef SYS_ADJUST_H
 #define SYS_ADJUST_H
 
 void adjust_straight(void);
+void adjust_pivot_180(void);
 
 #endif /* SYS_ADJUST_H */
