@@ -73,14 +73,14 @@ bool control_is_running(void)
   return s_running;
 }
 
-/* 摩擦の分の電圧 [V]。目標の速さが + なら +、- なら -、0 なら 0 */
-static float friction_voltage(float target_speed)
+/* 摩擦の分の電圧 [V]。目標の速さが + なら +friction_v、- なら -friction_v、0 なら 0 */
+static float friction_voltage(float target_speed, float friction_v)
 {
   if (target_speed > 0.0f) {
-    return FF_FRICTION_V;
+    return friction_v;
   }
   if (target_speed < 0.0f) {
-    return -FF_FRICTION_V;
+    return -friction_v;
   }
   return 0.0f;
 }
@@ -94,7 +94,7 @@ static float forward_voltage(void)
 
   float feedforward_v = target_speed_mm_s * FF_SPEED_V_PER_MM_S
                       + trajectory_get_accel_mm_s2() * FF_ACCEL_V_PER_MM_S2
-                      + friction_voltage(target_speed_mm_s);
+                      + friction_voltage(target_speed_mm_s, FF_FRICTION_V);
 
   float feedback_v = speed_error_mm_s * SPEED_KP + s_position_error_mm * SPEED_KI;
   return feedforward_v + feedback_v;
@@ -112,7 +112,7 @@ static float turn_voltage(void)
   float wheel_accel_mm_s2 = trajectory_get_alpha_deg_s2() * DEG_TO_RAD * (TREAD_MM / 2.0f);
   float feedforward_v = wheel_speed_mm_s * FF_SPEED_V_PER_MM_S
                       + wheel_accel_mm_s2 * FF_ACCEL_V_PER_MM_S2
-                      + friction_voltage(wheel_speed_mm_s);
+                      + friction_voltage(wheel_speed_mm_s, FF_TURN_FRICTION_V);
 
   float feedback_v = omega_error_deg_s * OMEGA_KP + s_angle_error_deg * ANGLE_KI;
   return feedforward_v + feedback_v;
