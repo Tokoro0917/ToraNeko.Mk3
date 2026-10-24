@@ -216,6 +216,9 @@ static int s_output_count = 0;    /* 出力が呼ばれた回数 */
 static int s_sensor_view_count = 0;         /* センサ値の表示が呼ばれた回数 */
 static uint32_t s_sensor_view_time_ms = 0;  /* センサ値の表示が呼ばれた時刻 [ms] */
 static int s_encoder_cal_count = 0;         /* エンコーダの歪みを測るのが呼ばれた回数 */
+static int s_sensor_record_count = 0;       /* センサ値の記録（モード5 No.2）が呼ばれた回数 */
+static int s_record_print_count = 0;        /* センサ値の記録を出すのが呼ばれた回数 */
+static int s_record_print_output_count = 0; /* センサ値の記録を出したときの、出力が呼ばれた回数（出力より前に出すか） */
 static int s_straight_count = 0;            /* 直進（モード6 No.1）が呼ばれた回数 */
 static int s_pivot_count = 0;               /* その場 180° 旋回（モード2 No.4）が呼ばれた回数 */
 static int s_slalom_count = 0;              /* スラローム 90°（モード2 No.1）が呼ばれた回数 */
@@ -256,6 +259,9 @@ static void reset_world(void)
   s_sensor_view_count = 0;
   s_sensor_view_time_ms = 0;
   s_encoder_cal_count = 0;
+  s_sensor_record_count = 0;
+  s_record_print_count = 0;
+  s_record_print_output_count = 0;
   s_straight_count = 0;
   s_pivot_count = 0;
   s_slalom_count = 0;
@@ -429,6 +435,19 @@ void adjust_pivot_180(void)
 void adjust_straight(void)
 {
   s_straight_count = s_straight_count + 1;
+}
+
+/* センサ値の記録：測らずに、呼ばれたことを覚える */
+void sensor_record_run(void)
+{
+  s_sensor_record_count = s_sensor_record_count + 1;
+}
+
+/* センサ値の記録を出す：出さずに、呼ばれたことと、そのときの出力の回数を覚える */
+void sensor_record_print(void)
+{
+  s_record_print_count = s_record_print_count + 1;
+  s_record_print_output_count = s_output_count;
 }
 
 /* エンコーダの歪みを測る：回さずに、呼ばれたことを覚える */
@@ -786,6 +805,23 @@ static void test_encoder_cal(void)
   check(s_explore_count == 0 && s_sensor_view_count == 0 && s_straight_count == 0, "ほかのモードは呼ばれない");
 }
 
+/* センサ値の記録（モード5 No.2）は、No.1 と違い、スタート待ちのあとに始まる */
+static void test_sensor_record(void)
+{
+  printf("[6] センサ値の記録\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 5);    /* モード5 */
+  rotate_right_at(100, 2);   /* No.2 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_sensor_record_count == 1, "センサ値の記録が 1 回呼ばれる");
+  check(s_sensor_view_count == 0 && s_explore_count == 0, "センサ値の表示・探索は呼ばれない");
+}
+
 /* 直進（モード6 No.1）は、ほかと同じくスタート待ちのあとに始まる */
 static void test_straight(void)
 {
@@ -942,6 +978,7 @@ static void test_output(void)
   mode_run_once();
   check(s_output_count == 1, "出力を 1 回呼ぶ");
   check(s_result_print_count == 1 && s_result_print_output_count == 0, "出力の前に、調整の動きの結果を 1 回出す");
+  check(s_record_print_count == 1 && s_record_print_output_count == 0, "出力の前に、センサ値の記録を 1 回出す");
   check(s_output_goal_x == 8 && s_output_goal_y == 9, "今のゴールを渡す（ビューアがゴールを描くのに使う）");
   check(s_explore_count == 0, "走らない");
   check_leds_at(s_now_ms - LOADING_MS - 500, "1111111", "出し終わったら、全部を 1 秒点ける（うまくいった）");
@@ -996,6 +1033,7 @@ int main(void)
   test_load_maze();
   test_sensor_view();
   test_encoder_cal();
+  test_sensor_record();
   test_straight();
   test_pivot();
   test_slalom();

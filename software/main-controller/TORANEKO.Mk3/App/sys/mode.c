@@ -19,6 +19,7 @@
  *   モード2 No.4     その場 180° 旋回（左に回って止まる。旋回の制御の係数を合わせる）
  *   モード2 No.5     壁合わせだけ（前の壁で位置と向きを直す）
  *   モード5 No.1     センサ値の表示（スイッチを押すと終わる）
+ *   モード5 No.2     センサ値の記録（区画のまん中で 1 秒測り、平均をモード7 No.1 で出す）
  *   モード6 No.1     直進（ゆっくり 360mm 走って止まる。タイヤの直径と、制御の係数を合わせる）
  *   モード6 No.6     エンコーダの歪みを測る
  *   モード6 No.7     壁に沿って直進（横の壁に沿って走る補正を入れて、4 区画走って止まる）（タイヤを浮かせて、左右のモーターを回す）
@@ -37,6 +38,7 @@
 #include "sys/flash.h"
 #include "sys/goal.h"
 #include "sys/output.h"
+#include "sys/sensor_record.h"
 #include "sys/sensor_view.h"
 #include "sys/ui.h"
 
@@ -93,6 +95,9 @@ bool mode_has_action(int mode, int number)
   if (mode == 5) {
     if (number == 1) {
       return true;  /* センサ値の表示 */
+    }
+    if (number == 2) {
+      return true;  /* センサ値の記録 */
     }
     return false;
   }
@@ -237,6 +242,7 @@ static void run_setting(int number)
 {
   if (number == 1) {
     adjust_print_last_result();  /* 最後に走らせた調整の動きの結果（走ったときはケーブルを挿していないので、ここで出す） */
+    sensor_record_print();       /* 最後に測ったセンサ値の記録（モード5 No.2） */
     output_all(goal_get_x(), goal_get_y());
     ui_signal_ok();  /* 出し終わった */
   } else if (number == 2) {
@@ -263,6 +269,8 @@ static void run_selected(void)
     adjust_pivot_180();
   } else if (s_mode == 2 && s_number == 5) {
     adjust_front_align();
+  } else if (s_mode == 5 && s_number == 2) {
+    sensor_record_run();
   } else if (s_mode == 6 && s_number == 1) {
     adjust_straight();
   } else if (s_mode == 6 && s_number == 6) {

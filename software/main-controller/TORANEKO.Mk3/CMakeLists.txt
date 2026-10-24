@@ -73,6 +73,7 @@ set(APP_SOURCES
     App/sys/mode.c
     App/sys/output.c
     App/sys/scheduler.c
+    App/sys/sensor_record.c
     App/sys/sensor_view.c
     App/sys/ui.c
 )
