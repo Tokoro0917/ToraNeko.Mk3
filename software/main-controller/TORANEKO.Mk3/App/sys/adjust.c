@@ -16,6 +16,10 @@
  *   - 走行ログ（1ms ごと）を残すので、目標の角速度と測った角速度を見比べて、config/ctrl_gains.h の係数を合わせる
  *   - 走り終わったら、ジャイロで測った角度と、エンコーダで測った前後のずれを覚えておく
  *
+ * ■ 走り出す前
+ * 走り出す前に、ジャイロのゼロ点を測り直す（約 0.5 秒。スタートの合図のあと、機体は止まっている）。
+ * 電源を入れた直後に測ったゼロ点は、機体を手で動かしていると大きくずれるため。
+ *
  * ■ 結果の出し方
  * 走っているあいだはケーブルを挿していないので、結果は RAM に覚えておき、ケーブルを挿してから
  * モード7 No.1（ログ出力）で、走行ログの前に出す（adjust_print_last_result()）。電源を切ると消える。
@@ -62,6 +66,15 @@ typedef struct {
 } run_result_t;
 
 static run_result_t s_result = {RESULT_NONE, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false};
+
+/* ジャイロのゼロ点を測り直して、終わるまで待つ（約 0.5 秒）。機体が止まっているあいだに呼ぶ */
+static void measure_gyro_offset(void)
+{
+  imu_start_offset_measure();
+  while (!imu_is_offset_ready()) {
+    ui_wait_ms(UI_POLL_MS);
+  }
+}
 
 /* 決めた距離・角度を走り終えるか、フェイルセーフで止まるまで待つ */
 static void wait_until_done(void)
@@ -128,6 +141,7 @@ void adjust_print_last_result(void)
 /* モード6 No.1 直進：ゆっくり 360mm まっすぐ走って止まる（流れは先頭のコメント） */
 void adjust_straight(void)
 {
+  measure_gyro_offset();
   float start_distance_mm = odometry_get_distance_mm();
   float start_angle_deg = imu_get_angle_deg();
 
@@ -157,6 +171,7 @@ static void save_pivot_result(float start_distance_mm, float start_angle_deg)
 /* モード2 No.4 その場 180° 旋回：その場で左に 180° 回って止まる（流れは先頭のコメント） */
 void adjust_pivot_180(void)
 {
+  measure_gyro_offset();
   float start_distance_mm = odometry_get_distance_mm();
   float start_angle_deg = imu_get_angle_deg();
 

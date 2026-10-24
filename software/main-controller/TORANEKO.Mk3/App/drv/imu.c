@@ -141,6 +141,19 @@ static void measure_offset(float raw_dps)
   }
 }
 
+/* ゼロ点を測り直す（測り終わるまで約 0.5 秒。終わったかは imu_is_offset_ready() で調べる）。
+ * 走り出す前の、機体が止まっているときに呼ぶ。電源を入れた直後のゼロ点は、機体を手で持って
+ * 動かしているあいだに測ってしまうことがあるため（2026-10-24 に、止まっているのに 110deg/s と読んで気づいた）
+ * 割り込みとの順番：合計と回数を先に 0 にしてから、最後に「測っていない」にする。
+ * 「測っていない」になるまでは、割り込みは合計と回数を使わないので、途中の値を使うことはない */
+void imu_start_offset_measure(void)
+{
+  s_offset_sum_dps = 0.0f;
+  s_offset_count = 0;
+  s_gyro_z_dps = 0.0f;
+  s_offset_ready = false;
+}
+
 /* 制御周期ごとに呼ぶ。角速度と加速度を読み、角度を進める */
 void imu_update(void)
 {
