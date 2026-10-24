@@ -24,6 +24,10 @@
  *   目標の速さ   = −距離のずれ × ALIGN_SPEED_GAIN（近すぎれば下がる）
  *   目標の角速度 =  向きのずれ × ALIGN_OMEGA_GAIN（右を向いていれば左へ回す）
  * あとは、いつもと同じように速さと角速度の制御で電圧を決める。
+ * 前センサの値が横の壁の光で大きくなっていると、下がっても距離のずれが減らず、下がり続けてしまう
+ * （2026-10-24 の U ターンで 44mm 下がった）。なので、合わせ始めた位置から前後に
+ * ALIGN_DISTANCE_LIMIT_MM より遠くへは動かさない（それより先へ動く向きの目標の速さは 0 にする）。
+ * ログの dist_L・dist_R の列には、前壁合わせのあいだだけ、左前・右前のセンサの値を入れる。
  *
  * ■ ずれの足し合わせ
  * 「速さのずれ × 0.5ms」を足していくと、目標の位置と本当の位置のずれ [mm] になる。
@@ -60,6 +64,7 @@ static volatile bool s_wall_control = false;        /* 横の壁に沿って走�
 static volatile bool s_front_align = false;         /* 前壁合わせをしているか */
 static volatile float s_align_speed_mm_s = 0.0f;    /* 前壁合わせの目標の速さ（ログ用） */
 static volatile float s_align_omega_deg_s = 0.0f;   /* 前壁合わせの目標の角速度（ログ用） */
+static volatile float s_align_start_mm = 0.0f;      /* 前壁合わせを始めたときの、走った距離 [mm] */
 static volatile float s_wall_error = 0.0f;          /* 横の壁からのずれ（ゆれを減らしたもの。ログ用） */
 static volatile float s_wall_error_rate = 0.0f;     /* ずれの変わる速さ [1/s] */
 static volatile float s_wall_omega_deg_s = 0.0f;    /* 補正で曲げた角速度（ログ用） */
@@ -87,6 +92,8 @@ void control_set_wall_control(bool on)
 /* 前壁合わせを始める（true）・やめる（false）。止まっているときに使う（ctrl/run.c） */
 void control_set_front_align(bool on)
 {
+  /* 割り込みが使う前に、始めた位置を書いておく（そのあとで「合わせている」にする） */
+  s_align_start_mm = odometry_get_distance_mm();
   s_front_align = on;
 }
 
@@ -102,12 +109,26 @@ static float limit_value(float value, float limit)
   return value;
 }
 
+/* 前壁合わせで、合わせ始めた位置から ALIGN_DISTANCE_LIMIT_MM より先へ動く向きなら、目標の速さを 0 にする */
+static float limit_align_distance(float speed_mm_s)
+{
+  float moved_mm = odometry_get_distance_mm() - s_align_start_mm;
+  if (moved_mm >= ALIGN_DISTANCE_LIMIT_MM && speed_mm_s > 0.0f) {
+    return 0.0f;
+  }
+  if (moved_mm <= -ALIGN_DISTANCE_LIMIT_MM && speed_mm_s < 0.0f) {
+    return 0.0f;
+  }
+  return speed_mm_s;
+}
+
 /* 前壁合わせの、目標の速さと角速度を、前の壁からのずれで決める */
 static void update_align_target(void)
 {
   float speed = -wall_ctrl_get_front_distance_error() * ALIGN_SPEED_GAIN;
   float omega = wall_ctrl_get_front_angle_error() * ALIGN_OMEGA_GAIN;
-  s_align_speed_mm_s = limit_value(speed, ALIGN_SPEED_LIMIT_MM_S);
+  speed = limit_value(speed, ALIGN_SPEED_LIMIT_MM_S);
+  s_align_speed_mm_s = limit_align_distance(speed);
   s_align_omega_deg_s = limit_value(omega, ALIGN_OMEGA_LIMIT_DEG_S);
 }
 
@@ -267,6 +288,8 @@ static void record_log(void)
   values.battery_v = wall_get_battery_v();
   if (s_front_align) {
     values.phase = LOG_PHASE_ALIGN;
+    values.wall_dist_left_mm = wall_ctrl_get_front_left();    /* dist_L の列に左前のセンサの値（3276 までしか残らない） */
+    values.wall_dist_right_mm = wall_ctrl_get_front_right();  /* dist_R の列に右前のセンサの値 */
   } else if (trajectory_get_kind() == TRAJECTORY_PIVOT) {
     values.phase = LOG_PHASE_PIVOT;
   } else if (trajectory_get_kind() == TRAJECTORY_SLALOM) {

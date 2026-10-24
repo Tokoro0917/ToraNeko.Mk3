@@ -73,7 +73,11 @@
 /* 前の壁との距離のずれ 1 あたりの、目標の速さ [mm/s]（近すぎれば下がる）。
  * 前センサの値は、区画のまん中あたりで 1mm に 100 くらい変わる見積もり（仮）なので、1mm のずれで 30mm/s */
 #define ALIGN_SPEED_GAIN 0.3f
-#define ALIGN_SPEED_LIMIT_MM_S 100.0f  /* 目標の速さの上限 [mm/s] */
+#define ALIGN_SPEED_LIMIT_MM_S 50.0f  /* 目標の速さの上限 [mm/s]（100 だと U ターンで下がりすぎたので下げた） */
+
+/* 前壁合わせで、合わせ始めた位置から前後に動いてよい距離 [mm]。
+ * 区画のまん中で止まっていれば、ずれは数 mm のはずなので、それより大きく動かさない */
+#define ALIGN_DISTANCE_LIMIT_MM 5.0f
 
 /* 前の壁に対する向きのずれ 1 あたりの、目標の角速度 [deg/s]（右を向いていれば左へ回す）（仮） */
 #define ALIGN_OMEGA_GAIN 0.2f
