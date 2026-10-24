@@ -6,7 +6,7 @@
  * 区画のまん中に置いたときの壁センサ 4 つの値を 1 秒測って、平均・いちばん小さい値・いちばん大きい値を覚える。
  *   1. スタート待ち（前センサに手をかざして離す）のあと、1 秒待ってから始まる（sys/mode.c と sys/ui.c）
  *   2. 1ms ごとに 1000 回、壁センサ 4 つ（ON−OFF）を読んで足していく
- *   3. 終わったら「うまくいった」を出す
+ *   3. 終わったら「うまくいった」を出す（測っているあいだは真ん中の 3 個、終わったら 7 個全部が 1 秒点く）
  * 走らせるときはケーブルを挿していないので、結果はモード7 No.1（ログ出力）で、走行ログの前に出す
  * （sensor_record_print()）。電源を切ると消える。
  */
@@ -17,6 +17,7 @@
 #include <stdio.h>
 
 #include "ctrl/wall_ctrl.h"
+#include "drv/led.h"
 #include "drv/timebase.h"
 #include "sys/ui.h"
 
@@ -68,7 +69,11 @@ void sensor_record_run(void)
   clear_stat(&s_right);
   clear_stat(&s_front_right);
 
-  ui_all_on();  /* 測っているあいだは 7 個全部を点ける */
+  /* 測っているあいだは、真ん中の 3 個（LED3・4・5）だけを点ける。
+   * 7 個全部だと、終わったときの「うまくいった」（7 個全部を 1 秒）と見分けにくいので */
+  led_set(3, true);
+  led_set(4, true);
+  led_set(5, true);
   for (int i = 0; i < RECORD_COUNT; i++) {
     add_value(&s_front_left, wall_ctrl_get_front_left());
     add_value(&s_left, wall_ctrl_get_left());
