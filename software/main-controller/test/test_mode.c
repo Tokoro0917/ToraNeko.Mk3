@@ -22,7 +22,7 @@
  *   5. No.0 では決定しない、モードと No. は一周する、スタート待ちでの選び直し、前センサの手のチャタリング、
  *      フェイルセーフ（点滅、スイッチで解除、ロード中）、道がなくなった
  *   6. ログ出力（終わったら「うまくいった」）、ゴールの位置の入力（使えない位置のときは x に戻る）、迷路呼び出し、
- *      センサ値の表示（スタート待ちをしない）、エンコーダの歪みを測る・直進・その場 180° 旋回（スタート待ちのあとに呼ぶ）
+ *      センサ値の表示（スタート待ちをしない）、エンコーダの歪みを測る・直進・その場 180° 旋回・スラローム 90°（スタート待ちのあとに呼ぶ）
  */
 #include <stdbool.h>
 #include <stdint.h>
@@ -218,6 +218,7 @@ static uint32_t s_sensor_view_time_ms = 0;  /* センサ値の表示が呼ばれ
 static int s_encoder_cal_count = 0;         /* エンコーダの歪みを測るのが呼ばれた回数 */
 static int s_straight_count = 0;            /* 直進（モード6 No.1）が呼ばれた回数 */
 static int s_pivot_count = 0;               /* その場 180° 旋回（モード2 No.4）が呼ばれた回数 */
+static int s_slalom_count = 0;              /* スラローム 90°（モード2 No.1）が呼ばれた回数 */
 static int s_result_print_count = 0;        /* 調整の動きの結果を出すのが呼ばれた回数 */
 static int s_result_print_output_count = 0; /* そのとき、出力が何回呼ばれていたか（出力より前に出すことを確かめる） */
 static int s_output_goal_x = 0;   /* 出力に渡されたゴール */
@@ -254,6 +255,7 @@ static void reset_world(void)
   s_encoder_cal_count = 0;
   s_straight_count = 0;
   s_pivot_count = 0;
+  s_slalom_count = 0;
   s_result_print_count = 0;
   s_result_print_output_count = 0;
   s_output_count = 0;
@@ -385,6 +387,12 @@ void adjust_print_last_result(void)
 {
   s_result_print_count = s_result_print_count + 1;
   s_result_print_output_count = s_output_count;
+}
+
+/* スラローム 90°：走らずに、呼ばれたことを覚える */
+void adjust_slalom_90(void)
+{
+  s_slalom_count = s_slalom_count + 1;
 }
 
 /* その場 180° 旋回：回らずに、呼ばれたことを覚える */
@@ -785,7 +793,24 @@ static void test_pivot(void)
   mode_run_once();
 
   check(s_pivot_count == 1, "その場 180° 旋回が 1 回呼ばれる");
-  check(s_straight_count == 0 && s_explore_count == 0, "ほかのモードは呼ばれない");
+  check(s_straight_count == 0 && s_explore_count == 0 && s_slalom_count == 0, "ほかのモードは呼ばれない");
+}
+
+/* スラローム 90°（モード2 No.1）は、ほかと同じくスタート待ちのあとに始まる */
+static void test_slalom(void)
+{
+  printf("[6] スラローム 90°\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 2);    /* モード2 */
+  rotate_right_at(100, 1);   /* No.1 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_slalom_count == 1, "スラローム 90° が 1 回呼ばれる");
+  check(s_pivot_count == 0 && s_explore_count == 0, "ほかのモードは呼ばれない");
 }
 
 /* モード7 No.2 を選んで、x = 20、y = 3 を入れる */
@@ -909,6 +934,7 @@ int main(void)
   test_encoder_cal();
   test_straight();
   test_pivot();
+  test_slalom();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

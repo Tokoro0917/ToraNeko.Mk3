@@ -7,7 +7,7 @@
  *   2. 前に進む分の電圧を決める
  *        フィードフォワード：目標の速さ × FF_SPEED + 目標の加速度 × FF_ACCEL（+ 摩擦の分）
  *        フィードバック    ：速さのずれ × SPEED_KP + 位置のずれ × SPEED_KI
- *   3. 向きの分の電圧を決める（直進のときは目標の角速度 0、その場旋回のときは ctrl/trajectory.c の目標の角速度）
+ *   3. 向きの分の電圧を決める（直進のときは目標の角速度 0、その場旋回・スラロームのときは ctrl/trajectory.c の目標の角速度）
  *        フィードフォワード：目標の角速度・角加速度を、タイヤ 1 つの速さ・加速度に直して、2 と同じ係数をかける
  *                            （角速度 [rad/s] × トレッド幅の半分 = タイヤ 1 つの速さ [mm/s]）
  *        フィードバック    ：角速度のずれ × OMEGA_KP + 角度のずれ × ANGLE_KI
@@ -111,8 +111,12 @@ static float turn_voltage(void)
   float wheel_speed_mm_s = target_omega_deg_s * DEG_TO_RAD * (TREAD_MM / 2.0f);
   float wheel_accel_mm_s2 = trajectory_get_alpha_deg_s2() * DEG_TO_RAD * (TREAD_MM / 2.0f);
   float feedforward_v = wheel_speed_mm_s * FF_SPEED_V_PER_MM_S
-                      + wheel_accel_mm_s2 * FF_ACCEL_V_PER_MM_S2
-                      + friction_voltage(wheel_speed_mm_s, FF_TURN_FRICTION_V);
+                      + wheel_accel_mm_s2 * FF_ACCEL_V_PER_MM_S2;
+  /* 摩擦の分は、その場旋回のときだけ足す（左右のタイヤが逆に回り、床をこするので摩擦が大きい）。
+   * スラロームでは左右とも前に回っていて、摩擦の分は前に進む分（forward_voltage）に入っている */
+  if (trajectory_get_kind() == TRAJECTORY_PIVOT) {
+    feedforward_v = feedforward_v + friction_voltage(wheel_speed_mm_s, FF_TURN_FRICTION_V);
+  }
 
   float feedback_v = omega_error_deg_s * OMEGA_KP + s_angle_error_deg * ANGLE_KI;
   return feedforward_v + feedback_v;
@@ -133,8 +137,10 @@ static void record_log(void)
   values.voltage_left_v = s_left_voltage_v;
   values.voltage_right_v = s_right_voltage_v;
   values.battery_v = wall_get_battery_v();
-  if (trajectory_is_pivot()) {
+  if (trajectory_get_kind() == TRAJECTORY_PIVOT) {
     values.phase = LOG_PHASE_PIVOT;
+  } else if (trajectory_get_kind() == TRAJECTORY_SLALOM) {
+    values.phase = LOG_PHASE_TURN;
   } else {
     values.phase = LOG_PHASE_STRAIGHT;
   }

@@ -16,6 +16,17 @@
  *   - 走行ログ（1ms ごと）を残すので、目標の角速度と測った角速度を見比べて、config/ctrl_gains.h の係数を合わせる
  *   - 走り終わったら、ジャイロで測った角度と、エンコーダで測った前後のずれを覚えておく
  *
+ * ■ モード2 No.1 スラローム 90°（adjust_slalom_90）
+ * 探索の速さ（300mm/s）で、左に 90° のスラロームをする（探索の小回り）。
+ *   1. 区画のまん中から、次の区画の入口の辺まで 45mm を、300mm/s まで速くしながら進む
+ *   2. 前距離（曲がる前の直進）、左に 90° 曲がる、後距離（曲がったあとの直進）で、左の区画の入口の辺へ
+ *      （300mm/s、最高 600deg/s、8000deg/s² なら、曲がるあいだに前へ 40.4mm、横へ 40.3mm 進むので、
+ *        前距離・後距離はそれぞれ約 4.6mm にすると、区画 45mm ちょうどになる。PC で計算した値）
+ *   3. 入口の辺から 45mm 進みながら止まり、左の区画のまん中で止まる
+ *   - 止まったら、左の区画のまん中で、左を向いて止まっているかを目で見る
+ *     曲がりが足りない・行きすぎるなら、前距離・後距離（SLALOM_PRE_MM・SLALOM_POST_MM）を合わせる
+ *   - 走行ログ（2ms ごと）を残す
+ *
  * ■ 走り出す前
  * 走り出す前に、ジャイロのゼロ点を測り直す（約 0.5 秒。スタートの合図のあと、機体は止まっている）。
  * 電源を入れた直後に測ったゼロ点は、機体を手で動かしていると大きくずれるため。
@@ -48,11 +59,22 @@
 #define PIVOT_ALPHA_DEG_S2    7200.0f  /* 角加速度 [deg/s²]（KOGUMA は 50000。まずゆっくり） */
 #define PIVOT_LOG_INTERVAL_MS 1        /* 走行ログの間隔 [ms]（約 0.65 秒なので、1000 行に入る） */
 
+#define HALF_CELL_MM          45.0f    /* 区画の半分 [mm]（ハーフの 1 区画は 90mm） */
+#define SEARCH_SPEED_MM_S     300.0f   /* 探索の速さ [mm/s] */
+#define SEARCH_ACCEL_MM_S2    1000.0f  /* 探索の加速度 [mm/s²]（止まったところから 45mm で 300mm/s になる） */
+#define SLALOM_ANGLE_DEG      90.0f    /* 曲がる角度 [deg]（左） */
+#define SLALOM_OMEGA_DEG_S    600.0f   /* 最高の角速度 [deg/s] */
+#define SLALOM_ALPHA_DEG_S2   8000.0f  /* 角加速度 [deg/s²] */
+#define SLALOM_PRE_MM         4.6f     /* 前距離 [mm]（曲がる前の直進。計算の値。実機で合わせる） */
+#define SLALOM_POST_MM        4.7f     /* 後距離 [mm]（曲がったあとの直進。計算の値。実機で合わせる） */
+#define SLALOM_LOG_INTERVAL_MS 2       /* 走行ログの間隔 [ms]（約 1.2 秒なので、1000 行に入る） */
+
 /* 最後に走らせた動きの結果（走り終わったときはケーブルを挿していないので、覚えておいて、あとで出す） */
 typedef enum {
   RESULT_NONE = 0,   /* まだ何も走らせていない */
   RESULT_STRAIGHT,   /* 直進 */
   RESULT_PIVOT,      /* その場旋回 */
+  RESULT_SLALOM,     /* スラローム */
 } result_kind_t;
 
 typedef struct {
@@ -73,6 +95,15 @@ static void measure_gyro_offset(void)
   imu_start_offset_measure();
   while (!imu_is_offset_ready()) {
     ui_wait_ms(UI_POLL_MS);
+  }
+}
+
+/* 今の動き（直進・スラローム）が終わるまで、休まずに待つ。止まらずに次の動きへつなぐときに使う。
+ * ui_wait_ms() で 10ms ずつ待つと、そのあいだに機体が 3mm（300mm/s のとき）進んでしまい、
+ * 次の動きの距離がずれるので、終わったらすぐに戻る（trajectory_is_done() は割り込みが書き換える） */
+static void wait_until_done_quick(void)
+{
+  while (!trajectory_is_done() && !failsafe_is_stopped()) {
   }
 }
 
@@ -128,6 +159,9 @@ void adjust_print_last_result(void)
   } else if (s_result.kind == RESULT_PIVOT) {
     printf("Pivot: target %.1f deg, gyro %.2f deg, moved %.2f mm\r\n",
            s_result.target, s_result.turned_deg, s_result.moved_mm);
+  } else if (s_result.kind == RESULT_SLALOM) {
+    printf("Slalom: target %.1f deg, gyro %.2f deg, encoder %.1f mm\r\n",
+           s_result.target, s_result.turned_deg, s_result.moved_mm);
   } else {
     return;  /* まだ何も走らせていない */
   }
@@ -182,6 +216,48 @@ void adjust_pivot_180(void)
   settle_and_stop();
 
   save_pivot_result(start_distance_mm, start_angle_deg);
+  adjust_print_last_result();
+  signal_end();
+}
+
+/* スラロームの結果を覚える（あとでモード7 No.1 で出す）。target は角度、moved はスラローム全体の距離 */
+static void save_slalom_result(float start_distance_mm, float start_angle_deg)
+{
+  s_result.kind = RESULT_SLALOM;
+  s_result.target = SLALOM_ANGLE_DEG;
+  s_result.moved_mm = odometry_get_distance_mm() - start_distance_mm;
+  s_result.turned_deg = imu_get_angle_deg() - start_angle_deg;
+  s_result.position_error_mm = control_get_position_error_mm();
+  s_result.angle_error_deg = control_get_angle_error_deg();
+  s_result.failsafe = failsafe_is_stopped();
+}
+
+/* モード2 No.1 スラローム 90°：区画のまん中から走り出し、次の区画で左に 90° 曲がり、左の区画のまん中で止まる
+ * （流れは先頭のコメント） */
+void adjust_slalom_90(void)
+{
+  measure_gyro_offset();
+  float start_distance_mm = odometry_get_distance_mm();
+  float start_angle_deg = imu_get_angle_deg();
+
+  log_start(SLALOM_LOG_INTERVAL_MS);
+  control_start();
+  /* 1. 次の区画の入口の辺まで、速くしながら進む */
+  trajectory_start_straight(HALF_CELL_MM, SEARCH_SPEED_MM_S, SEARCH_SPEED_MM_S, SEARCH_ACCEL_MM_S2);
+  wait_until_done_quick();
+  /* 2. 前距離、左に 90°、後距離 */
+  trajectory_start_straight(SLALOM_PRE_MM, SEARCH_SPEED_MM_S, SEARCH_SPEED_MM_S, SEARCH_ACCEL_MM_S2);
+  wait_until_done_quick();
+  trajectory_start_slalom(SLALOM_ANGLE_DEG, SEARCH_SPEED_MM_S, SLALOM_OMEGA_DEG_S, SLALOM_ALPHA_DEG_S2);
+  wait_until_done_quick();
+  trajectory_start_straight(SLALOM_POST_MM, SEARCH_SPEED_MM_S, SEARCH_SPEED_MM_S, SEARCH_ACCEL_MM_S2);
+  wait_until_done_quick();
+  /* 3. 左の区画のまん中まで進んで止まる */
+  trajectory_start_straight(HALF_CELL_MM, SEARCH_SPEED_MM_S, 0.0f, SEARCH_ACCEL_MM_S2);
+  wait_until_done();
+  settle_and_stop();
+
+  save_slalom_result(start_distance_mm, start_angle_deg);
   adjust_print_last_result();
   signal_end();
 }

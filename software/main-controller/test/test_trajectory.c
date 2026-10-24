@@ -11,6 +11,7 @@
  *   3. 終わりの速さが 0 でないとき（その速さで終わり、次の動きはその速さから始まる）
  *   4. その場旋回：左に 180°、右に 90°（角速度の向き、ちょうどの角度で止まる、直進の値は 0 のまま）
  *   5. 旋回のあとの直進は、止まったところから始まる
+ *   6. スラローム：前に進む速さは一定のまま、角速度を台形にして 90° 曲がる。曲がったあとの直進は、その速さから始まる
  */
 #include <math.h>
 #include <stdbool.h>
@@ -169,6 +170,47 @@ static void test_straight_after_pivot(void)
   check(fabsf(trajectory_get_distance_mm() - 90.0f) < 0.001f, "90mm 進んで止まる");
 }
 
+/* 6. スラローム：300mm/s で走りながら左に 90°（最高 600deg/s、8000deg/s²） */
+static void test_slalom(void)
+{
+  printf("[6] スラローム\n");
+  trajectory_reset();
+  trajectory_start_straight(45.0f, 300.0f, 300.0f, 1000.0f);
+  run_until_done();
+  check(fabsf(trajectory_get_speed_mm_s() - 300.0f) < 0.001f, "45mm で 300mm/s になる（1000mm/s² で、ちょうど）");
+
+  trajectory_start_slalom(90.0f, 300.0f, 600.0f, 8000.0f);
+  trajectory_update();
+  check(trajectory_get_kind() == TRAJECTORY_SLALOM, "動きの種類がスラロームになる");
+  check(fabsf(trajectory_get_speed_mm_s() - 300.0f) < 0.001f, "曲がっているあいだも、前に進む速さは 300mm/s");
+  check(trajectory_get_accel_mm_s2() == 0.0f, "曲がっているあいだは、前に進む加速度は 0");
+  check(trajectory_get_omega_deg_s() > 0.0f, "左に曲がるので、角速度が +");
+
+  /* 曲がるあいだに進む位置を、目標の速さと角度から足していく（PC での計算と同じ：前 40.4mm、横 40.3mm） */
+  float forward_mm = 300.0f * CTRL_PERIOD_S;  /* 最初に回した 1 周期ぶん（ほとんど前） */
+  float side_mm = 0.0f;
+  int steps = 1;
+  while (!trajectory_is_done() && steps < MAX_STEPS) {
+    trajectory_update();
+    float angle_rad = trajectory_get_angle_deg() * 3.14159265f / 180.0f;
+    forward_mm = forward_mm + trajectory_get_speed_mm_s() * cosf(angle_rad) * CTRL_PERIOD_S;
+    side_mm = side_mm + trajectory_get_speed_mm_s() * sinf(angle_rad) * CTRL_PERIOD_S;
+    steps = steps + 1;
+  }
+  printf("  曲がるあいだに 前 %.1f mm、横 %.1f mm 進んだ（計算 40.4、40.3）、%.3f 秒\n",
+         forward_mm, side_mm, steps * CTRL_PERIOD_S);
+  check(fabsf(trajectory_get_angle_deg() - 90.0f) < 0.001f, "ちょうど 90° 曲がる");
+  check(trajectory_get_omega_deg_s() == 0.0f, "曲がり終わったら角速度 0");
+  check(fabsf(forward_mm - 40.4f) < 0.5f && fabsf(side_mm - 40.3f) < 0.5f, "曲がるあいだの位置が計算と合う（±0.5mm）");
+
+  trajectory_start_straight(45.0f, 300.0f, 0.0f, 1000.0f);
+  trajectory_update();
+  check(trajectory_get_speed_mm_s() > 299.0f, "曲がったあとの直進は、300mm/s から始まる");
+  run_until_done();
+  check(fabsf(trajectory_get_distance_mm() - 45.0f) < 0.001f && trajectory_get_speed_mm_s() == 0.0f,
+        "45mm で止まる（1000mm/s² で、ちょうど）");
+}
+
 int main(void)
 {
   test_trapezoid();
@@ -176,6 +218,7 @@ int main(void)
   test_end_speed();
   test_pivot();
   test_straight_after_pivot();
+  test_slalom();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

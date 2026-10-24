@@ -8,8 +8,9 @@
  *   2. 最高速のまま進む
  *   3. 残りの量がちょうど止まれる（終わりの速さになれる）量になったら、同じ大きさの加速度で遅くする
  * 量が少なくて最高速まで届かないときは、2 がなく、三角形になる。
- * 直進（距離 [mm]・速さ [mm/s]）でも、その場旋回（角度 [deg]・角速度 [deg/s]）でも、計算は同じなので、
+ * 直進（距離 [mm]・速さ [mm/s]）でも、その場旋回・スラローム（角度 [deg]・角速度 [deg/s]）でも、計算は同じなので、
  * 中では「量」「速さ」「加速度」とだけ呼んで、同じ計算を使う。
+ * スラロームは、前に進む速さを一定（s_forward_speed_mm_s）にしたまま、角速度を台形にする。
  *
  * ■ 減速の始めどき
  * 速さ v から終わりの速さ v_end まで、加速度 a で遅くするのに要る量は (v² − v_end²) ÷ (2a)。
@@ -33,7 +34,8 @@
 
 /* 割り込みの中で書き換える（volatile の理由は sys/scheduler.c の先頭のコメント） */
 static volatile bool s_running = false;    /* 動きの途中か */
-static volatile bool s_is_pivot = false;   /* 今の動きがその場旋回なら true、直進なら false */
+static volatile trajectory_kind_t s_kind = TRAJECTORY_STRAIGHT;  /* 今の動きの種類 */
+static volatile float s_forward_speed_mm_s = 0.0f;  /* スラロームのあいだの、前に進む速さ（一定） */
 static volatile float s_direction = 1.0f;  /* 旋回の向き（左回り 1、右回り -1）。直進は 1 */
 static volatile float s_speed = 0.0f;      /* 今の目標の速さ（直進は mm/s、旋回は deg/s。いつも + ） */
 static volatile float s_accel = 0.0f;      /* 今の目標の加速度（加速中 +、減速中 -、それ以外 0） */
@@ -49,8 +51,9 @@ static volatile float s_accel_limit = 0.0f;
 void trajectory_reset(void)
 {
   s_running = false;
-  s_is_pivot = false;
+  s_kind = TRAJECTORY_STRAIGHT;
   s_direction = 1.0f;
+  s_forward_speed_mm_s = 0.0f;
   s_speed = 0.0f;
   s_accel = 0.0f;
   s_amount = 0.0f;
@@ -61,10 +64,8 @@ void trajectory_reset(void)
 void trajectory_start_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2)
 {
   s_running = false;  /* 書いているあいだは、割り込みに使わせない */
-  if (s_is_pivot) {
-    s_speed = 0.0f;   /* 旋回のあとは、止まったところから始める */
-  }
-  s_is_pivot = false;
+  s_speed = trajectory_get_speed_mm_s();  /* 今の、前に進む目標の速さから始める（その場旋回のあとは 0、スラロームのあとはその速さ） */
+  s_kind = TRAJECTORY_STRAIGHT;
   s_direction = 1.0f;
   s_goal_amount = distance_mm;
   s_max_speed = max_speed_mm_s;
@@ -79,7 +80,31 @@ void trajectory_start_straight(float distance_mm, float max_speed_mm_s, float en
 void trajectory_start_pivot(float angle_deg, float max_omega_deg_s, float alpha_deg_s2)
 {
   s_running = false;  /* 書いているあいだは、割り込みに使わせない */
-  s_is_pivot = true;
+  s_kind = TRAJECTORY_PIVOT;
+  s_forward_speed_mm_s = 0.0f;
+  if (angle_deg >= 0.0f) {
+    s_direction = 1.0f;
+    s_goal_amount = angle_deg;
+  } else {
+    s_direction = -1.0f;
+    s_goal_amount = -angle_deg;
+  }
+  s_speed = 0.0f;
+  s_max_speed = max_omega_deg_s;
+  s_end_speed = 0.0f;
+  s_accel_limit = alpha_deg_s2;
+  s_amount = 0.0f;
+  s_running = true;   /* 最後に、動いているにする */
+}
+
+/* 前に進む速さ speed_mm_s のまま、angle_deg 曲がる動きを始める（左回りが +）。角速度は 0 から始め、
+ * 最高の角速度 max_omega_deg_s まで alpha_deg_s2 で速くし、曲がり終わりに 0 に戻す。曲がり終わったあとも、
+ * 前に進む速さはそのまま（次の直進は、この速さから始まる） */
+void trajectory_start_slalom(float angle_deg, float speed_mm_s, float max_omega_deg_s, float alpha_deg_s2)
+{
+  s_running = false;  /* 書いているあいだは、割り込みに使わせない */
+  s_kind = TRAJECTORY_SLALOM;
+  s_forward_speed_mm_s = speed_mm_s;
   if (angle_deg >= 0.0f) {
     s_direction = 1.0f;
     s_goal_amount = angle_deg;
@@ -154,61 +179,64 @@ bool trajectory_is_done(void)
   return true;
 }
 
-/* 今の（最後に始めた）動きが、その場旋回か */
-bool trajectory_is_pivot(void)
+/* 今の（最後に始めた）動きの種類 */
+trajectory_kind_t trajectory_get_kind(void)
 {
-  return s_is_pivot;
+  return s_kind;
 }
 
-/* 直進の、今の目標の速さ [mm/s]（旋回のあいだは 0） */
+/* 今の目標の、前に進む速さ [mm/s]（その場旋回は 0、スラロームは一定の速さ） */
 float trajectory_get_speed_mm_s(void)
 {
-  if (s_is_pivot) {
-    return 0.0f;
+  if (s_kind == TRAJECTORY_STRAIGHT) {
+    return s_speed;
   }
-  return s_speed;
+  if (s_kind == TRAJECTORY_SLALOM) {
+    return s_forward_speed_mm_s;
+  }
+  return 0.0f;
 }
 
-/* 直進の、今の目標の加速度 [mm/s²]（旋回のあいだは 0） */
+/* 今の目標の、前に進む加速度 [mm/s²]（直進のときだけ。ほかは 0） */
 float trajectory_get_accel_mm_s2(void)
 {
-  if (s_is_pivot) {
-    return 0.0f;
+  if (s_kind == TRAJECTORY_STRAIGHT) {
+    return s_accel;
   }
-  return s_accel;
+  return 0.0f;
 }
 
-/* 直進の、今の動きで進んだ距離 [mm]（旋回のあいだは 0） */
+/* 直進の、今の動きで進んだ距離 [mm]（旋回・スラロームのあいだは 0） */
 float trajectory_get_distance_mm(void)
 {
-  if (s_is_pivot) {
-    return 0.0f;
+  if (s_kind == TRAJECTORY_STRAIGHT) {
+    return s_amount;
   }
-  return s_amount;
+  return 0.0f;
 }
 
-/* 旋回の、今の目標の角速度 [deg/s]（左回りが +。直進のあいだは 0） */
+/* 旋回・スラロームの、今の目標の角速度 [deg/s]（左回りが +。直進のあいだは 0） */
 float trajectory_get_omega_deg_s(void)
 {
-  if (!s_is_pivot) {
+  if (s_kind == TRAJECTORY_STRAIGHT) {
     return 0.0f;
   }
   return s_direction * s_speed;
 }
 
-/* 旋回の、今の目標の角加速度 [deg/s²]（左回りに速くなる向きが +。直進のあいだは 0） */
+/* 旋回・スラロームの、今の目標の角加速度 [deg/s²]（左回りに速くなる向きが +。直進のあいだは 0） */
 float trajectory_get_alpha_deg_s2(void)
 {
-  if (!s_is_pivot) {
+  if (s_kind == TRAJECTORY_STRAIGHT) {
     return 0.0f;
   }
   return s_direction * s_accel;
 }
 
-/* 旋回の、今の動きで回った角度 [deg]（左回りが +。直進のあいだは 0） */
+/* 旋回・スラロームの、今の動きで回った角度 [deg]（左回りが +。直進のあいだは 0） */
 float trajectory_get_angle_deg(void)
 {
-  if (!s_is_pivot) {
+  if (s_kind == TRAJECTORY_STRAIGHT) {
     return 0.0f;
   }
   return s_direction * s_amount;
