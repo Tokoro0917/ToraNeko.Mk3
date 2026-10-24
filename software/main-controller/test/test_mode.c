@@ -523,7 +523,7 @@ static void test_goal(void)
   printf("[3] ゴール\n");
   reset_world();
   goal_init();
-  check(goal_get_x() == 2 && goal_get_y() == 2, "Flash にゴールがなければ、基準のゴール（2, 2）");
+  check(goal_get_x() == 7 && goal_get_y() == 7, "Flash にゴールがなければ、基準のゴール（7, 7）");
 
   s_flash_has_goal = true;
   s_flash_goal_x = 3;
@@ -534,7 +534,7 @@ static void test_goal(void)
   s_flash_goal_x = 0;
   s_flash_goal_y = 0;
   goal_init();
-  check(goal_get_x() == 2 && goal_get_y() == 2, "Flash のゴールがおかしい（スタートを含む）ときは基準のゴール");
+  check(goal_get_x() == 7 && goal_get_y() == 7, "Flash のゴールがおかしい（スタートを含む）ときは基準のゴール");
 
   check(goal_is_valid(30, 30), "(30, 30) は使える（2×2 が迷路の右上の角に入る）");
   check(!goal_is_valid(31, 5), "(31, 5) は迷路からはみ出す");
@@ -843,15 +843,15 @@ static void test_goal_input(void)
 {
   printf("[6] ゴールの位置を入れる\n");
   reset_world();
-  mode_init();   /* Flash にゴールがないので、最初は基準のゴール (2, 2) */
+  mode_init();   /* Flash にゴールがないので、最初は基準のゴール (7, 7) */
 
   rotate_left_at(100, -1);    /* モード7 */
   rotate_right_at(100, 2);    /* No.2 */
   press_switch_at(1000);      /* 決定 */
   hand_at(2000, 500);         /* スタート：3530 ms ごろから x の入力 */
-  rotate_right_at(5000, 18);  /* x = 2 + 18 = 20 */
+  rotate_right_at(5000, 13);  /* x = 7 + 13 = 20 */
   press_switch_at(7000);      /* x を決める：y の入力へ */
-  rotate_right_at(9000, 1);   /* y = 2 + 1 = 3 */
+  rotate_right_at(9000, -4);  /* y = 7 - 4 = 3 */
   press_switch_at(11000);     /* y を決める：保存 */
   mode_run_once();
 
@@ -873,18 +873,18 @@ static void test_goal_input_invalid(void)
   rotate_right_at(100, 2);
   press_switch_at(2000);
   hand_at(4000, 500);          /* x の入力は 5830 ms ごろから */
-  rotate_right_at(8000, -2);   /* x = 0 */
+  rotate_right_at(8000, -7);   /* x = 0 */
   press_switch_at(10000);
-  rotate_right_at(12000, -2);  /* y = 0 */
+  rotate_right_at(12000, -7);  /* y = 0 */
   press_switch_at(14000);      /* (0, 0)：保存せず、x の入力に戻る */
-  rotate_right_at(18000, 1);   /* x = 2 + 1 = 3（最初の値は、今のゴールの 2） */
+  rotate_right_at(18000, 1);   /* x = 7 + 1 = 8（最初の値は、今のゴールの 7） */
   press_switch_at(20000);
-  press_switch_at(24000);      /* y = 2 のまま */
+  press_switch_at(24000);      /* y = 7 のまま */
   mode_run_once();
 
   check_leds_at(14050, "1100011", "(0, 0) では、外側の 4 個を速く点滅させる");
   check(s_flash_goal_save_count == 1, "保存は 1 回だけ（入れ直したとき）");
-  check(goal_get_x() == 3 && goal_get_y() == 2, "ゴールが (3, 2) になる");
+  check(goal_get_x() == 8 && goal_get_y() == 7, "ゴールが (8, 7) になる");
 }
 
 /* ログ出力：モード7 No.1 を選んでスタートすると、今のゴールを渡して出力を呼ぶ */

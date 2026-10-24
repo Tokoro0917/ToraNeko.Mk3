@@ -21,10 +21,10 @@
 #define GOAL_Y_MAX (MAZE_SIZE - GOAL_HEIGHT)
 
 /* 一度も入れていないとき（Flash にゴールがないとき）の位置。
- * 2026-10-24 に作者が、試走に使う 4×4 の迷路の右上の 2×2（左下が (2, 2)）を基準のゴールに決めた。
- * 大会では、モード7 No.2 で中央（32×32 なら (15, 15)）を入れる */
-#define GOAL_DEFAULT_X 2
-#define GOAL_DEFAULT_Y 2
+ * 2026-10-24 に作者が (7, 7) に決めた（16×16 の迷路の中央の 2×2。その前は、試走の 4×4 の迷路の (2, 2)）。
+ * 32×32 の大会では、モード7 No.2 で中央 (15, 15) を入れる */
+#define GOAL_DEFAULT_X 7
+#define GOAL_DEFAULT_Y 7
 
 void goal_init(void);
 int goal_get_x(void);
