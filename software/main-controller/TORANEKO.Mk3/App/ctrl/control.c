@@ -165,6 +165,10 @@ void control_update(void)
   if (!s_running) {
     return;
   }
+  if (failsafe_is_stopped()) {
+    s_running = false;  /* どこかでフェイルセーフになったら、制御もやめる（モーターは failsafe_stop() が止めている） */
+    return;
+  }
 
   trajectory_update();
   float forward_v = forward_voltage();

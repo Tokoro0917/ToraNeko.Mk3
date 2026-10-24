@@ -40,6 +40,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include "config/run_params.h"
 #include "ctrl/control.h"
 #include "ctrl/odometry.h"
 #include "ctrl/trajectory.h"
@@ -55,19 +56,10 @@
 #define SETTLE_MS             300      /* 止まってから、制御を続けて待つ時間 [ms]（ぴたりと止めるため） */
 
 #define PIVOT_ANGLE_DEG       180.0f   /* 回る角度 [deg]（左回り） */
-#define PIVOT_OMEGA_DEG_S     720.0f   /* 最高の角速度 [deg/s]（KOGUMA は 2000。まずゆっくり） */
-#define PIVOT_ALPHA_DEG_S2    7200.0f  /* 角加速度 [deg/s²]（KOGUMA は 50000。まずゆっくり） */
 #define PIVOT_LOG_INTERVAL_MS 1        /* 走行ログの間隔 [ms]（約 0.65 秒なので、1000 行に入る） */
 
-#define HALF_CELL_MM          45.0f    /* 区画の半分 [mm]（ハーフの 1 区画は 90mm） */
-#define SEARCH_SPEED_MM_S     300.0f   /* 探索の速さ [mm/s] */
-#define SEARCH_ACCEL_MM_S2    1000.0f  /* 探索の加速度 [mm/s²]（止まったところから 45mm で 300mm/s になる） */
-#define SLALOM_ANGLE_DEG      90.0f    /* 曲がる角度 [deg]（左） */
-#define SLALOM_OMEGA_DEG_S    600.0f   /* 最高の角速度 [deg/s] */
-#define SLALOM_ALPHA_DEG_S2   8000.0f  /* 角加速度 [deg/s²] */
-#define SLALOM_PRE_MM         4.6f     /* 前距離 [mm]（曲がる前の直進。計算の値。実機で合わせる） */
-#define SLALOM_POST_MM        4.7f     /* 後距離 [mm]（曲がったあとの直進。計算の値。実機で合わせる） */
 #define SLALOM_LOG_INTERVAL_MS 2       /* 走行ログの間隔 [ms]（約 1.2 秒なので、1000 行に入る） */
+/* 探索の速さ・スラローム・その場旋回の値は config/run_params.h（探索と同じ値を使う） */
 
 /* 最後に走らせた動きの結果（走り終わったときはケーブルを挿していないので、覚えておいて、あとで出す） */
 typedef enum {
@@ -88,15 +80,6 @@ typedef struct {
 } run_result_t;
 
 static run_result_t s_result = {RESULT_NONE, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false};
-
-/* ジャイロのゼロ点を測り直して、終わるまで待つ（約 0.5 秒）。機体が止まっているあいだに呼ぶ */
-static void measure_gyro_offset(void)
-{
-  imu_start_offset_measure();
-  while (!imu_is_offset_ready()) {
-    ui_wait_ms(UI_POLL_MS);
-  }
-}
 
 /* 今の動き（直進・スラローム）が終わるまで、休まずに待つ。止まらずに次の動きへつなぐときに使う。
  * ui_wait_ms() で 10ms ずつ待つと、そのあいだに機体が 3mm（300mm/s のとき）進んでしまい、
@@ -175,7 +158,7 @@ void adjust_print_last_result(void)
 /* モード6 No.1 直進：ゆっくり 360mm まっすぐ走って止まる（流れは先頭のコメント） */
 void adjust_straight(void)
 {
-  measure_gyro_offset();
+  imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒） */
   float start_distance_mm = odometry_get_distance_mm();
   float start_angle_deg = imu_get_angle_deg();
 
@@ -205,7 +188,7 @@ static void save_pivot_result(float start_distance_mm, float start_angle_deg)
 /* モード2 No.4 その場 180° 旋回：その場で左に 180° 回って止まる（流れは先頭のコメント） */
 void adjust_pivot_180(void)
 {
-  measure_gyro_offset();
+  imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒） */
   float start_distance_mm = odometry_get_distance_mm();
   float start_angle_deg = imu_get_angle_deg();
 
@@ -236,7 +219,7 @@ static void save_slalom_result(float start_distance_mm, float start_angle_deg)
  * （流れは先頭のコメント） */
 void adjust_slalom_90(void)
 {
-  measure_gyro_offset();
+  imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒） */
   float start_distance_mm = odometry_get_distance_mm();
   float start_angle_deg = imu_get_angle_deg();
 

@@ -154,6 +154,15 @@ void imu_start_offset_measure(void)
   s_offset_ready = false;
 }
 
+/* ゼロ点を測り直して、終わるまで待つ（約 0.5 秒）。機体が止まっているときに、メインの処理から呼ぶ */
+void imu_remeasure_offset(void)
+{
+  imu_start_offset_measure();
+  while (!imu_is_offset_ready()) {
+    timebase_wait_ms(10);
+  }
+}
+
 /* 制御周期ごとに呼ぶ。角速度と加速度を読み、角度を進める */
 void imu_update(void)
 {

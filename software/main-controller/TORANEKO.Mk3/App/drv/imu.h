@@ -18,6 +18,7 @@ uint8_t imu_get_who_am_i(void);
 /* ゼロ点（止まっているときに出る角速度のずれ）を測り終えたら true。測り終えるまで、角度は 0 のまま */
 bool imu_is_offset_ready(void);
 void imu_start_offset_measure(void);
+void imu_remeasure_offset(void);
 float imu_get_gyro_offset_dps(void);
 
 /* 角速度 [deg/s]（ゼロ点を引いたもの。上から見て左回り（反時計回り）が +） */
