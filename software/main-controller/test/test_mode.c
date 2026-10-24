@@ -220,6 +220,8 @@ static int s_straight_count = 0;            /* 直進（モード6 No.1）が呼
 static int s_pivot_count = 0;               /* その場 180° 旋回（モード2 No.4）が呼ばれた回数 */
 static int s_slalom_count = 0;              /* スラローム 90°（モード2 No.1）が呼ばれた回数 */
 static int s_along_wall_count = 0;          /* 壁に沿って直進（モード6 No.7）が呼ばれた回数 */
+static int s_uturn_count = 0;               /* U ターン（モード2 No.2）が呼ばれた回数 */
+static int s_align_count = 0;               /* 壁合わせだけ（モード2 No.5）が呼ばれた回数 */
 static int s_result_print_count = 0;        /* 調整の動きの結果を出すのが呼ばれた回数 */
 static int s_result_print_output_count = 0; /* そのとき、出力が何回呼ばれていたか（出力より前に出すことを確かめる） */
 static int s_output_goal_x = 0;   /* 出力に渡されたゴール */
@@ -258,6 +260,8 @@ static void reset_world(void)
   s_pivot_count = 0;
   s_slalom_count = 0;
   s_along_wall_count = 0;
+  s_uturn_count = 0;
+  s_align_count = 0;
   s_result_print_count = 0;
   s_result_print_output_count = 0;
   s_output_count = 0;
@@ -389,6 +393,18 @@ void adjust_print_last_result(void)
 {
   s_result_print_count = s_result_print_count + 1;
   s_result_print_output_count = s_output_count;
+}
+
+/* U ターン：走らずに、呼ばれたことを覚える */
+void adjust_uturn(void)
+{
+  s_uturn_count = s_uturn_count + 1;
+}
+
+/* 壁合わせだけ：動かずに、呼ばれたことを覚える */
+void adjust_front_align(void)
+{
+  s_align_count = s_align_count + 1;
 }
 
 /* 壁に沿って直進：走らずに、呼ばれたことを覚える */
@@ -838,6 +854,29 @@ static void test_along_wall(void)
   check(s_straight_count == 0 && s_encoder_cal_count == 0, "ほかのモードは呼ばれない");
 }
 
+/* U ターン（モード2 No.2）と壁合わせだけ（モード2 No.5）は、ほかと同じくスタート待ちのあとに始まる */
+static void test_uturn_and_align(void)
+{
+  printf("[6] U ターン、壁合わせだけ\n");
+  reset_world();
+  mode_init();
+  rotate_left_at(100, 2);    /* モード2 */
+  rotate_right_at(100, 2);   /* No.2 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+  check(s_uturn_count == 1 && s_align_count == 0 && s_pivot_count == 0, "No.2 で U ターンが 1 回呼ばれる");
+
+  reset_world();
+  mode_init();
+  rotate_left_at(100, 2);    /* モード2 */
+  rotate_right_at(100, 5);   /* No.5 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+  check(s_align_count == 1 && s_uturn_count == 0 && s_pivot_count == 0, "No.5 で壁合わせだけが 1 回呼ばれる");
+}
+
 /* モード7 No.2 を選んで、x = 20、y = 3 を入れる */
 static void test_goal_input(void)
 {
@@ -961,6 +1000,7 @@ int main(void)
   test_pivot();
   test_slalom();
   test_along_wall();
+  test_uturn_and_align();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

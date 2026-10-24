@@ -40,6 +40,10 @@
  * 壁の端（柱の近く）では、壁があっても値がまだ上がりきっておらず、補正が「壁から遠い」と読み違えて
  * 壁のほうへ曲げてしまう（2026-10-24 の探索で、右 574 を遠いと読んで右の壁に当たった）。
  * まん中の値のおよそ 7 割より大きいときだけ使う */
+/* 区画のまん中にいるときの、前のセンサの値（2026-10-22、3 枚とも壁ありで測った値）。前壁合わせの目標 */
+#define FRONT_LEFT_REFERENCE  895
+#define FRONT_RIGHT_REFERENCE 1142
+
 #define LEFT_WALL_CONTROL_MIN  1000
 #define RIGHT_WALL_CONTROL_MIN 800
 
@@ -157,6 +161,23 @@ int wall_ctrl_get_side_walls_used(void)
     used = used + 2;
   }
   return used;
+}
+
+/* 前の壁との距離のずれ（+ なら近すぎる）。左前と右前の、目標との差の平均 */
+float wall_ctrl_get_front_distance_error(void)
+{
+  float left_error = wall_ctrl_get_front_left() - FRONT_LEFT_REFERENCE;
+  float right_error = wall_ctrl_get_front_right() - FRONT_RIGHT_REFERENCE;
+  return (left_error + right_error) / 2.0f;
+}
+
+/* 前の壁に対する向きのずれ（+ なら左前のほうが近い）。
+ * 機体が右を向くと、左前のセンサが壁に近づき、右前のセンサが遠ざかるので、左前の差 − 右前の差 が + になる */
+float wall_ctrl_get_front_angle_error(void)
+{
+  float left_error = wall_ctrl_get_front_left() - FRONT_LEFT_REFERENCE;
+  float right_error = wall_ctrl_get_front_right() - FRONT_RIGHT_REFERENCE;
+  return left_error - right_error;
 }
 
 /* 前センサに手がかざされているか（左前と右前の両方が、壁よりずっと近いときの値を超えている） */

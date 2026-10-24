@@ -11,6 +11,7 @@ void control_start(void);
 void control_stop(void);
 void control_update(void);
 void control_set_wall_control(bool on);
+void control_set_front_align(bool on);
 bool control_is_running(void);
 
 /* 今の動きを始めてからの、位置のずれ [mm] と角度のずれ [deg]（目標 − 測った値）。動作確認用 */

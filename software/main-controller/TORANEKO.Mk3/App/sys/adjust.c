@@ -16,6 +16,15 @@
  *   - 走行ログの wall_err（ずれ）、wall_p・wall_d（P・D の分）、w_target（補正を足した目標の角速度）で、
  *     config/ctrl_gains.h の WALL_KP・WALL_KD を合わせる
  *
+ * ■ モード2 No.2 U ターン（adjust_uturn）
+ * 区画のまん中に置き、前の区画が行き止まり（その区画の前に壁がある）になるようにして始める。
+ * 前の区画へ進んでまん中で止まり、前壁合わせ（0.5 秒）をして、その場で 180° 回り、元の区画のまん中まで戻って止まる。
+ * 探索の U ターンと同じ動き（ctrl/run.c の関数を使う）。元の区画のまん中で、反対を向いて止まれば合っている
+ *
+ * ■ モード2 No.5 壁合わせだけ（adjust_front_align）
+ * 区画のまん中に、前に壁がある向きで置いて始める。前の壁で、位置と向きを 0.5 秒直して止まる。
+ * 少し斜めに、または前後にずらして置いて、まっすぐ・まん中に直るかを見る
+ *
  * ■ モード2 No.4 その場 180° 旋回（adjust_pivot_180）
  * その場で左に 180° 回って止まる（U ターンの部品）。
  *   - 止まったら、本当に 180° 回ったかを目で見る（ジャイロの値と合っているか）
@@ -66,7 +75,9 @@
 #define PIVOT_LOG_INTERVAL_MS 1        /* 走行ログの間隔 [ms]（約 0.65 秒なので、1000 行に入る） */
 
 #define SLALOM_LOG_INTERVAL_MS 2       /* 走行ログの間隔 [ms]（約 1.2 秒なので、1000 行に入る） */
-/* 探索の速さ・スラローム・その場旋回の値は config/run_params.h（探索と同じ値を使う） */
+#define UTURN_LOG_INTERVAL_MS  3       /* 走行ログの間隔 [ms]（約 2.5 秒なので、1000 行に入る） */
+#define ALIGN_LOG_INTERVAL_MS  1       /* 走行ログの間隔 [ms]（0.5 秒） */
+/* 探索の速さ・スラローム・その場旋回・前壁合わせの値は config/run_params.h（探索と同じ値を使う） */
 
 /* 最後に走らせた動きの結果（走り終わったときはケーブルを挿していないので、覚えておいて、あとで出す） */
 typedef enum {
@@ -283,5 +294,37 @@ void adjust_straight_along_wall(void)
 
   save_straight_result(start_distance_mm, start_angle_deg);
   adjust_print_last_result();
+  signal_end();
+}
+
+/* モード2 No.2 U ターン：区画のまん中から、行き止まりの次の区画へ進んで止まり、前壁合わせをして、
+ * その場で 180° 回って、元の区画のまん中まで戻って止まる（探索の U ターンと同じ動き。ctrl/run.c を使う） */
+void adjust_uturn(void)
+{
+  imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒） */
+  log_start(UTURN_LOG_INTERVAL_MS);
+  control_set_wall_control(true);  /* 探索と同じく、横の壁に沿って走る補正を入れる */
+  run_search_go_from_center(RUN_TURN_NONE);   /* 次の区画の入口へ（前に壁がなければ、そのまま発進） */
+  run_search_stop_at_center();                /* 行き止まりの区画のまん中で止まる */
+  run_search_go_from_center(RUN_TURN_BACK);   /* 前壁合わせ → 180° → 元の区画の入口へ */
+  run_search_stop_at_center();                /* 元の区画のまん中で止まる */
+  control_stop();
+  control_set_wall_control(false);
+  log_stop();
+  signal_end();
+}
+
+/* モード2 No.5 壁合わせだけ：区画のまん中で、前の壁で位置と向きを直して止まる */
+void adjust_front_align(void)
+{
+  imu_remeasure_offset();
+  log_start(ALIGN_LOG_INTERVAL_MS);
+  control_set_wall_control(false);
+  control_start();
+  control_set_front_align(true);
+  ui_wait_ms(ALIGN_TIME_MS);
+  control_set_front_align(false);
+  control_stop();
+  log_stop();
   signal_end();
 }

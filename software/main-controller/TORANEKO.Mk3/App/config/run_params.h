@@ -39,6 +39,10 @@
 #define PIVOT_OMEGA_DEG_S  720.0f   /* 最高の角速度 [deg/s]（KOGUMA は 2000。まずゆっくり） */
 #define PIVOT_ALPHA_DEG_S2 7200.0f  /* 角加速度 [deg/s²]（KOGUMA は 50000。まずゆっくり） */
 
+/* ---- 前壁合わせ ---- */
+
+#define ALIGN_TIME_MS 500  /* 前壁合わせを続ける時間 [ms]（KOGUMA の Alignment_TIME と同じ 0.5 秒） */
+
 /* ---- 止まるとき ---- */
 
 #define STOP_SETTLE_MS 100  /* 区画のまん中で止まってから、制御を続けて待つ時間 [ms]（ぴたりと止めるため） */

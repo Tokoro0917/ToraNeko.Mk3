@@ -18,8 +18,9 @@
  * ■ 横の壁に沿って走る補正
  * 発進のときに入れる（ctrl/control.c）。直進のあいだだけ効く（スラローム・その場旋回のあいだは効かない）。
  *
- * ■ まだないもの
- *   - 前の壁に合わせる動き（前壁合わせ）
+ * ■ 前壁合わせ
+ * 止まっているところから発進するとき（U ターンや、止まって計算したあと）、前に壁があれば、
+ * 前の壁を使って位置と向きを ALIGN_TIME_MS（0.5 秒）直してから、向きを変える（ctrl/control.c）
  *
  * ■ フェイルセーフ（run.h の約束 3）
  * 動きの途中でフェイルセーフで止まったら、すぐに戻る。止まっているあいだに呼ばれたら、何もせずにすぐ戻る。
@@ -31,6 +32,7 @@
 #include "config/run_params.h"
 #include "ctrl/control.h"
 #include "ctrl/trajectory.h"
+#include "ctrl/wall_ctrl.h"
 #include "drv/imu.h"
 #include "drv/timebase.h"
 #include "sys/failsafe.h"
@@ -111,6 +113,17 @@ static void pivot(float angle_deg)
   wait_until_done();
 }
 
+/* 前の壁で、位置と向きを ALIGN_TIME_MS 直す（止まっているときに呼ぶ） */
+static void align_to_front_wall(void)
+{
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  control_set_front_align(true);
+  timebase_wait_ms(ALIGN_TIME_MS);
+  control_set_front_align(false);
+}
+
 /* スタート区画から走り出し、北隣の区画 (0, 1) の入口の辺まで進む。
  * スタート区画では、機体のお尻を後ろの壁に付けて置く（タイヤの軸は区画のまん中より START_OFFSET_MM 後ろ） */
 void run_search_start(void)
@@ -169,14 +182,18 @@ void run_search_stop_at_center(void)
   control_stop();                    /* 制御をやめて、モーターを止める */
 }
 
-/* 止まっている → その場で向きを変えて（turn）、次の区画の入口の辺まで、速くしながら進む。
- * 前の壁に合わせる動き（前壁合わせ）は、まだない */
+/* 止まっている → 前に壁があれば前壁合わせをして、その場で向きを変えて（turn）、
+ * 次の区画の入口の辺まで、速くしながら進む */
 void run_search_go_from_center(run_turn_t turn)
 {
   if (failsafe_is_stopped()) {
     return;
   }
-  control_start();  /* 止まっているので、制御を始め直す（今の向きを、まっすぐの向きにする） */
+  control_start();  /* 止まっているので、制御を始め直す */
+  if (wall_ctrl_has_wall_front()) {
+    align_to_front_wall();
+    control_start();  /* 直した向きを、まっすぐの向きにし直す */
+  }
   if (turn == RUN_TURN_LEFT) {
     pivot(90.0f);
   } else if (turn == RUN_TURN_RIGHT) {
