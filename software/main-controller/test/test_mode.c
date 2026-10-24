@@ -219,6 +219,7 @@ static int s_encoder_cal_count = 0;         /* エンコーダの歪みを測る
 static int s_straight_count = 0;            /* 直進（モード6 No.1）が呼ばれた回数 */
 static int s_pivot_count = 0;               /* その場 180° 旋回（モード2 No.4）が呼ばれた回数 */
 static int s_slalom_count = 0;              /* スラローム 90°（モード2 No.1）が呼ばれた回数 */
+static int s_along_wall_count = 0;          /* 壁に沿って直進（モード6 No.7）が呼ばれた回数 */
 static int s_result_print_count = 0;        /* 調整の動きの結果を出すのが呼ばれた回数 */
 static int s_result_print_output_count = 0; /* そのとき、出力が何回呼ばれていたか（出力より前に出すことを確かめる） */
 static int s_output_goal_x = 0;   /* 出力に渡されたゴール */
@@ -256,6 +257,7 @@ static void reset_world(void)
   s_straight_count = 0;
   s_pivot_count = 0;
   s_slalom_count = 0;
+  s_along_wall_count = 0;
   s_result_print_count = 0;
   s_result_print_output_count = 0;
   s_output_count = 0;
@@ -387,6 +389,12 @@ void adjust_print_last_result(void)
 {
   s_result_print_count = s_result_print_count + 1;
   s_result_print_output_count = s_output_count;
+}
+
+/* 壁に沿って直進：走らずに、呼ばれたことを覚える */
+void adjust_straight_along_wall(void)
+{
+  s_along_wall_count = s_along_wall_count + 1;
 }
 
 /* スラローム 90°：走らずに、呼ばれたことを覚える */
@@ -813,6 +821,23 @@ static void test_slalom(void)
   check(s_pivot_count == 0 && s_explore_count == 0, "ほかのモードは呼ばれない");
 }
 
+/* 壁に沿って直進（モード6 No.7）は、ほかと同じくスタート待ちのあとに始まる */
+static void test_along_wall(void)
+{
+  printf("[6] 壁に沿って直進\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 6);    /* モード6 */
+  rotate_right_at(100, 7);   /* No.7 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_along_wall_count == 1, "壁に沿って直進が 1 回呼ばれる");
+  check(s_straight_count == 0 && s_encoder_cal_count == 0, "ほかのモードは呼ばれない");
+}
+
 /* モード7 No.2 を選んで、x = 20、y = 3 を入れる */
 static void test_goal_input(void)
 {
@@ -935,6 +960,7 @@ int main(void)
   test_straight();
   test_pivot();
   test_slalom();
+  test_along_wall();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

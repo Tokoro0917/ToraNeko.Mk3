@@ -11,6 +11,8 @@
  *        フィードフォワード：目標の角速度・角加速度を、タイヤ 1 つの速さ・加速度に直して、2 と同じ係数をかける
  *                            （角速度 [rad/s] × トレッド幅の半分 = タイヤ 1 つの速さ [mm/s]）
  *        フィードバック    ：角速度のずれ × OMEGA_KP + 角度のずれ × ANGLE_KI
+ *      横の壁に沿って走る補正が入っているときは、直進中の目標の角速度に、横の壁からのずれで決めた分を足す
+ *      （ずれ × WALL_KP + ずれの変わる速さ × WALL_KD。左の壁に近ければ右へ曲げる）
  *   4. 左 = 前に進む分 − 向きの分、右 = 前に進む分 + 向きの分 をモーターにかける
  *      （左回りが + なので、左に向けたいときは右を速く、左を遅くする）
  *   5. 走行ログに 1 行渡す（sys/log.c が、決めた間隔ごとに残す）
@@ -48,6 +50,13 @@ static volatile float s_angle_error_deg = 0.0f;    /* 角度のずれ（角速�
 static volatile float s_start_angle_deg = 0.0f;    /* 始めたときの向き */
 static volatile float s_left_voltage_v = 0.0f;     /* 最後にかけた電圧（ログ用） */
 static volatile float s_right_voltage_v = 0.0f;
+static volatile bool s_wall_control = false;        /* 横の壁に沿って走る補正を入れるか */
+static volatile float s_wall_error = 0.0f;          /* 横の壁からのずれ（ゆれを減らしたもの。ログ用） */
+static volatile float s_wall_error_rate = 0.0f;     /* ずれの変わる速さ [1/s] */
+static volatile float s_wall_omega_deg_s = 0.0f;    /* 補正で曲げた角速度（ログ用） */
+static volatile int s_wall_used = 0;                /* 使った壁（ログ用） */
+
+#define WALL_FILTER_RATIO 0.05f  /* ずれのゆれを減らす割合（1 周期で新しい値に 5% 近づける。約 10ms で落ち着く） */
 
 /* 制御を始める（止まっているところから）。今の向きを、まっすぐの向きにする */
 void control_start(void)
@@ -58,6 +67,12 @@ void control_start(void)
   s_angle_error_deg = 0.0f;
   s_start_angle_deg = imu_get_angle_deg();
   s_running = true;   /* 最後に、動いているにする */
+}
+
+/* 横の壁に沿って走る補正を入れる（true）・入れない（false）。探索（ctrl/run.c）で入れる */
+void control_set_wall_control(bool on)
+{
+  s_wall_control = on;
 }
 
 /* 制御をやめて、モーターを止める */
@@ -100,11 +115,49 @@ static float forward_voltage(void)
   return feedforward_v + feedback_v;
 }
 
+/* 横の壁からのずれを読み、ゆれを減らして、変わる速さも求める。使う壁が変わったときは、そこから測り直す
+ * （壁が急に見えたり見えなくなったりしたときに、変わる速さが大きく出ないように） */
+static void update_wall_error(void)
+{
+  float raw_error = wall_ctrl_get_side_error();
+  int used = wall_ctrl_get_side_walls_used();
+  if (used != s_wall_used) {
+    s_wall_used = used;
+    s_wall_error = raw_error;
+    s_wall_error_rate = 0.0f;
+    return;
+  }
+  float last_error = s_wall_error;
+  s_wall_error = s_wall_error + (raw_error - s_wall_error) * WALL_FILTER_RATIO;
+  s_wall_error_rate = (s_wall_error - last_error) / CTRL_PERIOD_S;
+}
+
+/* 横の壁に沿って走る補正で、目標の角速度に足す分 [deg/s]（+ なら左へ曲げる）。
+ * 補正を入れていないとき、直進でないとき、遅いときは 0 */
+static float wall_omega_deg_s(void)
+{
+  update_wall_error();
+  if (!s_wall_control || trajectory_get_kind() != TRAJECTORY_STRAIGHT
+      || trajectory_get_speed_mm_s() < WALL_CONTROL_MIN_SPEED_MM_S) {
+    s_wall_omega_deg_s = 0.0f;
+    return 0.0f;
+  }
+  float omega = -(s_wall_error * WALL_KP + s_wall_error_rate * WALL_KD);  /* 左の壁に近い（+）なら右（-）へ */
+  if (omega > WALL_OMEGA_LIMIT_DEG_S) {
+    omega = WALL_OMEGA_LIMIT_DEG_S;
+  }
+  if (omega < -WALL_OMEGA_LIMIT_DEG_S) {
+    omega = -WALL_OMEGA_LIMIT_DEG_S;
+  }
+  s_wall_omega_deg_s = omega;
+  return omega;
+}
+
 /* 向きの分の電圧 [V] を決める（+ なら左に向ける。右のタイヤに +、左のタイヤに - でかける） */
 static float turn_voltage(void)
 {
   float target_omega_deg_s = trajectory_get_omega_deg_s();
-  float omega_error_deg_s = target_omega_deg_s - imu_get_gyro_z_dps();
+  float omega_error_deg_s = target_omega_deg_s + wall_omega_deg_s() - imu_get_gyro_z_dps();
   s_angle_error_deg = s_angle_error_deg + omega_error_deg_s * CTRL_PERIOD_S;
 
   /* 目標の角速度・角加速度で回るときの、タイヤ 1 つの速さ [mm/s]・加速度 [mm/s²] */
@@ -130,7 +183,11 @@ static void record_log(void)
   values.speed_mm_s = odometry_get_speed_mm_s();
   values.speed_target_mm_s = trajectory_get_speed_mm_s();
   values.omega_deg_s = imu_get_gyro_z_dps();
-  values.omega_target_deg_s = trajectory_get_omega_deg_s();
+  values.omega_target_deg_s = trajectory_get_omega_deg_s() + s_wall_omega_deg_s;
+  values.wall_used = s_wall_used;
+  values.wall_error = s_wall_error;
+  values.wall_p = s_wall_error * WALL_KP;
+  values.wall_d = s_wall_error_rate * WALL_KD;
   values.angle_deg = imu_get_angle_deg() - s_start_angle_deg;
   values.sensor_left = wall_ctrl_get_left();
   values.sensor_right = wall_ctrl_get_right();

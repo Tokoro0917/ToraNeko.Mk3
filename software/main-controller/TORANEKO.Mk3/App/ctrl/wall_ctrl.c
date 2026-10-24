@@ -32,6 +32,9 @@
 #define FRONT_RIGHT_WALL_THRESHOLD 770   /* 右前：同じく */
 #define LEFT_WALL_THRESHOLD        700   /* 左：これより大きければ左に壁 */
 #define RIGHT_WALL_THRESHOLD       550   /* 右：これより大きければ右に壁 */
+/* 区画のまん中にいるときの、横のセンサの値（2026-10-22、3 枚とも壁ありで測った値）。壁に沿って走る補正の目標 */
+#define LEFT_WALL_REFERENCE  1457
+#define RIGHT_WALL_REFERENCE 1148
 #define FRONT_LEFT_HAND_THRESHOLD  2800  /* 左前：これより大きければ手がかざされている（仮） */
 #define FRONT_RIGHT_HAND_THRESHOLD 2000  /* 右前：同じく（仮） */
 
@@ -85,6 +88,41 @@ bool wall_ctrl_has_wall_right(void)
     return true;
   }
   return false;
+}
+
+/* 横の壁からのずれ（+ なら左の壁に近い）。
+ * 両方に壁があれば (左 − 左の目標) − (右 − 右の目標)、片方だけなら、その壁のずれを 2 倍にする
+ * （両方のときと、同じずれで同じくらいの大きさになるように）。どちらにも壁がなければ 0 */
+float wall_ctrl_get_side_error(void)
+{
+  float left_error = wall_ctrl_get_left() - LEFT_WALL_REFERENCE;
+  float right_error = wall_ctrl_get_right() - RIGHT_WALL_REFERENCE;
+  bool left = wall_ctrl_has_wall_left();
+  bool right = wall_ctrl_has_wall_right();
+
+  if (left && right) {
+    return left_error - right_error;
+  }
+  if (left) {
+    return 2.0f * left_error;
+  }
+  if (right) {
+    return -2.0f * right_error;
+  }
+  return 0.0f;
+}
+
+/* 横の壁からのずれを求めるのに使う壁（0 なし、1 左、2 右、3 両方。ログに残す） */
+int wall_ctrl_get_side_walls_used(void)
+{
+  int used = 0;
+  if (wall_ctrl_has_wall_left()) {
+    used = used + 1;
+  }
+  if (wall_ctrl_has_wall_right()) {
+    used = used + 2;
+  }
+  return used;
 }
 
 /* 前センサに手がかざされているか（左前と右前の両方が、壁よりずっと近いときの値を超えている） */

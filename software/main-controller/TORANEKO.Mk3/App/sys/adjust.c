@@ -10,6 +10,12 @@
  *     測った速さを見比べて、config/ctrl_gains.h の係数を合わせる
  *   - 走り終わったら、エンコーダで測った距離と、ジャイロで測った向きのずれを覚えておく
  *
+ * ■ モード6 No.7 壁に沿って直進（adjust_straight_along_wall）
+ * 区画のまん中から 4 区画（360mm）を、探索の速さ（300mm/s）で、横の壁に沿って走る補正を入れて走って止まる。
+ *   - 左右に壁がある通路で、少し左か右に寄せて（または少し斜めに）置いて走らせ、まん中に戻るかを見る
+ *   - 走行ログの wall_err（ずれ）、wall_p・wall_d（P・D の分）、w_target（補正を足した目標の角速度）で、
+ *     config/ctrl_gains.h の WALL_KP・WALL_KD を合わせる
+ *
  * ■ モード2 No.4 その場 180° 旋回（adjust_pivot_180）
  * その場で左に 180° 回って止まる（U ターンの部品）。
  *   - 止まったら、本当に 180° 回ったかを目で見る（ジャイロの値と合っているか）
@@ -163,6 +169,7 @@ void adjust_straight(void)
   float start_angle_deg = imu_get_angle_deg();
 
   log_start(STRAIGHT_LOG_INTERVAL_MS);
+  control_set_wall_control(false);  /* 横の壁に沿って走る補正は入れない */
   control_start();
   trajectory_start_straight(STRAIGHT_DISTANCE_MM, STRAIGHT_SPEED_MM_S, 0.0f, STRAIGHT_ACCEL_MM_S2);
   wait_until_done();
@@ -193,6 +200,7 @@ void adjust_pivot_180(void)
   float start_angle_deg = imu_get_angle_deg();
 
   log_start(PIVOT_LOG_INTERVAL_MS);
+  control_set_wall_control(false);  /* 横の壁に沿って走る補正は入れない */
   control_start();
   trajectory_start_pivot(PIVOT_ANGLE_DEG, PIVOT_OMEGA_DEG_S, PIVOT_ALPHA_DEG_S2);
   wait_until_done();
@@ -224,6 +232,7 @@ void adjust_slalom_90(void)
   float start_angle_deg = imu_get_angle_deg();
 
   log_start(SLALOM_LOG_INTERVAL_MS);
+  control_set_wall_control(false);  /* 横の壁に沿って走る補正は入れない */
   control_start();
   /* 1. 次の区画の入口の辺まで、速くしながら進む */
   trajectory_start_straight(HALF_CELL_MM, SEARCH_SPEED_MM_S, SEARCH_SPEED_MM_S, SEARCH_ACCEL_MM_S2);
@@ -241,6 +250,26 @@ void adjust_slalom_90(void)
   settle_and_stop();
 
   save_slalom_result(start_distance_mm, start_angle_deg);
+  adjust_print_last_result();
+  signal_end();
+}
+
+/* モード6 No.7 壁に沿って直進：区画のまん中から 4 区画を、横の壁に沿って走る補正を入れて、探索の速さで走って止まる */
+void adjust_straight_along_wall(void)
+{
+  imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒） */
+  float start_distance_mm = odometry_get_distance_mm();
+  float start_angle_deg = imu_get_angle_deg();
+
+  log_start(STRAIGHT_LOG_INTERVAL_MS);
+  control_set_wall_control(true);  /* 横の壁に沿って走る補正を入れる */
+  control_start();
+  trajectory_start_straight(STRAIGHT_DISTANCE_MM, SEARCH_SPEED_MM_S, 0.0f, SEARCH_ACCEL_MM_S2);
+  wait_until_done();
+  settle_and_stop();
+  control_set_wall_control(false);
+
+  save_straight_result(start_distance_mm, start_angle_deg);
   adjust_print_last_result();
   signal_end();
 }

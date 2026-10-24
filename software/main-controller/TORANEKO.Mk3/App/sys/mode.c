@@ -18,7 +18,8 @@
  *   モード2 No.4     その場 180° 旋回（左に回って止まる。旋回の制御の係数を合わせる）
  *   モード5 No.1     センサ値の表示（スイッチを押すと終わる）
  *   モード6 No.1     直進（ゆっくり 360mm 走って止まる。タイヤの直径と、制御の係数を合わせる）
- *   モード6 No.6     エンコーダの歪みを測る（タイヤを浮かせて、左右のモーターを回す）
+ *   モード6 No.6     エンコーダの歪みを測る
+ *   モード6 No.7     壁に沿って直進（横の壁に沿って走る補正を入れて、4 区画走って止まる）（タイヤを浮かせて、左右のモーターを回す）
  *   モード7 No.1     ログ出力（迷路と走行ログを PC へ出す）
  *   モード7 No.2     ゴールの位置を入れる
  *   モード7 No.15    迷路呼び出し（Flash に保存した迷路を RAM に戻す）
@@ -93,6 +94,9 @@ bool mode_has_action(int mode, int number)
     }
     if (number == 6) {
       return true;  /* エンコーダの歪みを測る */
+    }
+    if (number == 7) {
+      return true;  /* 壁に沿って直進 */
     }
     return false;
   }
@@ -251,6 +255,8 @@ static void run_selected(void)
     adjust_straight();
   } else if (s_mode == 6 && s_number == 6) {
     encoder_cal_run();
+  } else if (s_mode == 6 && s_number == 7) {
+    adjust_straight_along_wall();
   } else if (s_mode == 7) {
     run_setting(s_number);
   }
