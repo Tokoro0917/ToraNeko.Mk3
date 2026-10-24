@@ -49,6 +49,7 @@
 #include "config/run_params.h"
 #include "ctrl/control.h"
 #include "ctrl/odometry.h"
+#include "ctrl/run.h"
 #include "ctrl/trajectory.h"
 #include "drv/imu.h"
 #include "sys/failsafe.h"
@@ -138,6 +139,15 @@ static void save_straight_result(float start_distance_mm, float start_angle_deg)
   s_result.failsafe = failsafe_is_stopped();
 }
 
+/* 探索で、区画の入口に着いてから次の動きを頼まれるまでの、いちばん長かった時間を出す（探索を走らせていれば） */
+static void print_search_wait(void)
+{
+  uint32_t wait_us = run_get_longest_wait_us();
+  if (wait_us > 0) {
+    printf("Search: longest wait between moves %lu us\r\n", wait_us);
+  }
+}
+
 /* 最後に走らせた動き（直進・その場旋回）の結果をシリアルに出す。モード7 No.1（ログ出力）でも呼ぶ。
  * 電源を切ると消える（走行ログと同じ） */
 void adjust_print_last_result(void)
@@ -152,13 +162,15 @@ void adjust_print_last_result(void)
     printf("Slalom: target %.1f deg, gyro %.2f deg, encoder %.1f mm\r\n",
            s_result.target, s_result.turned_deg, s_result.moved_mm);
   } else {
-    return;  /* まだ何も走らせていない */
+    print_search_wait();
+    return;  /* 調整の動きは、まだ何も走らせていない */
   }
   printf("  position error %.2f mm, angle error %.2f deg\r\n",
          s_result.position_error_mm, s_result.angle_error_deg);
   if (s_result.failsafe) {
     printf("  stopped by failsafe\r\n");
   }
+  print_search_wait();
 }
 
 /* モード6 No.1 直進：ゆっくり 360mm まっすぐ走って止まる（流れは先頭のコメント） */

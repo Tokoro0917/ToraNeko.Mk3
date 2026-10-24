@@ -30,6 +30,8 @@
 #ifndef CTRL_RUN_H
 #define CTRL_RUN_H
 
+#include <stdint.h>
+
 /* 止まっているところから発進するときの向きの変え方 */
 typedef enum {
   RUN_TURN_NONE,   /* 向きを変えずに発進する */
@@ -44,5 +46,9 @@ void run_search_turn_left(void);
 void run_search_turn_right(void);
 void run_search_stop_at_center(void);
 void run_search_go_from_center(run_turn_t turn);
+
+/* 走っているあいだに、動きが戻ってから次の動きを頼まれるまでの、いちばん長かった時間 [µs]（発進してから）。
+ * 探索の計算が長すぎないかを確かめる（300mm/s では 1ms で 0.3mm 進む）。モード7 No.1 で出す */
+uint32_t run_get_longest_wait_us(void);
 
 #endif /* CTRL_RUN_H */

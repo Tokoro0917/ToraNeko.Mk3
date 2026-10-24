@@ -38,6 +38,37 @@
 
 #define SEARCH_LOG_INTERVAL_MS 8  /* 探索の走行ログの間隔 [ms]（1000 行で 8 秒ぶん） */
 
+/* 動きが戻ってから次の動きを頼まれるまでの時間を測る（探索の計算の時間） */
+static bool s_waiting = false;          /* 走ったまま戻って、次の動きを待っているところか */
+static uint32_t s_return_us = 0;        /* 戻った時刻 [µs] */
+static uint32_t s_longest_wait_us = 0;  /* いちばん長かった待ち時間 [µs] */
+
+/* 走ったまま戻るときに呼ぶ。戻った時刻を覚える */
+static void mark_return(void)
+{
+  s_return_us = timebase_get_us();
+  s_waiting = true;
+}
+
+/* 次の動きを頼まれたときに呼ぶ。戻ってからの時間が、いちばん長ければ覚える */
+static void measure_wait(void)
+{
+  if (!s_waiting) {
+    return;
+  }
+  uint32_t wait_us = timebase_get_us() - s_return_us;
+  if (wait_us > s_longest_wait_us) {
+    s_longest_wait_us = wait_us;
+  }
+  s_waiting = false;
+}
+
+/* いちばん長かった待ち時間 [µs] */
+uint32_t run_get_longest_wait_us(void)
+{
+  return s_longest_wait_us;
+}
+
 /* 今の動きが終わるまで、休まずに待つ。フェイルセーフで止まったら、すぐに戻る。
  * 少しずつ休みながら待つと、そのあいだに機体が進んで次の動きの距離がずれるので、休まない
  * （trajectory_is_done() は割り込みが書き換える） */
@@ -88,34 +119,44 @@ void run_search_start(void)
     return;
   }
   imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒。電源を入れたときに手で動かしていてもよいように） */
+  s_waiting = false;
+  s_longest_wait_us = 0;
   log_start(SEARCH_LOG_INTERVAL_MS);
   control_set_wall_control(true);  /* 探索では、横の壁に沿って走る補正を入れる */
   control_start();
   go_straight(START_OFFSET_MM + HALF_CELL_MM);
+  mark_return();
 }
 
 /* 走っている → 1 区画まっすぐ進み、次の区画の入口の辺へ */
 void run_search_straight(void)
 {
+  measure_wait();
   go_straight(CELL_MM);
+  mark_return();
 }
 
 /* 走っている → スラロームで左 90° */
 void run_search_turn_left(void)
 {
+  measure_wait();
   slalom(SLALOM_ANGLE_DEG);
+  mark_return();
 }
 
 /* 走っている → スラロームで右 90° */
 void run_search_turn_right(void)
 {
+  measure_wait();
   slalom(-SLALOM_ANGLE_DEG);
+  mark_return();
 }
 
 /* 走っている → 今入った区画のまん中で止まる。止まったら、モーターの出力を 0 にしてから戻る
  * （このあと Flash に保存して CPU が止まっても、機体が動かないように。run.h の約束 2） */
 void run_search_stop_at_center(void)
 {
+  measure_wait();
   if (failsafe_is_stopped()) {
     return;
   }
@@ -144,4 +185,5 @@ void run_search_go_from_center(run_turn_t turn)
     pivot(180.0f);
   }
   go_straight(HALF_CELL_MM);
+  mark_return();
 }

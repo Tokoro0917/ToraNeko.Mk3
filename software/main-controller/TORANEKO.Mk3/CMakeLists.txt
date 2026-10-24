@@ -97,6 +97,22 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
 # Warnings for user code only (App/); generated HAL code is left as is
 set_source_files_properties(${APP_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
 
+# 走っているあいだに時間がかかる計算（迷路の計算と、制御周期の割り込みで動く制御）だけは、Debug でも
+# 速くなるようにビルドする（-O2）。-O0 のままだと、探索で区画の入口に着いてから次の動きを決めるまでに
+# 30〜40ms かかり、そのあいだに機体が 10mm ほど進んで、曲がり始めが遅れた（2026-10-24）。
+# ここに挙げたファイルは、デバッガで 1 行ずつ止めて見ると、行が飛んで見えることがある
+set(APP_FAST_SOURCES
+    App/maze/maze_map.c
+    App/maze/search.c
+    App/maze/path.c
+    App/maze/dijkstra.c
+    App/ctrl/control.c
+    App/ctrl/odometry.c
+    App/ctrl/trajectory.c
+    App/ctrl/wall_ctrl.c
+)
+set_source_files_properties(${APP_FAST_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-O2")
+
 # Remove wrong libob.a library dependency when using cpp files
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 
