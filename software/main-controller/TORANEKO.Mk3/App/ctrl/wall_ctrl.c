@@ -35,6 +35,16 @@
 /* 区画のまん中にいるときの、横のセンサの値（2026-10-22、3 枚とも壁ありで測った値）。壁に沿って走る補正の目標 */
 #define LEFT_WALL_REFERENCE  1457
 #define RIGHT_WALL_REFERENCE 1148
+
+/* 壁に沿って走る補正に、その壁を使う下限。壁のあり・なしのしきい値（左 700・右 550）より高くする。
+ * 壁の端（柱の近く）では、壁があっても値がまだ上がりきっておらず、補正が「壁から遠い」と読み違えて
+ * 壁のほうへ曲げてしまう（2026-10-24 の探索で、右 574 を遠いと読んで右の壁に当たった）。
+ * まん中の値のおよそ 7 割より大きいときだけ使う */
+#define LEFT_WALL_CONTROL_MIN  1000
+#define RIGHT_WALL_CONTROL_MIN 800
+
+/* 横の壁からのずれの上限（センサの値の差。約 2mm 分）。急に大きく曲げないようにする */
+#define SIDE_ERROR_LIMIT 600.0f
 #define FRONT_LEFT_HAND_THRESHOLD  2800  /* 左前：これより大きければ手がかざされている（仮） */
 #define FRONT_RIGHT_HAND_THRESHOLD 2000  /* 右前：同じく（仮） */
 
@@ -90,36 +100,60 @@ bool wall_ctrl_has_wall_right(void)
   return false;
 }
 
-/* 横の壁からのずれ（+ なら左の壁に近い）。
- * 両方に壁があれば (左 − 左の目標) − (右 − 右の目標)、片方だけなら、その壁のずれを 2 倍にする
- * （両方のときと、同じずれで同じくらいの大きさになるように）。どちらにも壁がなければ 0 */
+/* 左の壁を、壁に沿って走る補正に使えるか（値がまん中の値に近いか） */
+static bool can_use_left_wall(void)
+{
+  if (wall_ctrl_get_left() > LEFT_WALL_CONTROL_MIN) {
+    return true;
+  }
+  return false;
+}
+
+/* 右の壁を、壁に沿って走る補正に使えるか */
+static bool can_use_right_wall(void)
+{
+  if (wall_ctrl_get_right() > RIGHT_WALL_CONTROL_MIN) {
+    return true;
+  }
+  return false;
+}
+
+/* 横の壁からのずれ（+ なら左の壁に近い）。上限は ±SIDE_ERROR_LIMIT。
+ * 両方の壁が使えれば (左 − 左の目標) − (右 − 右の目標)、片方だけなら、その壁のずれを 2 倍にする
+ * （両方のときと、同じずれで同じくらいの大きさになるように）。どちらも使えなければ 0 */
 float wall_ctrl_get_side_error(void)
 {
   float left_error = wall_ctrl_get_left() - LEFT_WALL_REFERENCE;
   float right_error = wall_ctrl_get_right() - RIGHT_WALL_REFERENCE;
-  bool left = wall_ctrl_has_wall_left();
-  bool right = wall_ctrl_has_wall_right();
+  bool left = can_use_left_wall();
+  bool right = can_use_right_wall();
 
+  float error = 0.0f;
   if (left && right) {
-    return left_error - right_error;
+    error = left_error - right_error;
+  } else if (left) {
+    error = 2.0f * left_error;
+  } else if (right) {
+    error = -2.0f * right_error;
   }
-  if (left) {
-    return 2.0f * left_error;
+
+  if (error > SIDE_ERROR_LIMIT) {
+    error = SIDE_ERROR_LIMIT;
   }
-  if (right) {
-    return -2.0f * right_error;
+  if (error < -SIDE_ERROR_LIMIT) {
+    error = -SIDE_ERROR_LIMIT;
   }
-  return 0.0f;
+  return error;
 }
 
 /* 横の壁からのずれを求めるのに使う壁（0 なし、1 左、2 右、3 両方。ログに残す） */
 int wall_ctrl_get_side_walls_used(void)
 {
   int used = 0;
-  if (wall_ctrl_has_wall_left()) {
+  if (can_use_left_wall()) {
     used = used + 1;
   }
-  if (wall_ctrl_has_wall_right()) {
+  if (can_use_right_wall()) {
     used = used + 2;
   }
   return used;

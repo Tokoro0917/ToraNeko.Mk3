@@ -61,8 +61,9 @@
  * 300mm/s で、ゆれが早く収まるように計算した値（減衰比 0.7） */
 #define WALL_KD 0.008f
 
-/* 補正で曲げる角速度の上限 [deg/s] */
-#define WALL_OMEGA_LIMIT_DEG_S 90.0f
+/* 補正で曲げる角速度の上限 [deg/s]。2026-10-24 の探索で、壁の端で読み違えて 90deg/s まで曲げ、
+ * 壁に当たったので、45deg/s に下げた */
+#define WALL_OMEGA_LIMIT_DEG_S 45.0f
 
 /* これより遅いときは補正しない [mm/s]（止まる直前・走り出しは、センサの値が目標から離れていても気にしない） */
 #define WALL_CONTROL_MIN_SPEED_MM_S 100.0f
