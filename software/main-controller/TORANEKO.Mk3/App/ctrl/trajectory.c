@@ -18,6 +18,12 @@
  * v = √(v_end² + 2a × r) で決める（ちょうど残りの量で v_end になる速さ）。
  * 0.5ms ごとに少しずつ減らすより、ぴったり終わりの位置で止まれる。
  *
+ * ■ 動きと動きのあいだに進んだ距離
+ * 探索では、区画の入口に着いて動きが終わってから、次の動きを頼まれるまでに、壁の記録と行き先の計算で
+ * 30〜40ms かかる。そのあいだも機体は終わりの速さ（300mm/s）で進み続けるので、10mm ほど進んでしまう
+ * （2026-10-24 の探索のログで、曲がり始めが毎回 10〜13mm 遅れ、壁に当たりかけて気づいた）。
+ * そこで、動いていないあいだに進んだ距離（s_overrun_mm）も数えておき、次の直進の距離からその分を引く。
+ *
  * ■ 旋回の向き
  * 右回り（角度がマイナス）のときは、中では + の量として計算し、取り出すときに - をかける。
  *
@@ -32,6 +38,8 @@
 
 #include "config/robot_params.h"
 
+#define MIN_DISTANCE_MM 0.01f  /* 直進の距離のいちばん小さい値 [mm]（あいだに進んだ分を引いて 0 以下になったとき） */
+
 /* 割り込みの中で書き換える（volatile の理由は sys/scheduler.c の先頭のコメント） */
 static volatile bool s_running = false;    /* 動きの途中か */
 static volatile trajectory_kind_t s_kind = TRAJECTORY_STRAIGHT;  /* 今の動きの種類 */
@@ -40,6 +48,7 @@ static volatile float s_direction = 1.0f;  /* 旋回の向き（左回り 1、�
 static volatile float s_speed = 0.0f;      /* 今の目標の速さ（直進は mm/s、旋回は deg/s。いつも + ） */
 static volatile float s_accel = 0.0f;      /* 今の目標の加速度（加速中 +、減速中 -、それ以外 0） */
 static volatile float s_amount = 0.0f;     /* この動きで進んだ量（直進は mm、旋回は deg。いつも + ） */
+static volatile float s_overrun_mm = 0.0f; /* 動きが終わってから、次の動きを始めるまでに進んだ距離 [mm] */
 
 /* 動きの決まり（trajectory_start_*() で決める） */
 static volatile float s_goal_amount = 0.0f;
@@ -57,6 +66,7 @@ void trajectory_reset(void)
   s_speed = 0.0f;
   s_accel = 0.0f;
   s_amount = 0.0f;
+  s_overrun_mm = 0.0f;
 }
 
 /* まっすぐ distance_mm 進む動きを始める。今の目標の速さから始め、最高速 max_speed_mm_s まで
@@ -66,6 +76,12 @@ void trajectory_start_straight(float distance_mm, float max_speed_mm_s, float en
   s_running = false;  /* 書いているあいだは、割り込みに使わせない */
   s_speed = trajectory_get_speed_mm_s();  /* 今の、前に進む目標の速さから始める（その場旋回のあとは 0、スラロームのあとはその速さ） */
   s_kind = TRAJECTORY_STRAIGHT;
+  /* 前の動きが終わってから進んでしまった分を引く。引きすぎて 0 以下になったら、すぐに終わるように少しだけにする */
+  distance_mm = distance_mm - s_overrun_mm;
+  s_overrun_mm = 0.0f;
+  if (distance_mm < MIN_DISTANCE_MM) {
+    distance_mm = MIN_DISTANCE_MM;
+  }
   s_direction = 1.0f;
   s_goal_amount = distance_mm;
   s_max_speed = max_speed_mm_s;
@@ -82,6 +98,7 @@ void trajectory_start_pivot(float angle_deg, float max_omega_deg_s, float alpha_
   s_running = false;  /* 書いているあいだは、割り込みに使わせない */
   s_kind = TRAJECTORY_PIVOT;
   s_forward_speed_mm_s = 0.0f;
+  s_overrun_mm = 0.0f;  /* その場旋回は止まったところから始めるので、進んだ分はない */
   if (angle_deg >= 0.0f) {
     s_direction = 1.0f;
     s_goal_amount = angle_deg;
@@ -105,6 +122,7 @@ void trajectory_start_slalom(float angle_deg, float speed_mm_s, float max_omega_
   s_running = false;  /* 書いているあいだは、割り込みに使わせない */
   s_kind = TRAJECTORY_SLALOM;
   s_forward_speed_mm_s = speed_mm_s;
+  s_overrun_mm = 0.0f;  /* スラロームの前は前距離の直進なので、あいだに進んだ分は、その直進で引いてある */
   if (angle_deg >= 0.0f) {
     s_direction = 1.0f;
     s_goal_amount = angle_deg;
@@ -156,6 +174,8 @@ static void update_speed(void)
 void trajectory_update(void)
 {
   if (!s_running) {
+    /* 動いていないあいだも、前に進む目標の速さが 0 でなければ、その分だけ進んだ距離を数えておく */
+    s_overrun_mm = s_overrun_mm + trajectory_get_speed_mm_s() * CTRL_PERIOD_S;
     return;
   }
   update_speed();

@@ -11,6 +11,7 @@
  *   3. 終わりの速さが 0 でないとき（その速さで終わり、次の動きはその速さから始まる）
  *   4. その場旋回：左に 180°、右に 90°（角速度の向き、ちょうどの角度で止まる、直進の値は 0 のまま）
  *   5. 旋回のあとの直進は、止まったところから始まる
+ *   7. 動きと動きのあいだ（探索の計算のあいだ）に進んだ分は、次の直進から引く
  *   6. スラローム：前に進む速さは一定のまま、角速度を台形にして 90° 曲がる。曲がったあとの直進は、その速さから始まる
  */
 #include <math.h>
@@ -211,6 +212,47 @@ static void test_slalom(void)
         "45mm で止まる（1000mm/s² で、ちょうど）");
 }
 
+/* 7. 1 区画（90mm）を 300mm/s のまま進み、30ms あいてから次の 1 区画を頼む。
+ *    あいだも 300mm/s で進む（9mm）ので、2 つ合わせて、ちょうど 180mm 進むはず */
+static void test_gap_between_moves(void)
+{
+  printf("[7] 動きと動きのあいだに進んだ分\n");
+  trajectory_reset();
+  trajectory_start_straight(90.0f, 300.0f, 300.0f, 1000.0f);
+  float total_mm = 0.0f;
+  int steps = 0;
+  while (!trajectory_is_done() && steps < MAX_STEPS) {
+    trajectory_update();
+    total_mm = total_mm + trajectory_get_speed_mm_s() * CTRL_PERIOD_S;
+    steps = steps + 1;
+  }
+  /* 30ms（60 周期）のあいだ、次の動きを頼まない（探索が計算しているあいだ） */
+  for (int i = 0; i < 60; i++) {
+    trajectory_update();
+    total_mm = total_mm + trajectory_get_speed_mm_s() * CTRL_PERIOD_S;
+  }
+  trajectory_start_straight(90.0f, 300.0f, 300.0f, 1000.0f);
+  steps = 0;
+  while (!trajectory_is_done() && steps < MAX_STEPS) {
+    trajectory_update();
+    total_mm = total_mm + trajectory_get_speed_mm_s() * CTRL_PERIOD_S;
+    steps = steps + 1;
+  }
+  printf("  2 つの直進とあいだで進んだ距離 %.2f mm（ちょうど 180mm になるはず）\n", total_mm);
+  check(fabsf(total_mm - 180.0f) < 0.5f, "あいだに進んだ分を、次の直進から引いている（合わせて 180mm ±0.5mm）");
+
+  /* 止まったあと（終わりの速さ 0）は、あいだに進まないので、次の直進は引かない */
+  trajectory_reset();
+  trajectory_start_straight(45.0f, 300.0f, 0.0f, 1000.0f);
+  run_until_done();
+  for (int i = 0; i < 60; i++) {
+    trajectory_update();
+  }
+  trajectory_start_straight(45.0f, 300.0f, 0.0f, 1000.0f);
+  run_until_done();
+  check(fabsf(trajectory_get_distance_mm() - 45.0f) < 0.001f, "止まったあとの直進は、引かずにそのまま 45mm 進む");
+}
+
 int main(void)
 {
   test_trapezoid();
@@ -219,6 +261,7 @@ int main(void)
   test_pivot();
   test_straight_after_pivot();
   test_slalom();
+  test_gap_between_moves();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");
