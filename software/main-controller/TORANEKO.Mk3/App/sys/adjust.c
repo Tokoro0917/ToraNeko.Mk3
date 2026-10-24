@@ -18,7 +18,8 @@
  *
  * ■ モード2 No.2 U ターン（adjust_uturn）
  * 区画のまん中に置き、前の区画が行き止まり（その区画の前に壁がある）になるようにして始める。
- * 前の区画へ進んでまん中で止まり、前壁合わせ（0.5 秒）をして、その場で 180° 回り、元の区画のまん中まで戻って止まる。
+ * 前の区画へ進んでまん中で止まり、前壁合わせ（0.5 秒）→ 左に 90° → 前壁合わせ → 左に 90° で反対を向き、
+ * 元の区画のまん中まで戻って止まる。
  * 探索の U ターンと同じ動き（ctrl/run.c の関数を使う）。元の区画のまん中で、反対を向いて止まれば合っている
  *
  * ■ モード2 No.5 壁合わせだけ（adjust_front_align）
@@ -306,7 +307,7 @@ void adjust_uturn(void)
   control_set_wall_control(true);  /* 探索と同じく、横の壁に沿って走る補正を入れる */
   run_search_go_from_center(RUN_TURN_NONE);   /* 次の区画の入口へ（前に壁がなければ、そのまま発進） */
   run_search_stop_at_center();                /* 行き止まりの区画のまん中で止まる */
-  run_search_go_from_center(RUN_TURN_BACK);   /* 前壁合わせ → 180° → 元の区画の入口へ */
+  run_search_go_from_center(RUN_TURN_BACK);   /* 前壁合わせ → 90° → 前壁合わせ → 90° → 元の区画の入口へ */
   run_search_stop_at_center();                /* 元の区画のまん中で止まる */
   control_stop();
   control_set_wall_control(false);

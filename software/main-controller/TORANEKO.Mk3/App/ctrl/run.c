@@ -13,14 +13,17 @@
  *   直進       ：1 区画（90mm）を 300mm/s のまま進む
  *   左・右     ：前距離 → スラローム 90° → 後距離 で、左・右の区画の入口へ（モード2 No.1 で確かめた値）
  *   止まる     ：入口から 45mm 進みながら止まり、まん中で止まる。モーターの出力を 0 にしてから戻る
- *   向きを変えて発進：その場で 90°・180° 回ってから（回らないこともある）、45mm 進みながら速くして、入口へ
+ *   向きを変えて発進：その場で 90° 回ってから（回らないこともある）、45mm 進みながら速くして、入口へ。
+ *                    U ターンは 90° を 2 回（左に 90° → 左に 90°）
  *
  * ■ 横の壁に沿って走る補正
  * 発進のときに入れる（ctrl/control.c）。直進のあいだだけ効く（スラローム・その場旋回のあいだは効かない）。
  *
  * ■ 前壁合わせ
  * 止まっているところから発進するとき（U ターンや、止まって計算したあと）、前に壁があれば、
- * 前の壁を使って位置と向きを ALIGN_TIME_MS（0.5 秒）直してから、向きを変える（ctrl/control.c）
+ * 前の壁を使って位置と向きを ALIGN_TIME_MS（0.5 秒）直してから、向きを変える（ctrl/control.c）。
+ * U ターンでは、1 回目の 90° のあとにも、前（もとの横）に壁があれば、もう一度合わせる。
+ * 行き止まりなら、前の壁で前後と向き、横の壁で左右と向きが直る
  *
  * ■ フェイルセーフ（run.h の約束 3）
  * 動きの途中でフェイルセーフで止まったら、すぐに戻る。止まっているあいだに呼ばれたら、何もせずにすぐ戻る。
@@ -124,6 +127,15 @@ static void align_to_front_wall(void)
   control_set_front_align(false);
 }
 
+/* 前に壁があれば前壁合わせをして、直した向きを、まっすぐの向きにし直す（止まっているときに呼ぶ） */
+static void align_if_front_wall(void)
+{
+  if (wall_ctrl_has_wall_front()) {
+    align_to_front_wall();
+    control_start();  /* 直した向きを、まっすぐの向きにし直す */
+  }
+}
+
 /* スタート区画から走り出し、北隣の区画 (0, 1) の入口の辺まで進む。
  * スタート区画では、機体のお尻を後ろの壁に付けて置く（タイヤの軸は区画のまん中より START_OFFSET_MM 後ろ） */
 void run_search_start(void)
@@ -183,23 +195,22 @@ void run_search_stop_at_center(void)
 }
 
 /* 止まっている → 前に壁があれば前壁合わせをして、その場で向きを変えて（turn）、
- * 次の区画の入口の辺まで、速くしながら進む */
+ * 次の区画の入口の辺まで、速くしながら進む。U ターンは、左に 90° 回るたびに、前に壁があれば前壁合わせをする */
 void run_search_go_from_center(run_turn_t turn)
 {
   if (failsafe_is_stopped()) {
     return;
   }
   control_start();  /* 止まっているので、制御を始め直す */
-  if (wall_ctrl_has_wall_front()) {
-    align_to_front_wall();
-    control_start();  /* 直した向きを、まっすぐの向きにし直す */
-  }
+  align_if_front_wall();
   if (turn == RUN_TURN_LEFT) {
     pivot(90.0f);
   } else if (turn == RUN_TURN_RIGHT) {
     pivot(-90.0f);
   } else if (turn == RUN_TURN_BACK) {
-    pivot(180.0f);
+    pivot(90.0f);           /* 1 回目の 90°。前には、もとの右の壁が来る */
+    align_if_front_wall();
+    pivot(90.0f);           /* 2 回目の 90°。これで反対を向く */
   }
   go_straight(HALF_CELL_MM);
   mark_return();

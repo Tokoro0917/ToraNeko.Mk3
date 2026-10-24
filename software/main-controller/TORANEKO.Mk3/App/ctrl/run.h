@@ -37,7 +37,7 @@ typedef enum {
   RUN_TURN_NONE,   /* 向きを変えずに発進する */
   RUN_TURN_LEFT,   /* その場で左に 90° 回ってから発進する */
   RUN_TURN_RIGHT,  /* その場で右に 90° 回ってから発進する */
-  RUN_TURN_BACK,   /* その場で 180° 回ってから発進する（U ターン） */
+  RUN_TURN_BACK,   /* その場で左に 90° を 2 回回ってから発進する（U ターン。回るたびに、前に壁があれば前壁合わせ） */
 } run_turn_t;
 
 void run_search_start(void);
