@@ -355,28 +355,17 @@ static void convert_to_diagonal(path_t *src, path_t *dst)
  * 最短経路
  * ======================================================================== */
 
-/* 最短経路を作る（KOGUMA の Maze_Dijkstra_Calculation → Shortest_Pass_Compression → _NANAME）。
- *
- *   1. ダイクストラで、スタートからゴールまでの通る区画を探す（まだ見ていない壁は「ある」とみなす）
- *   2. 区画の並びを、1 区画ずつの動き（直進・左・右）にする
- *   3. 最後に、ゴールの最初の区画の真ん中まで半区画進んで止まる
- *   4. 大回りに置き換える → 斜めに置き換える
- *
- * 経路は、スタートの区画 (0,0) の南の辺（入口）から北向きに始まる。
- * 実際のロボットは区画の後ろの壁にお尻をつけて置くので、そのずれは走る側（ctrl/run.c）で足す。
- * ゴールにたどり着けなければ false。 */
-bool path_make_shortest(int goal_x, int goal_y, int goal_width, int goal_height, path_t *path)
+/* ダイクストラで道を探し、1 区画ずつの動き（直進・探索用の左右のターン）にして raw に入れる
+ * （下の 2 つの関数の 1〜3）。raw の end_x・end_y・end_dir には、ゴールの最初の区画と、そのときの向きが入る。
+ * ゴールにたどり着けなければ false */
+static bool make_small_turn_route(int goal_x, int goal_y, int goal_width, int goal_height, path_t *raw)
 {
-  path_t *raw = &s_work_a;       /* 1 区画ずつの動き */
-  path_t *big_turn = &s_work_b;  /* 大回りに置き換えたもの */
-
-  path_clear(path);
+  path_clear(raw);
   if (!dijkstra_find_route(goal_x, goal_y, goal_width, goal_height, true)) {
     return false;
   }
 
   /* 2. 区画の並び → 1 区画ずつの動き */
-  path_clear(raw);
   direction_t dir = DIR_NORTH;
   int length = dijkstra_get_route_length();
   for (int i = 0; i + 1 < length; i++) {
@@ -404,12 +393,46 @@ bool path_make_shortest(int goal_x, int goal_y, int goal_width, int goal_height,
     return false;  /* 経路が長すぎて入りきらなかった（普通は起きない） */
   }
 
+  raw->end_x = dijkstra_get_route_x(length - 1);
+  raw->end_y = dijkstra_get_route_y(length - 1);
+  raw->end_dir = dir;
+  return true;
+}
+
+/* 最短経路を作る（KOGUMA の Maze_Dijkstra_Calculation → Shortest_Pass_Compression → _NANAME）。
+ *
+ *   1. ダイクストラで、スタートからゴールまでの通る区画を探す（まだ見ていない壁は「ある」とみなす）
+ *   2. 区画の並びを、1 区画ずつの動き（直進・左・右）にする
+ *   3. 最後に、ゴールの最初の区画の真ん中まで半区画進んで止まる
+ *   4. 大回りに置き換える → 斜めに置き換える
+ *
+ * 経路は、スタートの区画 (0,0) の南の辺（入口）から北向きに始まる。
+ * 実際のロボットは区画の後ろの壁にお尻をつけて置くので、そのずれは走る側（ctrl/run.c）で足す。
+ * ゴールにたどり着けなければ false。 */
+bool path_make_shortest(int goal_x, int goal_y, int goal_width, int goal_height, path_t *path)
+{
+  path_t *raw = &s_work_a;       /* 1 区画ずつの動き */
+  path_t *big_turn = &s_work_b;  /* 大回りに置き換えたもの */
+
+  path_clear(path);
+  if (!make_small_turn_route(goal_x, goal_y, goal_width, goal_height, raw)) {
+    return false;
+  }
+
   /* 4. 大回り → 斜め */
   convert_to_big_turns(raw, big_turn);
   convert_to_diagonal(big_turn, path);
 
-  path->end_x = dijkstra_get_route_x(length - 1);
-  path->end_y = dijkstra_get_route_y(length - 1);
-  path->end_dir = dir;
+  path->end_x = raw->end_x;
+  path->end_y = raw->end_y;
+  path->end_dir = raw->end_dir;
   return true;
+}
+
+/* 最短経路を、探索用の小回りのターンだけで作る（path_make_shortest() の 1〜3 だけ。大回り・斜めにしない）。
+ * 大回りと斜めの動きを実機で合わせるまでの、最短走行（モード1）で使う。
+ * 通る区画は path_make_shortest() と同じ。ゴールにたどり着けなければ false */
+bool path_make_shortest_small_turn(int goal_x, int goal_y, int goal_width, int goal_height, path_t *path)
+{
+  return make_small_turn_route(goal_x, goal_y, goal_width, goal_height, path);
 }

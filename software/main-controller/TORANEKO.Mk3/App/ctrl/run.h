@@ -47,6 +47,18 @@ void run_search_turn_right(void);
 void run_search_stop_at_center(void);
 void run_search_go_from_center(run_turn_t turn);
 
+/* 最短走行（モード1。sys/shortest.c）の動き。曲がるところは探索と同じスラロームで、直進だけ速く走る。
+ *   run_fast_start()                       制御とログを始める（動かない）
+ *   run_fast_straight(距離, 最高速, 加速度) ターンの速さで終わる直進（止まっているところからでもよい）
+ *   run_fast_turn_left()・_right()          ターンの速さで、スラローム 90°
+ *   run_fast_stop(距離, 最高速, 加速度)     進みながら止まり、モーターの出力を 0 にして、ログを止める
+ * フェイルセーフで止まったときは、探索と同じく、すぐに戻る */
+void run_fast_start(void);
+void run_fast_straight(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
+void run_fast_turn_left(void);
+void run_fast_turn_right(void);
+void run_fast_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
+
 /* 走っているあいだに、動きが戻ってから次の動きを頼まれるまでの、いちばん長かった時間 [µs]（発進してから）。
  * 探索の計算が長すぎないかを確かめる（300mm/s では 1ms で 0.3mm 進む）。モード7 No.1 で出す */
 uint32_t run_get_longest_wait_us(void);

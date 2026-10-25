@@ -34,6 +34,18 @@
 #define SLALOM_PRE_MM  4.6f
 #define SLALOM_POST_MM 4.7f
 
+/* ---- 最短走行（モード1）の直進。曲がるところは探索と同じスラローム（300mm/s） ---- */
+
+/* No.1：探索と同じ速さ（道を確かめる） */
+#define SHORTEST1_MAX_SPEED_MM_S 300.0f   /* 直進の最高速 [mm/s] */
+#define SHORTEST1_ACCEL_MM_S2    1000.0f  /* 直進の加速度 [mm/s²] */
+/* No.2 */
+#define SHORTEST2_MAX_SPEED_MM_S 600.0f
+#define SHORTEST2_ACCEL_MM_S2    2000.0f
+/* No.3 */
+#define SHORTEST3_MAX_SPEED_MM_S 1000.0f
+#define SHORTEST3_ACCEL_MM_S2    3000.0f
+
 /* ---- その場旋回 ---- */
 
 #define PIVOT_OMEGA_DEG_S  720.0f   /* 最高の角速度 [deg/s]（KOGUMA は 2000。まずゆっくり） */

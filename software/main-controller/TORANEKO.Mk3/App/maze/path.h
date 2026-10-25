@@ -67,5 +67,6 @@ typedef struct {
 
 void path_make_known(int x, int y, direction_t dir, path_t *path);
 bool path_make_shortest(int goal_x, int goal_y, int goal_width, int goal_height, path_t *path);
+bool path_make_shortest_small_turn(int goal_x, int goal_y, int goal_width, int goal_height, path_t *path);
 
 #endif /* MAZE_PATH_H */

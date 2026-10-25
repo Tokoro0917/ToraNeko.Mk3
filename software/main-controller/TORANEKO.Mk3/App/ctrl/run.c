@@ -16,6 +16,12 @@
  *   向きを変えて発進：その場で 90° 回ってから（回らないこともある）、45mm 進みながら速くして、入口へ。
  *                    U ターンは 90° を 2 回（左に 90° → 左に 90°）
  *
+ * ■ 最短走行の動き（モード1。sys/shortest.c が使う）
+ *   発進       ：制御を始めるだけ（動かない）。すぐあとに直進を頼む
+ *   直進       ：決めた距離を、最高速まで速くしてから、ターンの速さ（探索と同じ 300mm/s）まで遅くして進む
+ *   左・右     ：探索と同じスラローム（前距離 → 90° → 後距離）
+ *   止まる     ：決めた距離を進みながら止まり、モーターの出力を 0 にする
+ *
  * ■ 横の壁に沿って走る補正
  * 発進のときに入れる（ctrl/control.c）。直進のあいだだけ効く（スラローム・その場旋回のあいだは効かない）。
  *
@@ -136,6 +142,17 @@ static void align_if_front_wall(void)
   }
 }
 
+/* 制御とログを始める（探索と最短走行の発進で使う）。横の壁に沿って走る補正も入れる */
+static void start_control(void)
+{
+  imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒。電源を入れたときに手で動かしていてもよいように） */
+  s_waiting = false;
+  s_longest_wait_us = 0;
+  log_start(SEARCH_LOG_INTERVAL_MS);
+  control_set_wall_control(true);  /* 横の壁に沿って走る補正を入れる */
+  control_start();
+}
+
 /* スタート区画から走り出し、北隣の区画 (0, 1) の入口の辺まで進む。
  * スタート区画では、機体のお尻を後ろの壁に付けて置く（タイヤの軸は区画のまん中より START_OFFSET_MM 後ろ） */
 void run_search_start(void)
@@ -143,12 +160,7 @@ void run_search_start(void)
   if (failsafe_is_stopped()) {
     return;
   }
-  imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒。電源を入れたときに手で動かしていてもよいように） */
-  s_waiting = false;
-  s_longest_wait_us = 0;
-  log_start(SEARCH_LOG_INTERVAL_MS);
-  control_set_wall_control(true);  /* 探索では、横の壁に沿って走る補正を入れる */
-  control_start();
+  start_control();
   go_straight(START_OFFSET_MM + HALF_CELL_MM);
   mark_return();
 }
@@ -214,4 +226,54 @@ void run_search_go_from_center(run_turn_t turn)
   }
   go_straight(HALF_CELL_MM);
   mark_return();
+}
+
+/* ---------------------------------------------------------------------------
+ * 最短走行の動き（モード1。sys/shortest.c が使う）
+ * ------------------------------------------------------------------------- */
+
+/* 最短走行を始める。ジャイロのゼロ点を測り直して、制御とログを始める（機体はまだ動かない） */
+void run_fast_start(void)
+{
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  start_control();
+}
+
+/* distance_mm まっすぐ進む。max_speed_mm_s まで速くしてから、ターンの速さ（探索の速さ）まで遅くして戻る */
+void run_fast_straight(float distance_mm, float max_speed_mm_s, float accel_mm_s2)
+{
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  trajectory_start_straight(distance_mm, max_speed_mm_s, SEARCH_SPEED_MM_S, accel_mm_s2);
+  wait_until_done();
+}
+
+/* ターンの速さで走っている → 探索と同じスラロームで左 90° */
+void run_fast_turn_left(void)
+{
+  slalom(SLALOM_ANGLE_DEG);
+}
+
+/* ターンの速さで走っている → 探索と同じスラロームで右 90° */
+void run_fast_turn_right(void)
+{
+  slalom(-SLALOM_ANGLE_DEG);
+}
+
+/* distance_mm 進みながら止まり（max_speed_mm_s まで速くしてもよい）、モーターの出力を 0 にして、ログを止める */
+void run_fast_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2)
+{
+  if (!failsafe_is_stopped()) {
+    trajectory_start_straight(distance_mm, max_speed_mm_s, 0.0f, accel_mm_s2);
+    wait_until_done();
+  }
+  if (!failsafe_is_stopped()) {
+    timebase_wait_ms(STOP_SETTLE_MS);  /* 目標の速さ 0 のまま制御を続けて、ぴたりと止める */
+  }
+  control_stop();
+  control_set_wall_control(false);
+  log_stop();
 }

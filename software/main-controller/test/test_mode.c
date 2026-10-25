@@ -41,6 +41,7 @@
 #include "sys/goal.h"
 #include "sys/mode.h"
 #include "sys/output.h"
+#include "sys/shortest.h"
 #include "sys/ui.h"
 
 /* ---------------------------------------------------------------------------
@@ -231,6 +232,12 @@ static int s_output_goal_x = 0;   /* 出力に渡されたゴール */
 static int s_output_goal_y = 0;
 
 static explore_result_t s_explore_result = EXPLORE_RESULT_DONE;  /* 探索が返す結果 */
+static bool s_shortest_route = true;        /* 最短走行の道があることにするか */
+static int s_shortest_count = 0;            /* 最短走行が呼ばれた回数 */
+static int s_shortest_number = 0;           /* 最短走行に渡された No. */
+static int s_shortest_goal_x = -1;          /* 最短走行に渡されたゴール */
+static int s_shortest_goal_y = -1;
+static uint32_t s_shortest_time_ms = 0;     /* 最短走行が呼ばれた時刻 */
 static int s_explore_count = 0;           /* 探索が呼ばれた回数 */
 static explore_type_t s_explore_type = EXPLORE_ROUND_TRIP;
 static int s_explore_goal[4];             /* 渡されたゴール（x、y、幅、高さ） */
@@ -273,6 +280,12 @@ static void reset_world(void)
   s_output_count = 0;
   s_explore_result = EXPLORE_RESULT_DONE;
   s_explore_count = 0;
+  s_shortest_route = true;
+  s_shortest_count = 0;
+  s_shortest_number = 0;
+  s_shortest_goal_x = -1;
+  s_shortest_goal_y = -1;
+  s_shortest_time_ms = 0;
   s_explore_time_ms = 0;
 }
 
@@ -469,6 +482,25 @@ explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int go
   s_left_count = s_left_count + 100000;
   s_right_count = s_right_count + 77777;
   return s_explore_result;
+}
+
+/* 最短走行の道があるか：決めておいた答えを返す */
+bool shortest_has_route(int goal_x, int goal_y)
+{
+  (void)goal_x;  /* 使わない引数（(void) を付けると、使っていないという警告が出ない） */
+  (void)goal_y;
+  return s_shortest_route;
+}
+
+/* 最短走行：走らずに、呼ばれたことと、渡された値を覚える */
+shortest_result_t shortest_run(int number, int goal_x, int goal_y)
+{
+  s_shortest_count = s_shortest_count + 1;
+  s_shortest_number = number;
+  s_shortest_goal_x = goal_x;
+  s_shortest_goal_y = goal_y;
+  s_shortest_time_ms = s_now_ms;
+  return SHORTEST_RESULT_DONE;
 }
 
 /* ---------------------------------------------------------------------------
@@ -766,6 +798,44 @@ static void test_no_route(void)
   check(s_failsafe_clear_count == 0, "フェイルセーフの解除はしない");
 }
 
+/* 最短走行（モード1）は、スタート待ちのあとに、選んだ No. と今のゴールで走る */
+static void test_shortest(void)
+{
+  printf("[5] 最短走行\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 1);    /* モード1 */
+  rotate_right_at(100, 2);   /* No.2 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_shortest_count == 1, "最短走行が 1 回呼ばれる");
+  check(s_shortest_number == 2, "選んだ No. を渡す");
+  check(s_shortest_goal_x == goal_get_x() && s_shortest_goal_y == goal_get_y(), "今のゴールを渡す");
+  check(s_shortest_time_ms >= 3000, "スタート待ち（手を離して 1 秒）のあとに走る");
+  check(s_explore_count == 0, "探索は呼ばれない");
+}
+
+/* 最短走行で道がないときは、走らずに「できなかった」を出して選び直す */
+static void test_shortest_no_route(void)
+{
+  printf("[5] 最短走行で道がないとき\n");
+  reset_world();
+  mode_init();
+  s_shortest_route = false;
+
+  rotate_left_at(100, 1);    /* モード1 */
+  rotate_right_at(100, 1);   /* No.1 */
+  press_switch_at(500);      /* 決定 */
+  mode_run_once();
+
+  check(s_shortest_count == 0, "最短走行は呼ばれない");
+  check_leds_at(840, "1100011", "決定の点滅のあと、外側の 4 個が点く（できなかった）");
+  check_leds_at(920, "0000000", "速く点滅する（消えたところ）");
+}
+
 /* ---------------------------------------------------------------------------
  * 6. ログ出力、ゴールの位置の入力、迷路呼び出し、センサ値の表示
  * ------------------------------------------------------------------------- */
@@ -1034,6 +1104,8 @@ int main(void)
   test_sensor_view();
   test_encoder_cal();
   test_sensor_record();
+  test_shortest();
+  test_shortest_no_route();
   test_straight();
   test_pivot();
   test_slalom();

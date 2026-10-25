@@ -909,6 +909,19 @@ static void check_shortest(const char *name)
   print_path(&s_path);
   check(replay_path(&s_path, 0, 0, DIR_NORTH, true), "最短経路が壁を通らず、経路の終わりの位置に着く");
   check(is_in_goal(s_path.end_x, s_path.end_y), "最短経路の終わりはゴールの中");
+
+  /* 小回りだけの最短経路（モード1 で今使うもの）も、同じ区画を通ってゴールに着く */
+  static path_t s_small;
+  int end_x = s_path.end_x;
+  int end_y = s_path.end_y;
+  check(path_make_shortest_small_turn(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &s_small),
+        "小回りだけの最短経路も見つかる");
+  check(replay_path(&s_small, 0, 0, DIR_NORTH, true), "小回りだけの最短経路が壁を通らず、経路の終わりの位置に着く");
+  check(s_small.end_x == end_x && s_small.end_y == end_y, "小回りだけの最短経路の終わりも同じ区画");
+  check(!path_has_diagonal(&s_small) && !path_has(&s_small, MOTION_BIG_TURN_LEFT_90)
+        && !path_has(&s_small, MOTION_BIG_TURN_RIGHT_90) && !path_has(&s_small, MOTION_BIG_TURN_LEFT_180)
+        && !path_has(&s_small, MOTION_BIG_TURN_RIGHT_180) && !path_has(&s_small, MOTION_UTURN),
+        "小回りだけの最短経路には、大回り・斜め・U ターンがない");
 }
 
 /* 中に壁がない迷路で、最短経路が斜めを使うかを調べる */
