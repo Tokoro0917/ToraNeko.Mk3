@@ -88,22 +88,29 @@ void sensor_record_run(void)
   ui_signal_ok();
 }
 
-/* 1 つのセンサの記録を 1 行出す */
+/* 1 つのセンサの記録を 1 行出す（センサの名前,平均,いちばん小さい値,いちばん大きい値） */
 static void print_stat(const char *name, const sensor_stat_t *stat)
 {
   float average = (float)stat->sum / RECORD_COUNT;  /* (float) で小数にしてから割る（整数どうしで割ると小数が切り捨てられる） */
-  printf("  %-2s average %7.1f  min %4ld  max %4ld\r\n", name, average, stat->min, stat->max);
+  printf("%s,%.1f,%ld,%ld\r\n", name, average, stat->min, stat->max);
 }
 
-/* 最後に測ったセンサの値をシリアルに出す。モード7 No.1（ログ出力）でも呼ぶ。まだ測っていなければ何も出さない */
+/* 最後に測ったセンサの値をシリアルに出す。モード7 No.1（ログ出力）でも呼ぶ。まだ測っていなければ何も出さない。
+ * ビューア（tools/viewer.html）が 1 つのデータとして受け取って保存できるように、次の形で出す。
+ *   #BEGIN SENSOR n=測った回数
+ *   sensor,average,min,max
+ *   FL,3243.9,3239,3249     （左前・左・右・右前の順）
+ *   #END SENSOR */
 void sensor_record_print(void)
 {
   if (!s_recorded) {
     return;
   }
-  printf("Sensor record (1 s, %d samples)\r\n", RECORD_COUNT);
+  printf("\r\n#BEGIN SENSOR n=%d\r\n", RECORD_COUNT);
+  printf("sensor,average,min,max\r\n");
   print_stat("FL", &s_front_left);
   print_stat("L", &s_left);
   print_stat("R", &s_right);
   print_stat("FR", &s_front_right);
+  printf("#END SENSOR\r\n");
 }

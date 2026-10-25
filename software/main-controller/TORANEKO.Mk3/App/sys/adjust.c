@@ -160,9 +160,8 @@ static void print_search_wait(void)
   }
 }
 
-/* 最後に走らせた動き（直進・その場旋回）の結果をシリアルに出す。モード7 No.1（ログ出力）でも呼ぶ。
- * 電源を切ると消える（走行ログと同じ） */
-void adjust_print_last_result(void)
+/* 最後に走らせた動き（直進・その場旋回・スラローム）の結果を出す。まだ何も走らせていなければ何も出さない */
+static void print_move_result(void)
 {
   if (s_result.kind == RESULT_STRAIGHT) {
     printf("Straight: target %.1f mm, encoder %.1f mm, angle %.2f deg\r\n",
@@ -174,7 +173,6 @@ void adjust_print_last_result(void)
     printf("Slalom: target %.1f deg, gyro %.2f deg, encoder %.1f mm\r\n",
            s_result.target, s_result.turned_deg, s_result.moved_mm);
   } else {
-    print_search_wait();
     return;  /* 調整の動きは、まだ何も走らせていない */
   }
   printf("  position error %.2f mm, angle error %.2f deg\r\n",
@@ -182,7 +180,20 @@ void adjust_print_last_result(void)
   if (s_result.failsafe) {
     printf("  stopped by failsafe\r\n");
   }
+}
+
+/* 最後に走らせた動きの結果と、探索の待ち時間をシリアルに出す。モード7 No.1（ログ出力）でも呼ぶ。
+ * ビューア（tools/viewer.html）が 1 つのデータとして受け取って保存できるように、
+ * #BEGIN RESULT と #END RESULT ではさむ。出すものがなければ何も出さない。電源を切ると消える（走行ログと同じ） */
+void adjust_print_last_result(void)
+{
+  if (s_result.kind == RESULT_NONE && run_get_longest_wait_us() == 0) {
+    return;
+  }
+  printf("\r\n#BEGIN RESULT\r\n");
+  print_move_result();
   print_search_wait();
+  printf("#END RESULT\r\n");
 }
 
 /* モード6 No.1 直進：ゆっくり 360mm まっすぐ走って止まる（流れは先頭のコメント） */

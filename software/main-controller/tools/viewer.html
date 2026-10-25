@@ -1,0 +1,1560 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ToraNeko ビューア</title>
+<!--
+  ToraNeko.Mk3 のUART出力を、そのままグラフ・表・迷路にするページ。
+  KOGUMA MkIIl のビューア(software/reference/koguma-mkiil/tools/viewer.html、2026-10-12)を写して、
+  ToraNeko 用に直したもの(2026-10-25):
+    - 種類 SENSOR(センサ値の記録、モード5 No.2)と RESULT(調整の動きの結果)を足した
+    - 「メモ」に書いたこと(例: R 64mm)を、保存するファイルの名前と中身に入れる
+    - 横の壁までの距離は区画中心で 42mm、電圧は V
+  ネットは使わない(外から何も読み込まない)。Windows + Chrome / Edge で、このファイルを開いて使う。
+
+  - 「接続」: USBシリアル(115200)を Web Serial で読む。Tera Term は閉じておく(同じCOMポートは1つしか開けない)
+  - 「保存先フォルダ」: 選ぶと、届いたデータを1つずつファイルにして自動で保存する(リポジトリの logs/ を選ぶとよい)
+  - 「ファイルを開く」: 保存したファイルや、Tera Term のログを読み込んで表示する
+
+  ロボットの出力は、#BEGIN 種類 項目=値 ... で始まり #END 種類 で終わる(LOG / MAZE / SENSOR / RESULT。
+  EDGE / CENTER / NOISE は KOGUMA のもので、ToraNeko はまだ出さない)。形は ../logs/README.md を見る。
+-->
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f2f1ed;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #eda100;
+  --s7: #6250d6;
+  --good: #006300;
+  --bad: #c62828;
+  --sel: rgba(42,120,214,0.12);
+  --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #222220;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #c98500;
+    --s7: #9085e9;
+    --good: #0ca30c;
+    --bad: #e66767;
+    --sel: rgba(57,135,229,0.18);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #222220;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255,255,255,0.10);
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --s4: #c98500;
+  --s7: #9085e9;
+  --good: #0ca30c;
+  --bad: #e66767;
+  --sel: rgba(57,135,229,0.18);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--page); color: var(--ink); font: 14px/1.5 var(--sans); }
+button, select, input { font: inherit; color: inherit; }
+button {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 4px 12px; cursor: pointer;
+}
+button:hover { background: var(--surface-2); }
+button.primary { background: var(--s1); color: #fff; border-color: transparent; }
+button:disabled { opacity: .5; cursor: default; }
+.app { display: grid; grid-template-rows: auto 1fr auto; height: 100%; }
+header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface);
+}
+header h1 { font-size: 16px; margin: 0 12px 0 0; }
+.pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); }
+.pill.on { color: var(--good); }
+.spacer { flex: 1; }
+.main { display: grid; grid-template-columns: 260px 1fr; min-height: 0; }
+aside { border-right: 1px solid var(--border); overflow: auto; background: var(--surface); }
+aside .head { padding: 8px 12px; font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
+.blk { padding: 8px 12px; border-top: 1px solid var(--border); cursor: pointer; }
+.blk:hover { background: var(--surface-2); }
+.blk.sel { background: var(--sel); }
+.blk .t { font-weight: 600; }
+.blk .s { font-size: 12px; color: var(--ink-2); }
+.blk .cmp { font-size: 12px; color: var(--muted); }
+.view { overflow: auto; padding: 16px; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
+.card h2 { font-size: 15px; margin: 0 0 8px; }
+.card h3 { font-size: 13px; margin: 12px 0 4px; color: var(--ink-2); }
+.note { font-size: 12px; color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+table { border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { padding: 4px 10px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; }
+th { color: var(--ink-2); font-weight: 600; }
+td.l, th.l { text-align: left; }
+pre { font: 12px/1.45 var(--mono); margin: 0; white-space: pre; overflow: auto; }
+.chart { position: relative; margin-bottom: 4px; }
+.chart canvas { display: block; width: 100%; }
+.chart .title { font-size: 12px; color: var(--ink-2); display: flex; gap: 12px; align-items: center; }
+.key { display: inline-flex; align-items: center; gap: 4px; }
+.key i { display: inline-block; width: 14px; height: 0; border-top: 2px solid; }
+.key i.dash { border-top-style: dashed; }
+.key i.dot { width: 8px; height: 8px; border-radius: 50%; border: none; }
+.tip {
+  position: fixed; pointer-events: none; z-index: 10; display: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.15);
+  font-variant-numeric: tabular-nums;
+}
+.tip b { color: var(--ink); }
+.tip .n { color: var(--ink-2); }
+footer { border-top: 1px solid var(--border); background: var(--surface); }
+footer .bar { display: flex; gap: 8px; align-items: center; padding: 4px 16px; font-size: 12px; color: var(--muted); }
+#console { height: 160px; overflow: auto; padding: 4px 16px 8px; border-top: 1px solid var(--grid); }
+#console.hide { display: none; }
+.empty { color: var(--muted); padding: 40px; text-align: center; }
+.copyline { display: flex; gap: 8px; align-items: center; margin: 2px 0; }
+.copyline code { font: 12px var(--mono); background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
+.warn { color: var(--bad); }
+.maze-wrap { display: flex; flex-wrap: wrap; gap: 16px; }
+.maze-wrap canvas { background: var(--surface); }
+.zoomreset { font-size: 12px; padding: 2px 10px; }
+.tile { background: var(--surface-2); border-radius: 6px; padding: 4px 12px; min-width: 72px; }
+.tile b { font-size: 18px; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>ToraNeko ビューア</h1>
+    <button id="bConnect" class="primary">接続</button>
+    <button id="bDisconnect" disabled>切断</button>
+    <span id="status" class="pill">未接続</span>
+    <button id="bDir">保存先フォルダ</button>
+    <span id="dirName" class="pill">保存しない</span>
+    <input id="memo" type="text" placeholder="メモ(例: R 64mm)" title="ここに書いたことを、次に届いたデータのファイル名と中身に入れる" style="width:12em">
+    <button id="bOpen">ファイルを開く</button>
+    <input id="fOpen" type="file" multiple accept=".txt,.log,.csv" hidden>
+    <span class="spacer"></span>
+    <button id="bSession" title="このページを開いてから届いたものを全部、1つのファイルにする">ぜんぶ保存</button>
+  </header>
+  <div class="main">
+    <aside>
+      <div class="head"><span>届いたデータ</span><span id="count">0</span></div>
+      <div id="list"></div>
+    </aside>
+    <div class="view" id="view">
+      <div class="empty" id="welcome"></div>
+    </div>
+  </div>
+  <footer>
+    <div class="bar">
+      <button id="bConsole">コンソール</button>
+      <span id="lastLine"></span>
+      <span class="spacer"></span>
+      <button id="bClear">コンソールを消す</button>
+    </div>
+    <pre id="console" class="hide"></pre>
+  </footer>
+</div>
+<div class="tip" id="tip"></div>
+<script>
+"use strict";
+/* ================= 共通 ================= */
+const $ = (id) => document.getElementById(id);
+const el = (tag, attrs, ...kids) => {
+  const e = document.createElement(tag);
+  if (attrs) for (const k in attrs) {
+    if (k === "class") e.className = attrs[k];
+    else if (k === "text") e.textContent = attrs[k];
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), attrs[k]);
+    else e.setAttribute(k, attrs[k]);
+  }
+  for (const k of kids) if (k != null) e.append(k.nodeType ? k : document.createTextNode(String(k)));
+  return e;
+};
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmt = (v, d = 1) => (v == null || !isFinite(v)) ? "-" : v.toFixed(d);
+const pad2 = (n) => String(n).padStart(2, "0");
+const stamp = (d) => `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+const timeStr = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+function stats(a) {
+  const n = a.length;
+  if (!n) return { n: 0 };
+  let s = 0, mn = Infinity, mx = -Infinity;
+  for (const v of a) { s += v; if (v < mn) mn = v; if (v > mx) mx = v; }
+  const mean = s / n;
+  let q = 0;
+  for (const v of a) q += (v - mean) * (v - mean);
+  return { n, mean, min: mn, max: mx, range: mx - mn, sd: n > 1 ? Math.sqrt(q / (n - 1)) : 0 };
+}
+function niceTicks(lo, hi, count) {
+  if (!(hi > lo)) { hi = lo + 1; }
+  const raw = (hi - lo) / Math.max(1, count);
+  const p = Math.pow(10, Math.floor(Math.log10(raw)));
+  const m = raw / p;
+  const step = (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p;
+  const t = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-6; v += step) t.push(+v.toFixed(10));
+  return { ticks: t, step };
+}
+const tip = $("tip");
+function showTip(x, y, rows) {
+  tip.replaceChildren(...rows);
+  tip.style.display = "block";
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(window.innerWidth - w - 8, x + 14) + "px";
+  tip.style.top = Math.max(8, Math.min(window.innerHeight - h - 8, y - h / 2)) + "px";
+}
+const hideTip = () => { tip.style.display = "none"; };
+function tipRow(color, value, name, dashed) {
+  const k = el("i");
+  k.style.borderTopColor = color;
+  if (dashed) k.className = "dash";
+  return el("div", { class: "key" }, k, el("b", { text: value }), el("span", { class: "n", text: name }));
+}
+
+/* ================= 受け取ったデータ ================= */
+const blocks = [];
+let selected = null, compare = null;
+let sessionText = "";
+const SESSION_MAX = 10e6;	//「ぜんぶ保存」用に覚えておく文字の上限(これを超えたら古いほうから捨てる)
+let sessionTrimmed = false;
+function addSession(text) {
+  sessionText += text;
+  if (sessionText.length > SESSION_MAX * 1.2) { sessionText = sessionText.slice(-SESSION_MAX); sessionTrimmed = true; }
+}
+const consoleLines = [];
+const CONSOLE_MAX = 3000;
+
+class Parser {
+  constructor(onLine, onBlock) { this.buf = ""; this.cur = null; this.onLine = onLine; this.onBlock = onBlock; }
+  feed(text) {
+    /* まとめて行に分け、最後の行(まだ改行が来ていない)だけ残す。\r\n が届く途中で切れても空行が1つ増えるだけ */
+    const parts = (this.buf + text).split(/\r\n|\n|\r/);
+    this.buf = parts.pop();
+    for (const line of parts) this.line(line);
+  }
+  flush() { if (this.buf) { this.line(this.buf); this.buf = ""; } }
+  line(line) {
+    this.onLine(line);
+    const t = line.trim();
+    if (t.startsWith("# memo:")) {
+      this.memo = t.slice(7).trim();	//保存したファイルの先頭のメモ。次のデータに付ける
+    } else if (t.startsWith("#BEGIN ")) {
+      const parts = t.slice(7).trim().split(/\s+/);
+      const params = {};
+      for (const p of parts.slice(1)) { const k = p.indexOf("="); if (k > 0) params[p.slice(0, k)] = p.slice(k + 1); }
+      this.cur = { type: parts[0], params, head: t, lines: [], time: new Date(), memo: this.memo || "" };
+      this.memo = "";
+    } else if (t.startsWith("#END")) {
+      if (this.cur) { const b = this.cur; this.cur = null; b.raw = [b.head, ...b.lines, t].join("\n") + "\n"; this.onBlock(b); }
+    } else if (this.cur) {
+      if (t.length) this.cur.lines.push(t);
+    }
+  }
+}
+
+function addLine(line) {
+  consoleLines.push(line);
+  if (consoleLines.length > CONSOLE_MAX) consoleLines.splice(0, consoleLines.length - CONSOLE_MAX);
+  consoleDirty = true;
+  if (line.trim()) $("lastLine").textContent = line.slice(0, 120);
+}
+let consoleDirty = false;
+setInterval(() => {
+  if (!consoleDirty) return;
+  consoleDirty = false;
+  const c = $("console");
+  const atEnd = c.scrollTop + c.clientHeight >= c.scrollHeight - 20;
+  c.textContent = consoleLines.join("\n");
+  if (atEnd) c.scrollTop = c.scrollHeight;
+}, 300);
+
+function summary(b) {
+  const p = b.params;
+  if (b.type === "LOG") return `${Math.max(0, b.lines.length - 1)} 行(${fmt((b.lines.length - 1) * (+p.dt || 0.001), 2)} 秒)`;
+  if (b.type === "EDGE") {
+    const nf = b.lines.filter((l) => l.startsWith("fall,")).length;
+    return (+p.border >= 0 ? `テスト ${p.v} mm/s` : "最短走行") + ` 柱の端 ${nf}`;
+  }
+  if (b.type === "MAZE") return `${p.size}×${p.size}`;
+  if (b.type === "SENSOR") return sensorRows(b).map((r) => `${r.name} ${fmt(r.average, 0)}`).join(" ");
+  if (b.type === "NOISE") { const n = b.lines.filter((l) => l.startsWith("batt,")).length; return `${n} 組${+p.trace > 0 ? "(生の値あり)" : "(表だけ)"}`; }
+  if (STREAM_TYPES.has(b.type) && b.updates > 1) return `測定中 ${b.updates} 回(最後 ${timeStr(b.lastTime)})`;
+  return `${b.lines.length} 行`;
+}
+const typeName = { LOG: "走行ログ", EDGE: "壁切れ", MAZE: "迷路", CENTER: "感度合わせ", NOISE: "センサのノイズ", SENSOR: "センサ値の記録", RESULT: "調整の結果" };
+
+let bulk = false;	//ファイルを読み込むあいだは、データ1つごとに描き直さない(終わってから1回だけ)
+/* 測っているあいだ出し続ける種類(感度合わせ)。続けて届いたら一覧に増やさず、いちばん新しい値に置き換える。
+ * 自動では保存しない(残したいときは「ファイルに保存」) */
+const STREAM_TYPES = new Set(["CENTER"]);
+const STREAM_GAP_MS = 5000;	//これより間が空いたら、新しい測定として一覧に足す
+function addBlock(b, source) {
+  const last = blocks[blocks.length - 1];
+  if (source === "serial" && STREAM_TYPES.has(b.type) && last && last.type === b.type && last.source === "serial"
+      && b.time - last.lastTime < STREAM_GAP_MS) {
+    last.lines = b.lines; last.raw = b.raw; last.params = b.params; last.lastTime = b.time;
+    last.updates = (last.updates || 1) + 1;
+    renderList();
+    if (selected === last) renderView();
+    return;
+  }
+  b.lastTime = b.time;
+  b.id = blocks.length + 1;
+  b.source = source;
+  if (b.memo == null) b.memo = "";
+  if (source === "serial") {
+    const memo = $("memo").value.trim();
+    if (memo) { b.memo = memo; b.raw = `# memo: ${memo}\n` + b.raw; }	//メモはファイルの先頭の行に入れる(開いたときに読める)
+  }
+  blocks.push(b);
+  if (source === "serial" && !STREAM_TYPES.has(b.type)) autoSave(b);
+  if (bulk) return;
+  /* 出力(迷路 → 壁切れ → 走行ログ)は続けて届くので、少し待って最後のものだけ描く */
+  clearTimeout(selectTimer);
+  selectTimer = setTimeout(() => select(b), 60);
+  renderList();
+}
+let selectTimer = 0;
+function renderList() {
+  $("count").textContent = blocks.length;
+  const list = $("list");
+  list.replaceChildren();
+  if (live.t.length) {
+    const d = el("div", { class: "blk" + (selected === LIVE ? " sel" : "") },
+      el("div", { class: "t", text: "センサの値(そのまま)" }),
+      el("div", { class: "s", text: `${live.kind === "cal" ? "距離の表(モード3 No.4)" : "センサ表示(モード4 No.0)"}・${live.rate} 行/秒` }));
+    d.addEventListener("click", () => select(LIVE));
+    list.append(d);
+  }
+  for (const b of [...blocks].reverse()) {
+    const d = el("div", { class: "blk" + (b === selected ? " sel" : "") },
+      el("div", { class: "t", text: `${typeName[b.type] || b.type}  ${timeStr(b.time)}` + (b.memo ? `  [${b.memo}]` : "") }),
+      el("div", { class: "s", text: summary(b) + (b.source !== "serial" ? `(${b.source})` : "") + (b.saved ? " ・保存済み" : "") }));
+    if (b.type === "LOG" && selected && selected.type === "LOG" && b !== selected) {
+      const c = el("label", { class: "cmp" });
+      const cb = el("input", { type: "checkbox" });
+      cb.checked = compare === b;
+      cb.addEventListener("click", (e) => { e.stopPropagation(); compare = cb.checked ? b : null; renderList(); renderView(); });
+      c.append(cb, " 破線で重ねる");
+      d.append(c);
+    }
+    d.addEventListener("click", () => select(b));
+    list.append(d);
+  }
+}
+function select(b) {
+  if (selected !== b) { if (!b || b.type !== "LOG") compare = null; if (compare === b) compare = null; }
+  selected = b;
+  renderList();
+  renderView();
+}
+
+/* ================= シリアル(Web Serial) ================= */
+let port = null, reader = null;
+const serialParser = new Parser((l) => { addLine(l); liveLine(l); }, (b) => addBlock(b, "serial"));
+function setStatus(text, on) { const s = $("status"); s.textContent = text; s.classList.toggle("on", !!on); }
+async function connect() {
+  if (!("serial" in navigator)) {
+    alert("このブラウザでは USB シリアルを読めません。Windows の Chrome か Edge で開いてください。"
+      + (window.isSecureContext ? "" : "\nファイルをダブルクリックで開いてだめなときは、README の「ビューア」にある localhost での開き方を使ってください。"));
+    return;
+  }
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+  } catch (e) {
+    port = null;
+    if (e.name !== "NotFoundError") alert("接続できませんでした: " + e.message + "\nTera Term などで同じ COM ポートを開いていたら閉じてください。");
+    return;
+  }
+  $("bConnect").disabled = true;
+  $("bDisconnect").disabled = false;
+  setStatus("接続中 115200", true);
+  $("console").classList.remove("hide");
+  readLoop();
+}
+async function readLoop() {
+  const dec = new TextDecoder();
+  while (port && port.readable) {
+    reader = port.readable.getReader();
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const text = dec.decode(value, { stream: true });
+        addSession(text);
+        serialParser.feed(text);
+      }
+    } catch (e) {
+      addLine("[読み取りエラー: " + e.message + "]");
+    } finally {
+      reader.releaseLock();
+      reader = null;
+    }
+    if (!port || !port.readable) break;
+  }
+  await closePort();
+}
+async function closePort() {
+  if (port) { try { await port.close(); } catch (e) { /* もう閉じている */ } }
+  port = null;
+  $("bConnect").disabled = false;
+  $("bDisconnect").disabled = true;
+  setStatus("未接続", false);
+}
+async function disconnect() {
+  const p = port;
+  port = null;
+  if (reader) { try { await reader.cancel(); } catch (e) { /* */ } }
+  if (p) { try { await p.close(); } catch (e) { /* */ } }
+  await closePort();
+}
+if ("serial" in navigator) {
+  navigator.serial.addEventListener("disconnect", () => { addLine("[USBシリアルが抜けました]"); disconnect(); });
+}
+
+/* ================= 保存 ================= */
+let dirHandle = null;
+function fileName(b) {
+  const v = b.type === "EDGE" && +b.params.border >= 0 ? `_v${b.params.v}` : "";
+  const memo = b.memo ? "_" + b.memo.replace(/[\\/:*?"<>|\s]+/g, "-") : "";	//ファイル名に使えない文字と空白は - にする
+  return `${stamp(b.time)}_${b.type.toLowerCase()}${v}${memo}.txt`;
+}
+async function pickDir() {
+  if (!window.showDirectoryPicker) { alert("このブラウザではフォルダに保存できません。各データの「ファイルに保存」を使ってください。"); return; }
+  try {
+    dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+    $("dirName").textContent = "保存先: " + dirHandle.name;
+    $("dirName").classList.add("on");
+  } catch (e) { /* やめた */ }
+}
+async function writeFile(name, text) {
+  const fh = await dirHandle.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(text);
+  await w.close();
+}
+async function autoSave(b) {
+  if (!dirHandle) return;
+  try { await writeFile(fileName(b), b.raw); b.saved = true; renderList(); }
+  catch (e) { addLine("[保存できませんでした: " + e.message + "]"); }
+}
+function download(name, text) {
+  const a = el("a", { href: URL.createObjectURL(new Blob([text], { type: "text/plain" })), download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+async function saveSession() {
+  if (!sessionText) { alert("まだ何も届いていません。"); return; }
+  if (sessionTrimmed) alert(`長くなったので、最後の約${SESSION_MAX / 1e6}MB(約${Math.round(SESSION_MAX / 11500 / 60)}分ぶん)だけ保存します。`);
+  const name = `${stamp(new Date())}_session.txt`;
+  if (dirHandle) { try { await writeFile(name, sessionText); alert(name + " を保存しました。"); return; } catch (e) { /* ダウンロードにする */ } }
+  download(name, sessionText);
+}
+
+/* ================= ファイルを開く ================= */
+async function openFiles(files) {
+  bulk = true;
+  try {
+    for (const f of files) {
+      const text = await f.text();
+      const p = new Parser(() => {}, (b) => { b.time = new Date(f.lastModified); addBlock(b, f.name); });
+      p.feed(text); p.flush();
+      /* 古い形(#BEGIN がない)の迷路・ログも読む */
+      if (!/#BEGIN /.test(text)) legacy(text, f);
+    }
+  } finally {
+    bulk = false;
+    renderList();
+    if (blocks.length) select(blocks[blocks.length - 1]);
+  }
+}
+function legacy(text, f) {
+  const lines = text.split(/\r\n|\n|\r/).map((l) => l.trim());
+  const time = new Date(f.lastModified);
+  const mi = lines.findIndex((l) => l.startsWith("MAZE_DUMP_BEGIN"));
+  if (mi >= 0) {
+    const size = +lines[mi].split(/\s+/)[1] || 16;
+    addBlock({ type: "MAZE", params: { size: String(size) }, lines: lines.slice(mi).filter(Boolean), time, raw: text }, f.name);
+    return;
+  }
+  const csv = lines.filter((l) => /^-?\d+(\.\d+)?(,-?\d+(\.\d+)?){10}$/.test(l));
+  if (csv.length > 10) {
+    addBlock({ type: "LOG", params: { dt: "0.001" }, lines: ["t,v,v_target,w,w_target,sensor_L,sensor_R,volt_L,volt_R,wall_err,wall_out", ...csv], time, raw: text }, f.name);
+  }
+}
+
+/* ================= 線グラフ(走行ログ) ================= */
+/* 複数のグラフで、横軸の範囲(拡大)と、指している時刻を共有する */
+/* 拡大を戻す: 拡大しているあいだだけ出るボタン、ダブルクリック、Esc キー(表示しているグラフ全部) */
+let zoomResetters = [];	//表示を作り直すたびに空にする
+function zoomButton(reset) {
+  const btn = el("button", { class: "zoomreset", text: "拡大を元に戻す(Esc)" });
+  btn.style.display = "none";
+  btn.addEventListener("click", reset);
+  zoomResetters.push(reset);
+  return btn;
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !e.target.closest("input, select, textarea")) zoomResetters.forEach((f) => f());
+});
+class LinkedX {
+  constructor() { this.charts = []; this.lo = null; this.hi = null; this.hover = null; this.onRange = null; this.btns = []; }
+  setRange(lo, hi) {
+    this.lo = lo; this.hi = hi; this.charts.forEach((c) => c.draw()); if (this.onRange) this.onRange();
+    for (const b of this.btns) b.style.display = lo == null ? "none" : "";
+  }
+  /* 拡大しているあいだだけ出る「元に戻す」ボタン */
+  resetButton() { const b = zoomButton(() => this.setRange(null, null)); this.btns.push(b); return b; }
+  /* 指している時刻が変わったら、次の描画のときに縦線だけ描き直す(グラフ本体は描き直さない) */
+  setHover(x) {
+    this.hover = x;
+    if (this.raf) return;
+    this.raf = requestAnimationFrame(() => { this.raf = 0; this.charts.forEach((c) => c.draw()); });
+  }
+}
+class LineChart {
+  /* series: [{ name, color, x: Float64Array, y: Float64Array, dashed }] */
+  /* opt: { xName: 横軸の名前, xDigits: 桁, marks: [{ x, color, dashed }] 縦線, points: [{ x, y, color, label }] 点 } */
+  constructor(parent, title, unit, series, link, height = 150, opt = {}) {
+    this.series = series; this.link = link; this.unit = unit; this.h = height; this.opt = opt;
+    const head = el("div", { class: "title" }, el("span", { text: title + (unit ? ` [${unit}]` : "") }));
+    for (const s of series) {
+      const k = el("i"); k.style.borderTopColor = s.color; if (s.dashed) k.className = "dash";
+      head.append(el("span", { class: "key" }, k, el("span", { text: s.name })));
+    }
+    this.canvas = el("canvas");
+    this.wrap = el("div", { class: "chart" }, head, this.canvas);
+    parent.append(this.wrap);
+    let x0 = 0, xmin = Infinity, xmax = -Infinity;
+    for (const s of series) for (let i = 0; i < s.x.length; i++) { if (s.x[i] < xmin) xmin = s.x[i]; if (s.x[i] > xmax) xmax = s.x[i]; }
+    this.full = [xmin, xmax];
+    link.charts.push(this);
+    this.drag = null;
+    const pos = (e) => { const r = this.canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    this.canvas.addEventListener("pointermove", (e) => {
+      const [px] = pos(e);
+      const x = this.px2x(px);
+      if (this.drag) { this.drag.x1 = x; this.link.charts.forEach((c) => c.draw()); }
+      this.link.setHover(x);
+      this.tooltip(e, x);
+    });
+    this.canvas.addEventListener("pointerleave", () => { this.link.setHover(null); hideTip(); });
+    this.canvas.addEventListener("pointerdown", (e) => { const x = this.px2x(pos(e)[0]); this.drag = { x0: x, x1: x }; this.canvas.setPointerCapture(e.pointerId); });
+    this.canvas.addEventListener("pointerup", () => {
+      if (!this.drag) return;
+      const { x0: a, x1: b } = this.drag; this.drag = null;
+      const [lo, hi] = this.range();
+      if (Math.abs(b - a) > (hi - lo) * 0.01) this.link.setRange(Math.min(a, b), Math.max(a, b)); else this.link.charts.forEach((c) => c.draw());
+    });
+    this.canvas.addEventListener("dblclick", () => this.link.setRange(null, null));
+    new ResizeObserver(() => this.draw()).observe(this.wrap);
+  }
+  range() { return [this.link.lo ?? this.full[0], this.link.hi ?? this.full[1]]; }
+  get L() { return 56; } get R() { return 12; } get T() { return 6; } get B() { return 22; }
+  px2x(px) { const [lo, hi] = this.range(); const w = this.canvas.clientWidth - this.L - this.R; return lo + (px - this.L) / w * (hi - lo); }
+  nearest(s, x) {
+    let a = 0, b = s.x.length - 1;
+    if (b < 0) return -1;
+    while (b - a > 1) { const m = (a + b) >> 1; if (s.x[m] < x) a = m; else b = m; }
+    return Math.abs(s.x[a] - x) <= Math.abs(s.x[b] - x) ? a : b;
+  }
+  tooltip(e, x) {
+    const rows = [el("div", { class: "n", text: `${this.opt.xName || "t [s]"} = ${fmt(x, this.opt.xDigits ?? 3)}` })];
+    if (this.opt.extra && this.series.length) { const i = this.nearest(this.series[0], x); if (i >= 0) rows.push(...this.opt.extra(i)); }
+    for (const s of this.series) { const i = this.nearest(s, x); if (i >= 0) rows.push(tipRow(s.color, fmt(s.y[i], 2), s.name, s.dashed)); }
+    if (this.opt.points) {
+      const [lo, hi] = this.range(), tol = (hi - lo) / Math.max(1, this.canvas.clientWidth) * 8;
+      for (const p of this.opt.points) if (Math.abs(p.x - x) <= tol) rows.push(el("div", { text: p.label }));
+    }
+    showTip(e.clientX, e.clientY, rows);
+  }
+  /* 描画: グラフ本体(軸・線・帯・点)は範囲と大きさが変わったときだけ描いて取っておき(this.base)、
+   * 毎回は取っておいた絵をうつして、拡大のドラッグと指している縦線だけを重ねる */
+  draw() {
+    const c = this.canvas, dpr = window.devicePixelRatio || 1;
+    const W = c.clientWidth || 600, H = this.h;
+    c.style.height = H + "px";
+    const pxW = Math.round(W * dpr), pxH = Math.round(H * dpr);
+    if (c.width !== pxW || c.height !== pxH) { c.width = pxW; c.height = pxH; }
+    const [lo, hi] = this.range();
+    const key = `${pxW}x${pxH}|${lo}|${hi}`;
+    if (key !== this.baseKey) {
+      if (!this.base) this.base = document.createElement("canvas");
+      this.base.width = pxW; this.base.height = pxH;
+      const bg = this.base.getContext("2d");
+      bg.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.drawBase(bg, W, H, lo, hi);
+      this.baseKey = key;
+    }
+    const g = c.getContext("2d");
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, pxW, pxH);
+    g.drawImage(this.base, 0, 0);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const L = this.L, T = this.T, pw = W - this.L - this.R, ph = H - this.T - this.B;
+    const X = (x) => L + (x - lo) / (hi - lo) * pw;
+    if (this.drag) { g.fillStyle = css("--sel"); const a = X(this.drag.x0), b = X(this.drag.x1); g.fillRect(Math.min(a, b), T, Math.abs(b - a), ph); }
+    if (this.link.hover != null && this.link.hover >= lo && this.link.hover <= hi) {
+      g.strokeStyle = this.inkColor || (this.inkColor = css("--ink-2")); g.lineWidth = 1;
+      const x = Math.round(X(this.link.hover)) + 0.5; g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke();
+    }
+  }
+  drawBase(g, W, H, lo, hi) {
+    g.clearRect(0, 0, W, H);
+    let ymin = Infinity, ymax = -Infinity;
+    for (const s of this.series) for (let i = 0; i < s.x.length; i++) {
+      if (s.x[i] < lo || s.x[i] > hi) continue;
+      const v = s.y[i]; if (!isFinite(v)) continue;
+      if (v < ymin) ymin = v; if (v > ymax) ymax = v;
+    }
+    if (!isFinite(ymin)) { ymin = 0; ymax = 1; }
+    if (ymax - ymin < 1e-9) { ymin -= 1; ymax += 1; }
+    const padY = (ymax - ymin) * 0.06; ymin -= padY; ymax += padY;
+    const L = this.L, R = this.R, T = this.T, B = this.B, pw = W - L - R, ph = H - T - B;
+    const X = (x) => L + (x - lo) / (hi - lo) * pw, Y = (y) => T + (ymax - y) / (ymax - ymin) * ph;
+    g.font = "11px " + css("--sans");
+    g.fillStyle = css("--muted");
+    g.strokeStyle = css("--grid"); g.lineWidth = 1;
+    const yt = niceTicks(ymin, ymax, 4);
+    g.textAlign = "right"; g.textBaseline = "middle";
+    for (const v of yt.ticks) { const y = Math.round(Y(v)) + 0.5; g.beginPath(); g.moveTo(L, y); g.lineTo(W - R, y); g.stroke(); g.fillText(+v.toPrecision(6) + "", L - 6, y); }
+    const xt = niceTicks(lo, hi, Math.max(2, Math.floor(pw / 90)));
+    g.textAlign = "center"; g.textBaseline = "top";
+    for (const v of xt.ticks) { g.fillText(+v.toPrecision(6) + "", X(v), H - B + 5); }
+    if (ymin < 0 && ymax > 0) { g.strokeStyle = css("--axis"); const y = Math.round(Y(0)) + 0.5; g.beginPath(); g.moveTo(L, y); g.lineTo(W - R, y); g.stroke(); }
+    g.save();
+    g.beginPath(); g.rect(L, T, pw, ph); g.clip();
+    for (const bd of this.opt.bands || []) {
+      if (bd.x1 < lo || bd.x0 > hi || !bd.color) continue;
+      g.fillStyle = bd.color; g.fillRect(X(bd.x0), T, Math.max(1, X(bd.x1) - X(bd.x0)), ph);
+    }
+    for (const s of this.series) {
+      g.strokeStyle = s.color; g.lineWidth = 2; g.setLineDash(s.dashed ? [6, 4] : []);
+      g.lineJoin = "round";
+      g.beginPath();
+      let started = false;
+      /* 点が多いときは、1ピクセルに入る点の最小・最大だけ描く */
+      const n = s.x.length;
+      let i0 = this.nearest(s, lo), i1 = this.nearest(s, hi);
+      i0 = Math.max(0, i0 - 1); i1 = Math.min(n - 1, i1 + 1);
+      const per = (i1 - i0) / pw;
+      if (per > 2) {
+        let col = -1, mn = 0, mx = 0;
+        for (let i = i0; i <= i1; i++) {
+          const px = Math.floor(X(s.x[i]));
+          if (px !== col) {
+            if (col >= 0) { g.lineTo(col, Y(mn)); g.lineTo(col, Y(mx)); }
+            col = px; mn = mx = s.y[i];
+            if (!started) { g.moveTo(px, Y(s.y[i])); started = true; }
+          } else { if (s.y[i] < mn) mn = s.y[i]; if (s.y[i] > mx) mx = s.y[i]; }
+        }
+        if (col >= 0) { g.lineTo(col, Y(mn)); g.lineTo(col, Y(mx)); }
+      } else {
+        for (let i = i0; i <= i1; i++) { const px = X(s.x[i]), py = Y(s.y[i]); if (!started) { g.moveTo(px, py); started = true; } else g.lineTo(px, py); }
+      }
+      g.stroke();
+    }
+    g.setLineDash([]);
+    for (const m of this.opt.marks || []) {
+      if (m.x < lo || m.x > hi) continue;
+      g.strokeStyle = m.color; g.lineWidth = 1; g.setLineDash(m.dashed ? [4, 4] : []);
+      const x = Math.round(X(m.x)) + 0.5; g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke();
+    }
+    g.setLineDash([]);
+    for (const p of this.opt.points || []) {
+      if (p.x < lo || p.x > hi) continue;
+      g.fillStyle = p.color; g.strokeStyle = css("--surface"); g.lineWidth = 2;
+      g.beginPath(); g.arc(X(p.x), Y(p.y), 5, 0, Math.PI * 2); g.fill(); g.stroke();
+    }
+    g.restore();
+  }
+}
+
+/* ================= 走行ログ ================= */
+function parseCSV(b) {
+  const cols = b.lines[0].split(",");
+  const rows = b.lines.slice(1).map((l) => l.split(",").map(Number)).filter((r) => r.length === cols.length);
+  const data = {};
+  cols.forEach((c, j) => { data[c] = Float64Array.from(rows, (r) => r[j]); });
+  return { cols, data, n: rows.length };
+}
+const LOG_GROUPS = [
+  { title: "速度", unit: "mm/s", cols: [["v", "速度"], ["v_target", "目標"]] },
+  { title: "角速度", unit: "deg/s", cols: [["w", "角速度"], ["w_target", "目標"]] },
+  { title: "角度(動作ごとに0から)", unit: "deg", cols: [["angle", "角度"]] },
+  { title: "横の壁までの距離(区画中心で42。壁合わせのあいだは前センサの値)", unit: "mm", cols: [["dist_L", "左"], ["dist_R", "右"]] },
+  { title: "横壁制御", unit: "", cols: [["wall_out", "出力"], ["wall_p", "P項"], ["wall_d", "D項"]] },
+  { title: "横壁の誤差", unit: "", cols: [["wall_err", "誤差"]] },
+  { title: "使った壁(1 左、2 右、3 両方、0 なし)", unit: "", cols: [["wall", "使った壁"]] },
+  { title: "横センサの値(LPFだけ)", unit: "", cols: [["sensor_L", "左"], ["sensor_R", "右"]] },
+  { title: "電圧", unit: "V", cols: [["volt_L", "左"], ["volt_R", "右"]] },
+  { title: "電池", unit: "V", cols: [["batt", "電池"]] },
+];
+const LOG_HIDDEN = new Set(["t", "x", "phase"]);	//グラフにしない列
+/* 動作の種類(motor.h の LOG_PH_*)。色は区間の帯の色の種類 */
+const PHASES = {
+  0: { name: "そのほか", band: null }, 1: { name: "直線", band: null }, 2: { name: "斜めの直線", band: null },
+  3: { name: "前距離", band: "pp" }, 4: { name: "ターン", band: "turn" }, 5: { name: "後距離", band: "pp" },
+  6: { name: "斜めからの前距離", band: "pp" }, 7: { name: "斜めへの後距離", band: "pp" },
+  8: { name: "その場旋回", band: "turn" }, 9: { name: "止まる", band: "stop" }, 10: { name: "壁合わせ", band: "stop" },
+};
+const PHASE_FILTERS = [
+  ["all", "全部", () => true], ["straight", "直線", (p) => p === 1 || p === 2], ["pre", "前距離", (p) => p === 3 || p === 6],
+  ["turn", "ターン", (p) => p === 4 || p === 8], ["post", "後距離", (p) => p === 5 || p === 7],
+];
+let logXMode = "t";	//横軸: t 時間 / x 走った距離
+function bandColor(kind) {
+  const dark = document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+  const a = dark ? 0.16 : 0.10;
+  if (kind === "turn") return `rgba(98,80,214,${a})`;
+  if (kind === "pp") return `rgba(27,175,122,${a})`;
+  if (kind === "stop") return `rgba(137,135,129,${a})`;
+  return null;
+}
+function renderLog(view, b) {
+  const A = parseCSV(b);
+  const B = compare ? parseCSV(compare) : null;
+  const colors = [css("--s1"), css("--s2"), css("--s3")];
+  const link = new LinkedX();
+  const useX = logXMode === "x" && A.data.x;
+  const xa = useX ? A.data.x : A.data.t;
+  const xb = B ? (useX && B.data.x ? B.data.x : B.data.t) : null;
+  const card = el("div", { class: "card" });
+  card.append(el("h2", { text: `走行ログ ${timeStr(b.time)}(${A.n} 行、${b.params.div || 1} msおき)` + (B ? ` と ${timeStr(compare.time)}(破線)` : "") }));
+  /* 横軸の切り替え */
+  const sel = el("select");
+  sel.append(el("option", { value: "t", text: "横軸: 時間[s]" }), el("option", { value: "x", text: "横軸: 走った距離[mm]" }));
+  sel.value = useX ? "x" : "t";
+  if (!A.data.x) sel.disabled = true;
+  sel.addEventListener("change", () => { logXMode = sel.value; renderView(); });
+  const legend = el("span", { class: "title" });
+  for (const [k, n] of [["turn", "ターン"], ["pp", "前距離・後距離"], ["stop", "止まる・壁合わせ"]]) {
+    const sw = el("i", { class: "dot" }); sw.style.background = bandColor(k).replace(/[\d.]+\)$/, "0.5)"); sw.style.borderRadius = "2px";
+    legend.append(el("span", { class: "key" }, sw, el("span", { text: n })));
+  }
+  card.append(el("div", { class: "row" }, sel, A.data.phase ? legend : null, link.resetButton()),
+    el("div", { class: "note", text: "ドラッグで拡大、ダブルクリックか Esc か「拡大を元に戻す」で元に戻す。グラフを指すと、その時刻の値と動作が出る。左の一覧で別のログに印を付けると破線で重ねる。" }));
+  view.append(card);
+  /* 動作の区間(帯) */
+  const bands = [];
+  if (A.data.phase) {
+    const ph = A.data.phase;
+    let s0 = 0;
+    for (let i = 1; i <= A.n; i++) {
+      if (i === A.n || ph[i] !== ph[s0]) {
+        const info = PHASES[ph[s0]] || PHASES[0];
+        if (info.band) bands.push({ x0: xa[s0], x1: xa[Math.min(i, A.n - 1)], color: bandColor(info.band) });
+        s0 = i;
+      }
+    }
+  }
+  const xName = useX ? "x [mm]" : "t [s]";
+  const extra = (i) => {
+    const rows = [];
+    if (A.data.phase) rows.push(el("div", { class: "n", text: "動作: " + (PHASES[A.data.phase[i]] || PHASES[0]).name }));
+    if (A.data.x) rows.push(el("div", { class: "n", text: useX ? `t = ${fmt(A.data.t[i], 3)} s` : `x = ${fmt(A.data.x[i], 1)} mm` }));
+    return rows;
+  };
+  const groups = LOG_GROUPS.filter((gp) => gp.cols.some(([c]) => A.data[c]));
+  for (const c of A.cols) if (!LOG_HIDDEN.has(c) && !LOG_GROUPS.some((gp) => gp.cols.some(([k]) => k === c))) groups.push({ title: c, unit: "", cols: [[c, c]] });
+  for (const gp of groups) {
+    const series = [];
+    gp.cols.forEach(([c, name], j) => {
+      if (!A.data[c]) return;
+      series.push({ name, color: colors[j % 3], x: xa, y: A.data[c] });
+      if (B && B.data[c]) series.push({ name: name + "(比較)", color: colors[j % 3], x: xb, y: B.data[c], dashed: true });
+    });
+    new LineChart(card, gp.title, gp.unit, series, link, 150, { xName, xDigits: useX ? 1 : 3, bands, extra });
+  }
+  /* 表: 表示している範囲・動作の値 */
+  const sc = el("div", { class: "card" });
+  const tbl = el("table");
+  const pf = el("select");
+  for (const [k, n] of PHASE_FILTERS) pf.append(el("option", { value: k, text: "動作: " + n }));
+  const note = el("div", { class: "note" });
+  sc.append(el("h2", { text: "表示している範囲の値" }), el("div", { class: "row" }, pf, note), tbl);
+  view.append(sc);
+  const fill = () => {
+    const lo = link.lo ?? xa[0], hi = link.hi ?? xa[xa.length - 1];
+    const test = PHASE_FILTERS.find((f) => f[0] === pf.value)[2];
+    const idx = [];
+    for (let i = 0; i < A.n; i++) if (xa[i] >= lo && xa[i] <= hi && (!A.data.phase || test(A.data.phase[i]))) idx.push(i);
+    note.textContent = `${useX ? "x" : "t"} = ${fmt(lo, useX ? 1 : 3)} 〜 ${fmt(hi, useX ? 1 : 3)}、${idx.length} 行`;
+    tbl.replaceChildren(el("tr", null, el("th", { class: "l", text: "列" }), el("th", { text: "平均" }), el("th", { text: "標準偏差" }), el("th", { text: "最小" }), el("th", { text: "最大" })));
+    for (const c of A.cols) {
+      if (c === "t" || c === "phase") continue;
+      const s = stats(idx.map((i) => A.data[c][i]));
+      tbl.append(el("tr", null, el("td", { class: "l", text: c }), el("td", { text: fmt(s.mean, 2) }), el("td", { text: fmt(s.sd, 2) }), el("td", { text: fmt(s.min, 2) }), el("td", { text: fmt(s.max, 2) })));
+    }
+  };
+  pf.addEventListener("change", fill);
+  link.onRange = fill;
+  fill();
+  rawCard(view, b);
+}
+
+/* ================= 壁切れ ================= */
+function parseEdge(b) {
+  const out = { fall: [], th: [], st: [], stcut: [], cut: [], end: [], endcut: [], sig: [], full: false };
+  for (const l of b.lines) {
+    const f = l.split(",");
+    const kv = {};
+    for (const p of f) { const k = p.indexOf("="); if (k > 0) kv[p.slice(0, k)] = +p.slice(k + 1); }
+    if (f[0] === "fall") out.fall.push({ side: f[1], kind: f[2], x: +f[3], c: +f[4], high: +f[5], cb: kv["c-border"] });
+    else if (f[0] === "th") out.th.push({ side: f[1], kind: f[2], x: +f[3], xb: kv["x-border"] });
+    else if (f[0] === "st") out.st.push({ side: f[1], x: +f[2], X: +f[3] });
+    else if (f[0] === "st_cut") out.stcut.push({ src: +f[1], x: +f[2], c: +f[3] });
+    else if (f[0] === "cut") out.cut.push({ side: f[1], x: +f[2] });
+    else if (f[0] === "end") out.end.push({ x: +f[2], X: +f[3] });
+    else if (f[0] === "end_cut") out.endcut.push({ src: +f[1], x: +f[2] });
+    else if (f[0] === "full") out.full = true;
+    else if (f[0] === "sig") out.sig.push([+f[1], +f[2], +f[3]]);
+  }
+  return out;
+}
+const srcName = (s) => {
+  if (s & 16) return "従来・壁切れした";
+  if (s & 32) return "従来・曲がる側に壁なし(距離だけ)";
+  if (!s) return "柱・見つからず(距離だけ)";
+  const side = (s & 3) === 3 ? "左右の平均" : (s & 1) ? "右" : "左";
+  return ((s & 4) ? "後ろの境目・" : "前の境目・") + side + ((s & 8) ? "(左右が合わない)" : "");
+};
+function renderEdge(view, b) {
+  const E = parseEdge(b);
+  const p = b.params;
+  if (+p.border >= 0) return renderEdgeTest(view, b, E);
+  /* ---- 最短走行のログ ---- */
+  const card = el("div", { class: "card" });
+  card.append(el("h2", { text: `最短走行の壁切れ ${timeStr(b.time)}` }),
+    el("div", { class: "note", text: `柱の壁切れ ${p.pillar === "1" ? "あり" : "なし(従来)"}、Edge_Off R ${p.off_r_wall}/${p.off_r_pillar} L ${p.off_l_wall}/${p.off_l_pillar}、Tan ${p.tan}` }));
+  if (E.full) card.append(el("div", { class: "warn", text: "ログがいっぱいで、途中までしか残っていません。" }));
+  view.append(card);
+  laneChart(card, E);
+  /* 前距離の表 */
+  const pairs = [];
+  for (let i = 0; i < E.st.length; i++) {
+    const s = E.st[i];
+    const cut = E.stcut.find((c) => c.x >= s.x - 200 && (!E.st[i + 1] || c.x <= E.st[i + 1].x + 1)) || null;
+    pairs.push({ s, cut });
+  }
+  const t1 = el("table");
+  t1.append(el("tr", null, ...["#", "向き", "区画中心", "X", "曲がり始め", "直した量", "使った推定"].map((h, j) => el("th", { class: j >= 6 ? "l" : "", text: h }))));
+  pairs.forEach(({ s, cut }, i) => {
+    const corr = cut ? cut.x - (s.x + s.X) : null;
+    t1.append(el("tr", null, el("td", { text: i + 1 }), el("td", { text: s.side === "L" ? "左" : "右" }), el("td", { text: fmt(s.x) }), el("td", { text: fmt(s.X, 0) }),
+      el("td", { text: cut ? fmt(cut.x) : "-" }), el("td", { text: corr == null ? "-" : (corr >= 0 ? "+" : "") + fmt(corr) }), el("td", { class: "l", text: cut ? srcName(cut.src) : "-" })));
+  });
+  if (pairs.length) {
+    const used = (q) => q.cut && (q.cut.src & 0x13);	//柱の推定か、従来の壁切れが効いた
+    const corr = stats(pairs.filter(used).map((q) => q.cut.x - (q.s.x + q.s.X)));
+    const conv = pairs.some((q) => q.cut && (q.cut.src & 48));
+    const c2 = el("div", { class: "card" }, el("h2", { text: conv ? "前距離(従来)" : "前距離(柱)" }),
+      el("div", { class: "note", text: `直した量 = 曲がり始め − (区画中心 + X)。エンコーダの距離だけで決めた位置との差。`
+        + `${conv ? "壁切れした" : "柱を使えた"} ${corr.n} / ${pairs.length} 回、平均 ${fmt(corr.mean)} mm、ばらつき ${fmt(corr.range)} mm` }), t1);
+    view.append(c2);
+  }
+  /* 従来の壁切れ・後距離 */
+  if (E.cut.length || E.end.length) {
+    const t2 = el("table");
+    t2.append(el("tr", null, ...["#", "後距離の始め", "X", "終わり", "走った", "終わり方"].map((h) => el("th", { text: h }))));
+    E.end.forEach((e, i) => {
+      const ec = E.endcut.find((c) => c.x >= e.x) || null;
+      t2.append(el("tr", null, el("td", { text: i + 1 }), el("td", { text: fmt(e.x) }), el("td", { text: fmt(e.X, 0) }), el("td", { text: ec ? fmt(ec.x) : "-" }),
+        el("td", { text: ec ? fmt(ec.x - e.x) : "-" }), el("td", { text: ec ? (ec.src === 0 ? "Xまで" : ec.src === 2 ? "左の壁切れ" : "右の壁切れ") : "-" })));
+    });
+    view.append(el("div", { class: "card" }, el("h2", { text: "後距離" }),
+      el("div", { class: "note", text: "「走った」が X より短いものは、従来の壁切れで早く終わっている(柱に替えると X まで走る)。" }), t2));
+  }
+  rawCard(view, b);
+}
+function laneChart(parent, E) {
+  const lanes = ["柱の端 R", "柱の端 L", "前距離", "後距離", "従来の壁切れ"];
+  const items = [];
+  for (const f of E.fall) items.push({ lane: f.side === "R" ? 0 : 1, x0: f.c, x1: f.c, color: f.side === "R" ? css("--s2") : css("--s1"), dot: true, label: `${f.side} ${f.kind === "wall" ? "壁の終わり" : "柱だけ"}: 境目の推定 ${fmt(f.c)}(端 ${fmt(f.x)}、H ${fmt(f.high, 0)})` });
+  E.st.forEach((s, i) => {
+    const cut = E.stcut.find((c) => c.x >= s.x && (!E.st[i + 1] || c.x <= E.st[i + 1].x + 1));
+    const x1 = cut ? cut.x : s.x + s.X;
+    items.push({ lane: 2, x0: s.x, x1, color: css("--s3"), label: `前距離 区画中心 ${fmt(s.x)} → 曲がり始め ${fmt(x1)}(X ${s.X}${cut ? "、" + srcName(cut.src) : ""})` });
+  });
+  E.end.forEach((e) => {
+    const ec = E.endcut.find((c) => c.x >= e.x);
+    items.push({ lane: 3, x0: e.x, x1: ec ? ec.x : e.x + e.X, color: css("--s4"), label: `後距離 ${fmt(e.x)} → ${ec ? fmt(ec.x) : "?"}(X ${e.X})` });
+  });
+  for (const c of E.cut) items.push({ lane: 4, x0: c.x, x1: c.x, color: css("--ink-2"), dot: true, label: `従来の壁切れ ${c.side} ${fmt(c.x)}` });
+  if (!items.length) { parent.append(el("div", { class: "note", text: "記録がありません。" })); return; }
+  let xmin = Math.min(...items.map((i) => i.x0)), xmax = Math.max(...items.map((i) => i.x1));
+  const view = { lo: xmin - 20, hi: xmax + 20 };
+  const full = { ...view };
+  const canvas = el("canvas");
+  parent.append(el("div", { class: "note", text: "横軸はログを始めてからの距離[mm]。ドラッグで拡大、ダブルクリックか Esc で元に戻す。点や棒を指すと中身が出る。" }), el("div", { class: "chart" }, canvas));
+  const L = 96, R = 12, T = 6, rowH = 26, B = 22;
+  const H = T + rowH * lanes.length + B;
+  let drag = null;
+  const draw = () => {
+    const dpr = window.devicePixelRatio || 1, W = canvas.clientWidth || 800;
+    canvas.style.height = H + "px"; canvas.width = W * dpr; canvas.height = H * dpr;
+    const g = canvas.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const pw = W - L - R, X = (x) => L + (x - view.lo) / (view.hi - view.lo) * pw;
+    g.font = "11px " + css("--sans");
+    g.textBaseline = "middle"; g.textAlign = "right"; g.fillStyle = css("--ink-2");
+    lanes.forEach((n, i) => { g.fillText(n, L - 8, T + rowH * i + rowH / 2); });
+    g.strokeStyle = css("--grid"); g.lineWidth = 1;
+    const xt = niceTicks(view.lo, view.hi, Math.max(2, Math.floor(pw / 90)));
+    g.fillStyle = css("--muted"); g.textAlign = "center"; g.textBaseline = "top";
+    for (const v of xt.ticks) { const x = Math.round(X(v)) + 0.5; g.beginPath(); g.moveTo(x, T); g.lineTo(x, H - B); g.stroke(); g.fillText(v + "", x, H - B + 5); }
+    g.save(); g.beginPath(); g.rect(L, 0, pw, H); g.clip();
+    for (const it of items) {
+      const y = T + rowH * it.lane + rowH / 2;
+      g.fillStyle = it.color; g.strokeStyle = css("--surface");
+      if (it.dot) { g.beginPath(); g.arc(X(it.x0), y, 5, 0, Math.PI * 2); g.fill(); g.lineWidth = 2; g.stroke(); }
+      else { const a = X(it.x0), w = Math.max(2, X(it.x1) - a); g.beginPath(); g.roundRect(a, y - 6, w, 12, 4); g.fill(); }
+    }
+    if (drag) { g.fillStyle = css("--sel"); g.fillRect(Math.min(drag.a, drag.b), T, Math.abs(drag.b - drag.a), rowH * lanes.length); }
+    g.restore();
+  };
+  const px2x = (px) => view.lo + (px - L) / (canvas.clientWidth - L - R) * (view.hi - view.lo);
+  canvas.addEventListener("pointermove", (e) => {
+    const r = canvas.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+    if (drag) { drag.b = px; draw(); return; }
+    const lane = Math.floor((py - T) / rowH);
+    const pw = canvas.clientWidth - L - R, X = (x) => L + (x - view.lo) / (view.hi - view.lo) * pw;
+    let best = null, bd = 12;
+    for (const it of items) {
+      if (it.lane !== lane) continue;
+      const d = it.dot ? Math.abs(X(it.x0) - px) : (px >= X(it.x0) - 4 && px <= X(it.x1) + 4 ? 0 : 99);
+      if (d < bd) { bd = d; best = it; }
+    }
+    if (best) showTip(e.clientX, e.clientY, [el("div", { text: best.label })]); else hideTip();
+  });
+  canvas.addEventListener("pointerleave", hideTip);
+  canvas.addEventListener("pointerdown", (e) => { const r = canvas.getBoundingClientRect(); drag = { a: e.clientX - r.left, b: e.clientX - r.left }; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener("pointerup", () => {
+    if (!drag) return;
+    const a = px2x(Math.min(drag.a, drag.b)), b2 = px2x(Math.max(drag.a, drag.b));
+    if (Math.abs(drag.b - drag.a) > 6) { view.lo = a; view.hi = b2; resetBtn.style.display = ""; }
+    drag = null; draw();
+  });
+  const reset = () => { view.lo = full.lo; view.hi = full.hi; resetBtn.style.display = "none"; draw(); };
+  const resetBtn = zoomButton(reset);
+  canvas.parentNode.before(el("div", { class: "row" }, resetBtn));
+  canvas.addEventListener("dblclick", reset);
+  new ResizeObserver(draw).observe(canvas);
+}
+const GROUPS = [
+  { key: "R,wall", name: "右・壁の終わり(柱)", side: "R", kind: "wall", f: "fall" },
+  { key: "R,pillar", name: "右・柱だけ(柱)", side: "R", kind: "pillar", f: "fall" },
+  { key: "L,wall", name: "左・壁の終わり(柱)", side: "L", kind: "wall", f: "fall" },
+  { key: "L,pillar", name: "左・柱だけ(柱)", side: "L", kind: "pillar", f: "fall" },
+  { key: "R,av", name: "右・従来の閾値", side: "R", kind: "av", f: "th" },
+  { key: "R,med", name: "右・中央値の閾値", side: "R", kind: "med", f: "th" },
+  { key: "L,av", name: "左・従来の閾値", side: "L", kind: "av", f: "th" },
+  { key: "L,med", name: "左・中央値の閾値", side: "L", kind: "med", f: "th" },
+];
+function groupValues(E, gp) {
+  if (gp.f === "fall") return E.fall.filter((r) => r.side === gp.side && r.kind === gp.kind && isFinite(r.cb)).map((r) => r.cb);
+  return E.th.filter((r) => r.side === gp.side && r.kind === gp.kind && isFinite(r.xb)).map((r) => r.xb);
+}
+function renderEdgeTest(view, b, E) {
+  const p = b.params;
+  const card = el("div", { class: "card" });
+  card.append(el("h2", { text: `壁切れのテスト ${p.v} mm/s(${timeStr(b.time)})` }),
+    el("div", { class: "note", text: "柱: c-border = 境目の推定 − 区画の境目(0 が目標)。閾値: x-border = 反応した位置 − 区画の境目(比べるためだけ。柱の端より前に見えるので、その分ずれている)。" }));
+  const t = el("table");
+  t.append(el("tr", null, el("th", { class: "l", text: "" }), el("th", { text: "件数" }), el("th", { text: "平均 mm" }), el("th", { text: "標準偏差" }), el("th", { text: "最小" }), el("th", { text: "最大" })));
+  for (const gp of GROUPS) {
+    const s = stats(groupValues(E, gp));
+    if (!s.n) continue;
+    t.append(el("tr", null, el("td", { class: "l", text: gp.name }), el("td", { text: s.n }), el("td", { text: fmt(s.mean, 2) }), el("td", { text: fmt(s.sd, 2) }), el("td", { text: fmt(s.min, 2) }), el("td", { text: fmt(s.max, 2) })));
+  }
+  card.append(t);
+  view.append(card);
+  edgeSignal(view, b, E);
+  edgeSession(view);
+  /* 端の一覧 */
+  const t2 = el("table");
+  t2.append(el("tr", null, ...["側", "種類", "端 x", "境目の推定 c", "c-border", "H"].map((h, j) => el("th", { class: j < 2 ? "l" : "", text: h }))));
+  for (const f of E.fall) t2.append(el("tr", null, el("td", { class: "l", text: f.side }), el("td", { class: "l", text: f.kind === "wall" ? "壁の終わり" : "柱だけ" }), el("td", { text: fmt(f.x) }), el("td", { text: fmt(f.c) }), el("td", { text: fmt(f.cb) }), el("td", { text: fmt(f.high, 0) })));
+  view.append(el("div", { class: "card" }, el("h2", { text: "見つけた柱の端" }), t2));
+  rawCard(view, b);
+}
+/* 横センサの値と距離のグラフ(テストのとき 1mm ごとに残した値) */
+function edgeSignal(view, b, E) {
+  if (!E.sig.length) return;
+  const border = +b.params.border;
+  const x = Float64Array.from(E.sig, (r) => r[0]);
+  const cR = css("--s2"), cL = css("--s1");
+  const yAt = (side, xx) => { const i = Math.max(0, Math.min(E.sig.length - 1, Math.round(xx))); return E.sig[i][side === "R" ? 1 : 2]; };
+  const marks = [];
+  for (let k = 0; border + 180 * k <= x[x.length - 1] + 1; k++) marks.push({ x: border + 180 * k, color: css("--ink-2"), dashed: true });
+  const points = E.fall.map((f) => ({ x: f.x, y: yAt(f.side, f.x), color: f.side === "R" ? cR : cL,
+    label: `${f.side === "R" ? "右" : "左"}の端(${f.kind === "wall" ? "壁の終わり" : "柱だけ"}) x ${fmt(f.x)}、H ${fmt(f.high, 0)}、境目の推定 ${fmt(f.c)}(${f.cb >= 0 ? "+" : ""}${fmt(f.cb)})` }));
+  const card = el("div", { class: "card" });
+  card.append(el("h2", { text: "横センサの値と距離" }),
+    el("div", { class: "note", text: "横軸は走り出しからの距離[mm](3回の中央値、遅れの分を戻した位置)。破線は区画の境目、点は見つけた柱の端(直前の最大値の半分を切った位置)。センサは区画中心で柱の真ん中を見るので、柱の端は境目の約84mm手前に出る。ドラッグで拡大。" }));
+  const link = new LinkedX();
+  card.append(el("div", { class: "row" }, link.resetButton()));
+  new LineChart(card, "横センサ", "", [
+    { name: "右", color: cR, x, y: Float64Array.from(E.sig, (r) => r[1]) },
+    { name: "左", color: cL, x, y: Float64Array.from(E.sig, (r) => r[2]) },
+  ], link, 260, { xName: "x [mm]", xDigits: 0, marks, points });
+  view.append(card);
+}
+
+/* c-border を速度ごとに点で並べる(左右でグラフを分ける) */
+function edgeSpeedChart(card, tests) {
+  const speeds = [...new Set(tests.map((x) => +x.params.v))].sort((a, b) => a - b);
+  if (!speeds.length) return;
+  const kinds = [{ kind: "wall", name: "壁の終わり", color: css("--s3") }, { kind: "pillar", name: "柱だけ", color: css("--s7") }];
+  const pts = { R: [], L: [] };
+  for (const x of tests) for (const f of parseEdge(x).fall) if (isFinite(f.cb)) pts[f.side].push({ v: +x.params.v, kind: f.kind, y: f.cb, label: `${x.params.v} mm/s ${f.side === "R" ? "右" : "左"} ${f.kind === "wall" ? "壁の終わり" : "柱だけ"}: c-border ${fmt(f.cb)}` });
+  const all = [...pts.R, ...pts.L].map((p) => p.y);
+  if (!all.length) return;
+  let ymin = Math.min(-2, ...all), ymax = Math.max(2, ...all);
+  const pad = (ymax - ymin) * 0.08; ymin -= pad; ymax += pad;
+  const row = el("div", { class: "maze-wrap" });
+  card.append(el("h3", { text: "c-border と速度(0 の線に、速度によらず集まっていればよい)" }));
+  const legend = el("div", { class: "title" });
+  for (const k of kinds) { const d = el("i", { class: "dot" }); d.style.background = k.color; legend.append(el("span", { class: "key" }, d, el("span", { text: k.name }))); }
+  card.append(legend, row);
+  for (const side of ["R", "L"]) {
+    const canvas = el("canvas");
+    const box = el("div", { class: "chart" }, el("div", { class: "title", text: side === "R" ? "右" : "左" }), canvas);
+    box.style.flex = "1 1 320px";
+    row.append(box);
+    const H = 220, L = 48, Rr = 12, T = 8, B = 24;
+    let hit = [];
+    const draw = () => {
+      const dpr = window.devicePixelRatio || 1, W = canvas.clientWidth || 360;
+      canvas.style.height = H + "px"; canvas.width = W * dpr; canvas.height = H * dpr;
+      const g = canvas.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const pw = W - L - Rr, ph = H - T - B, bw = pw / speeds.length;
+      const Y = (y) => T + (ymax - y) / (ymax - ymin) * ph;
+      g.font = "11px " + css("--sans"); g.fillStyle = css("--muted"); g.textAlign = "right"; g.textBaseline = "middle";
+      g.strokeStyle = css("--grid"); g.lineWidth = 1;
+      for (const v of niceTicks(ymin, ymax, 4).ticks) { const y = Math.round(Y(v)) + 0.5; g.beginPath(); g.moveTo(L, y); g.lineTo(W - Rr, y); g.stroke(); g.fillText(v + "", L - 6, y); }
+      g.strokeStyle = css("--axis"); g.lineWidth = 2; const y0 = Y(0); g.beginPath(); g.moveTo(L, y0); g.lineTo(W - Rr, y0); g.stroke();
+      g.textAlign = "center"; g.textBaseline = "top"; g.fillStyle = css("--muted");
+      speeds.forEach((v, i) => g.fillText(v + "", L + bw * (i + 0.5), H - B + 6));
+      hit = [];
+      pts[side].forEach((p, j) => {
+        const i = speeds.indexOf(p.v), ki = p.kind === "wall" ? 0 : 1;
+        const cx = L + bw * (i + 0.5) + (ki ? 8 : -8) + ((j % 3) - 1) * 3, cy = Y(p.y);
+        g.fillStyle = kinds[ki].color; g.strokeStyle = css("--surface"); g.lineWidth = 2;
+        g.beginPath(); g.arc(cx, cy, 5, 0, Math.PI * 2); g.fill(); g.stroke();
+        hit.push({ cx, cy, label: p.label });
+      });
+    };
+    canvas.addEventListener("pointermove", (e) => {
+      const r = canvas.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+      let best = null, bd = 12;
+      for (const h of hit) { const d = Math.hypot(h.cx - px, h.cy - py); if (d < bd) { bd = d; best = h; } }
+      if (best) showTip(e.clientX, e.clientY, [el("div", { text: best.label })]); else hideTip();
+    });
+    canvas.addEventListener("pointerleave", hideTip);
+    new ResizeObserver(draw).observe(canvas);
+  }
+  card.append(el("div", { class: "note", text: "横軸は速度[mm/s]。点を指すと値が出る。" }));
+}
+/* このページで受け取った全部のテストを、速度ごとにまとめる */
+function edgeSession(view) {
+  const tests = blocks.filter((x) => x.type === "EDGE" && +x.params.border >= 0);
+  const speeds = [...new Set(tests.map((x) => +x.params.v))].sort((a, b) => a - b);
+  const card = el("div", { class: "card" });
+  card.append(el("h2", { text: `まとめ(このページで読んだテスト ${tests.length} 回)` }),
+    el("div", { class: "note", text: "速度ごとの平均(件数)。柱の行が速度で変わらず 0 に近ければよい。ずれていたら下の Edge_Off を書き写す(全部の速度の平均から直す)。" }));
+  const per = {};
+  for (const x of tests) { const E = parseEdge(x); for (const gp of GROUPS) { (per[gp.key] ||= {}); (per[gp.key][x.params.v] ||= []).push(...groupValues(E, gp)); } }
+  const t = el("table");
+  t.append(el("tr", null, el("th", { class: "l", text: "" }), ...speeds.map((v) => el("th", { text: v + " mm/s" })), el("th", { text: "全部" }), el("th", { text: "速度による差" })));
+  const all = {};
+  for (const gp of GROUPS) {
+    const cells = [], means = [];
+    let every = [];
+    for (const v of speeds) { const a = (per[gp.key] || {})[v] || []; every = every.concat(a); const s = stats(a); cells.push(el("td", { text: s.n ? `${fmt(s.mean, 2)}(${s.n})` : "-" })); if (s.n) means.push(s.mean); }
+    if (!every.length) continue;
+    const s = stats(every); all[gp.key] = s;
+    const spread = means.length > 1 ? Math.max(...means) - Math.min(...means) : null;
+    t.append(el("tr", null, el("td", { class: "l", text: gp.name }), ...cells, el("td", { text: `${fmt(s.mean, 2)}(${s.n})` }), el("td", { text: spread == null ? "-" : fmt(spread, 2) })));
+  }
+  card.append(t);
+  edgeSpeedChart(card, tests);
+  const last = tests[tests.length - 1];
+  if (last) {
+    const off = (side, kind) => {
+      const k = `off_${side.toLowerCase()}_${kind}`;
+      const cur = +last.params[k];
+      const s = all[`${side},${kind}`];
+      return s && s.n ? cur - s.mean : cur;
+    };
+    const line = `float Edge_Off[2][2] = { { ${fmt(off("R", "wall"))}, ${fmt(off("R", "pillar"))} }, { ${fmt(off("L", "wall"))}, ${fmt(off("L", "pillar"))} } };`;
+    card.append(el("h3", { text: "Wallsensor.c に書き写す値(今の値 − 平均の c-border)" }), copyLine(line));
+  }
+  view.append(card);
+}
+
+/* ================= 吸引のときのセンサのノイズ(モード3 No.10) ================= */
+const NOISE_CH = ["FL", "L", "R", "FR"];	//表とグラフの並び(色はセンサの値の画面と同じ)
+const NOISE_PH = { FL: 0, R: 0, L: 1, FR: 1 };	//そのセンサを点灯して読んだときのPWMの位置(ph1: FL・R、ph2: L・FR)
+const NOISE_TR_IDX = { FL: 0, R: 1, L: 2, FR: 3 };	//tr の列の並び(g_sensor と同じ FL, R, L, FR)
+function parseNoise(b) {
+  const N = { stat: [], batt: [], tr: new Map(), conds: new Map(), duties: new Set() };
+  for (const l of b.lines) {
+    const f = l.split(",");
+    if (f[0] === "stat" && f.length >= 11) {
+      const r = { c: +f[1], settle: +f[2], cyc: +f[3], duty: +f[4], ch: f[5], kind: f[6], mean: +f[7], sd: +f[8], min: +f[9], max: +f[10] };
+      N.stat.push(r); N.conds.set(r.c, r); N.duties.add(r.duty);
+    } else if (f[0] === "batt" && f.length >= 9) {
+      N.batt.push({ c: +f[1], duty: +f[4], mean: +f[5], sd: +f[6], min: +f[7], max: +f[8] });
+    } else if (f[0] === "tr" && f.length >= 15) {
+      const k = `${f[1]},${f[2]}`;
+      if (!N.tr.has(k)) N.tr.set(k, []);
+      N.tr.get(k).push(f.slice(3).map(Number));
+    }
+  }
+  N.duties = [...N.duties].sort((a, b) => a - b);
+  N.condList = [...N.conds.keys()].sort((a, b) => a - b);
+  N.get = (c, duty, ch, kind) => N.stat.find((r) => r.c === c && r.duty === duty && r.ch === ch && r.kind === kind);
+  return N;
+}
+const condName = (r) => `待ち ${r.settle}us・取り込み ${r.cyc}サイクル${r.settle === 0 && r.cyc === 3 ? "(今のまま)" : ""}`;
+/* 吸引でばらつきがどれだけ増えたか(いちばん強い吸引 / 吸引なし)。小さい値は0.5で頭打ちにして割る */
+const growth = (s0, s1) => (s0 && s1) ? s1.sd / Math.max(0.5, s0.sd) : null;
+function noiseJudge(N, c, ch) {
+  const d0 = N.duties[0], d1 = N.duties[N.duties.length - 1];
+  if (d0 == null || d0 === d1) return "-";
+  const on0 = N.get(c, d0, ch, "on"), on1 = N.get(c, d1, ch, "on");
+  const off0 = N.get(c, d0, ch, "off"), off1 = N.get(c, d1, ch, "off");
+  const gDiff = growth(N.get(c, d0, ch, "diff"), N.get(c, d1, ch, "diff"));
+  if (gDiff == null || !on0 || !on1 || !off0 || !off1) return "-";
+  if (gDiff < 1.5) return "吸引で増えない";
+  /* 吸引で増えたばらつきの大きさで比べる(消灯時の値は小さいので、倍率だと大げさになる) */
+  const dOn = on1.sd - on0.sd, dOff = off1.sd - off0.sd;
+  if (dOff >= 0.5 * dOn) return "消灯も同じくらい揺れる → 電気(GND・ADC)";
+  return "点灯時が大きく揺れる → LEDの点け方・電源";
+}
+function renderNoise(view, b) {
+  const N = parseNoise(b);
+  if (!N.stat.length) { rawCard(view, b); return; }
+  const colors = { FL: css("--s1"), L: css("--s2"), R: css("--s3"), FR: css("--s4") };
+  const c0 = N.condList[0];
+  const dMax = N.duties[N.duties.length - 1];
+
+  /* 1. 今の読み方で、点灯・消灯・差のばらつき */
+  const card = el("div", { class: "card" });
+  card.append(el("h2", { text: `吸引のときのセンサのノイズ(${timeStr(b.time)})` }),
+    el("div", { class: "note", text: "止まったまま、吸引とセンサの読み方を変えて、点灯時・消灯時の生のAD値と、その差(点灯 − 消灯。g_sensor のもと)を測った。ばらつきは標準偏差。消灯時の値も吸引で揺れるなら電気(GND・ADC)、点灯時だけなら LED の点け方を疑う。" }));
+  if (N.conds.has(c0)) {
+    card.append(el("h3", { text: `${condName(N.conds.get(c0))}: ばらつき(点灯 / 消灯 / 差)` }));
+    const t = el("table");
+    t.append(el("tr", null, el("th", { class: "l", text: "センサ" }), ...N.duties.map((d) => el("th", { text: `吸引 ${d}` })), el("th", { text: `差の平均のずれ(${dMax} − ${N.duties[0]})` }), el("th", { class: "l", text: "見立て" })));
+    for (const ch of NOISE_CH) {
+      const cells = N.duties.map((d) => {
+        const on = N.get(c0, d, ch, "on"), off = N.get(c0, d, ch, "off"), df = N.get(c0, d, ch, "diff");
+        return el("td", { text: `${fmt(on?.sd, 1)} / ${fmt(off?.sd, 1)} / ${fmt(df?.sd, 1)}` });
+      });
+      const a = N.get(c0, N.duties[0], ch, "diff"), z = N.get(c0, dMax, ch, "diff");
+      t.append(el("tr", null, el("td", { class: "l", text: ch }), ...cells, el("td", { text: a && z ? fmt(z.mean - a.mean, 1) : "-" }), el("td", { class: "l", text: noiseJudge(N, c0, ch) })));
+    }
+    card.append(t);
+    const bt = N.batt.filter((x) => x.c === c0);
+    if (bt.length) card.append(el("div", { class: "note", text: "電池のAD値のばらつき: " + bt.map((x) => `吸引 ${x.duty} で ${fmt(x.sd, 1)}(平均 ${fmt(x.mean, 0)})`).join("、") }));
+  }
+
+  /* 2. 読み方ごとの差のばらつき */
+  if (N.condList.length > 1) {
+    card.append(el("h3", { text: "読み方ごとの、差(点灯 − 消灯)のばらつき" }));
+    const t = el("table");
+    t.append(el("tr", null, el("th", { class: "l", text: "センサ" }), el("th", { class: "l", text: "読み方" }), ...N.duties.map((d) => el("th", { text: `吸引 ${d}` })), el("th", { text: "差の平均(吸引なし)" })));
+    for (const ch of NOISE_CH) {
+      N.condList.forEach((c, j) => {
+        const base = N.get(c0, dMax, ch, "diff");
+        const cells = N.duties.map((d) => {
+          const s = N.get(c, d, ch, "diff");
+          const td = el("td", { text: fmt(s?.sd, 1) });
+          /* いちばん強い吸引で、今の読み方より半分以下になったら目立たせる */
+          if (c !== c0 && d === dMax && s && base && s.sd <= base.sd * 0.5) td.style.color = css("--good");
+          return td;
+        });
+        const m = N.get(c, N.duties[0], ch, "diff");
+        t.append(el("tr", null, el("td", { class: "l", text: j === 0 ? ch : "" }), el("td", { class: "l", text: condName(N.conds.get(c)) }), ...cells, el("td", { text: fmt(m?.mean, 0) })));
+      });
+    }
+    card.append(t,
+      el("div", { class: "note", text: "緑はいちばん強い吸引で、今の読み方の半分以下になったところ。待ちを入れると減る → LED を点けた直後(受光の立ち上がりの途中)を読んでいた。取り込み時間を伸ばすと減る → 取り込みが短すぎた。取り込みを伸ばすと読むのも遅くなるので、待ちの効果も少し混ざる。差の平均が読み方で変わったら、閾値と距離の表(Wallsensor.c / WallDistance.c)を測り直す。" }));
+  }
+  view.append(card);
+
+  /* 3. 吸引の強さとばらつきのグラフ(読み方ごと) */
+  const gcard = el("div", { class: "card" });
+  gcard.append(el("h2", { text: "吸引の強さと、差のばらつき" }), el("div", { class: "note", text: "横軸は吸引の duty。点を指すと値が出る。" }));
+  const glink = new LinkedX();
+  for (const c of N.condList) {
+    const series = NOISE_CH.map((ch) => {
+      const pts = N.duties.map((d) => N.get(c, d, ch, "diff")).filter(Boolean);
+      return { name: ch, color: colors[ch], x: Float64Array.from(pts, (s) => s.duty), y: Float64Array.from(pts, (s) => s.sd) };
+    });
+    const points = [];
+    for (const s of series) for (let i = 0; i < s.x.length; i++) points.push({ x: s.x[i], y: s.y[i], color: s.color, label: `${s.name} 吸引 ${s.x[i]}: ${fmt(s.y[i], 2)}` });
+    new LineChart(gcard, condName(N.conds.get(c)), "標準偏差", series, glink, 150, { xName: "吸引", xDigits: 0, points });
+  }
+  view.append(gcard);
+
+  /* 4. 生の値(測ったそばから出したときだけある) */
+  if (N.tr.size) noiseTrace(view, b, N, colors);
+  rawCard(view, b);
+}
+function noiseTrace(view, b, N, colors) {
+  const card = el("div", { class: "card" });
+  const selC = el("select"), selD = el("select");
+  for (const c of N.condList) selC.append(el("option", { value: c, text: condName(N.conds.get(c)) }));
+  for (const d of N.duties) selD.append(el("option", { value: d, text: `吸引 ${d}` }));
+  selD.value = N.duties[N.duties.length - 1];
+  const body = el("div");
+  card.append(el("h2", { text: "生の値(1msごと、はじめの100回)" }),
+    el("div", { class: "row" }, selC, selD, el("span", { class: "note", text: "上から点灯時、消灯時、差。いちばん下は差と吸引のPWMの位置(0〜周期)。PWMの位置で差が変わるなら、PWMの電流の揺れを拾っている。" })),
+    body);
+  view.append(card);
+  const draw = () => {
+    body.replaceChildren();
+    const rows = N.tr.get(`${selC.value},${selD.value}`) || [];
+    if (!rows.length) { body.append(el("div", { class: "note", text: "この組み合わせの生の値はない" })); return; }
+    const x = Float64Array.from(rows, (r) => r[0]);
+    const link = new LinkedX();
+    body.append(el("div", { class: "row" }, link.resetButton()));
+    const col = (ch, off) => Float64Array.from(rows, (r) => r[1 + off + NOISE_TR_IDX[ch]]);
+    const mk = (title, f) => new LineChart(body, title, "", NOISE_CH.map((ch) => ({ name: ch, color: colors[ch], x, y: f(ch) })), link, 160, { xName: "i [ms]", xDigits: 0 });
+    mk("点灯時", (ch) => col(ch, 0));
+    mk("消灯時", (ch) => col(ch, 4));
+    mk("差(点灯 − 消灯)", (ch) => { const a = col(ch, 0), z = col(ch, 4); return a.map((v, i) => v - z[i]); });
+    const top = +(b.params.pwm_top || 100) + 1;
+    noiseScatter(body, NOISE_CH.map((ch) => {
+      const a = col(ch, 0), z = col(ch, 4);
+      const d = a.map((v, i) => v - z[i]);
+      const mean = d.reduce((s, v) => s + v, 0) / d.length;
+      return { name: ch, color: colors[ch], pts: rows.map((r, i) => ({ x: r[9 + NOISE_PH[ch]] / top, y: d[i] - mean })) };
+    }));
+  };
+  selC.addEventListener("change", draw);
+  selD.addEventListener("change", draw);
+  draw();
+}
+/* 差(平均を引いたもの)と PWM の位置の散布図 */
+function noiseScatter(parent, groups) {
+  const all = groups.flatMap((g) => g.pts.map((p) => p.y));
+  if (!all.length) return;
+  let ymin = Math.min(-1, ...all), ymax = Math.max(1, ...all);
+  const pad = (ymax - ymin) * 0.08; ymin -= pad; ymax += pad;
+  const head = el("div", { class: "title" }, el("span", { text: "差 − 平均 と PWM の位置" }));
+  for (const g of groups) { const d = el("i", { class: "dot" }); d.style.background = g.color; head.append(el("span", { class: "key" }, d, el("span", { text: g.name }))); }
+  const canvas = el("canvas");
+  parent.append(el("div", { class: "chart" }, head, canvas));
+  const H = 220, L = 56, R = 12, T = 6, B = 22;
+  let hit = [];
+  const draw = () => {
+    const dpr = window.devicePixelRatio || 1, W = canvas.clientWidth || 600;
+    canvas.style.height = H + "px"; canvas.width = W * dpr; canvas.height = H * dpr;
+    const g = canvas.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const pw = W - L - R, ph = H - T - B;
+    const X = (x) => L + x * pw, Y = (y) => T + (ymax - y) / (ymax - ymin) * ph;
+    g.font = "11px " + css("--sans"); g.fillStyle = css("--muted"); g.strokeStyle = css("--grid"); g.lineWidth = 1;
+    g.textAlign = "right"; g.textBaseline = "middle";
+    for (const v of niceTicks(ymin, ymax, 4).ticks) { const y = Math.round(Y(v)) + 0.5; g.beginPath(); g.moveTo(L, y); g.lineTo(W - R, y); g.stroke(); g.fillText(+v.toPrecision(6) + "", L - 6, y); }
+    g.textAlign = "center"; g.textBaseline = "top";
+    for (const v of [0, 0.25, 0.5, 0.75, 1]) g.fillText(v + "", X(v), H - B + 5);
+    hit = [];
+    for (const gr of groups) for (const p of gr.pts) {
+      const cx = X(p.x), cy = Y(p.y);
+      g.fillStyle = gr.color; g.globalAlpha = 0.8; g.beginPath(); g.arc(cx, cy, 3, 0, Math.PI * 2); g.fill();
+      hit.push({ cx, cy, label: `${gr.name}: 位置 ${fmt(p.x, 2)}、差 − 平均 ${fmt(p.y, 1)}` });
+    }
+    g.globalAlpha = 1;
+  };
+  canvas.addEventListener("pointermove", (e) => {
+    const r = canvas.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+    let best = null, bd = 10;
+    for (const h of hit) { const d = Math.hypot(h.cx - px, h.cy - py); if (d < bd) { bd = d; best = h; } }
+    if (best) showTip(e.clientX, e.clientY, [el("div", { text: best.label })]); else hideTip();
+  });
+  canvas.addEventListener("pointerleave", hideTip);
+  new ResizeObserver(draw).observe(canvas);
+  parent.append(el("div", { class: "note", text: "横軸は PWM の周期の中の位置(0〜1、読み終えたときの TIM2 のカウンタ ÷ 周期)。吸引なしのときは PWM が止まっているので意味がない。" }));
+}
+
+/* ================= 迷路 ================= */
+function renderMaze(view, b) {
+  const N = +b.params.size || 16;
+  const get = (tag) => { const a = new Array(N + 1).fill(0); for (const l of b.lines) { const f = l.split(/\s+/); if (f[0] === tag) a[+f[1]] = parseInt(f[2], 16) >>> 0; } return a; };
+  const row = get("ROW"), col = get("COL"), lrow = get("LROW"), lcol = get("LCOL");
+  const gx = +(b.params.goal_x ?? (N / 2 - 1)), gy = +(b.params.goal_y ?? (N / 2 - 1));
+  const card = el("div", { class: "card" });
+  card.append(el("h2", { text: `迷路 ${N}×${N}(${timeStr(b.time)})` }),
+    el("div", { class: "note", text: "太線: 壁あり、点線: まだ見ていない壁。S: スタート、G: ゴール。" }));
+  const canvas = el("canvas");
+  card.append(el("div", { class: "maze-wrap" }, canvas));
+  view.append(card);
+  const draw = () => {
+    const size = Math.min(640, (card.clientWidth || 640) - 32), cell = size / (N + 1), off = cell / 2;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.width = canvas.style.height = size + "px"; canvas.width = canvas.height = size * dpr;
+    const g = canvas.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const X = (x) => off + x * cell, Y = (y) => off + (N - y) * cell;
+    g.fillStyle = css("--sel");
+    g.fillRect(X(gx), Y(gy + 2), cell * 2, cell * 2);
+    g.fillStyle = css("--ink-2"); g.font = `${Math.round(cell * 0.45)}px ` + css("--sans"); g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText("S", X(0.5), Y(0.5)); g.fillText("G", X(gx + 1), Y(gy + 1));
+    const line = (x0, y0, x1, y1, seen, wall) => {
+      if (seen && !wall) return;
+      g.beginPath(); g.moveTo(X(x0), Y(y0)); g.lineTo(X(x1), Y(y1));
+      if (!seen) { g.strokeStyle = css("--axis"); g.lineWidth = 1; g.setLineDash([2, 3]); }
+      else { g.strokeStyle = css("--ink"); g.lineWidth = 3; g.setLineDash([]); }
+      g.stroke();
+    };
+    for (let y = 0; y <= N; y++) for (let x = 0; x < N; x++) line(x, y, x + 1, y, (lrow[y] >>> x) & 1, (row[y] >>> x) & 1);
+    for (let x = 0; x <= N; x++) for (let y = 0; y < N; y++) line(x, y, x, y + 1, (lcol[x] >>> y) & 1, (col[x] >>> y) & 1);
+    g.setLineDash([]);
+    g.fillStyle = css("--ink");
+    for (let y = 0; y <= N; y++) for (let x = 0; x <= N; x++) g.fillRect(X(x) - 1.5, Y(y) - 1.5, 3, 3);
+  };
+  new ResizeObserver(draw).observe(card);
+  const info = b.lines.filter((l) => /^(unknown walls|TIME_MAX_US|NO PATH|BFS_|DIJK_)/.test(l));
+  if (info.length) view.append(el("div", { class: "card" }, el("h2", { text: "経路と計算時間" }), el("pre", { text: info.join("\n") })));
+  rawCard(view, b);
+}
+
+/* ================= センサの値(そのまま流れてくる行) ================= */
+/* モード4 No.0: FL = %4d // L = %4d // R = %4d //FR = %4d //BATT = %.2f//GyroZ = %.3f
+ * モード3 No.4: CAL,FL,L,R,FR,FL_mm,L_mm,R_mm,FR_mm
+ * どちらも #BEGIN で囲まないので、行ごとに読み取って、直近の値を流れるグラフにする */
+const LIVE = { type: "LIVE" };
+const LIVE_KEEP_S = 60;	//覚えておく長さ[s]
+const LIVE_SHOW_S = 10;	//グラフに出す長さ[s]
+const live = { kind: null, t: [], cols: {}, t0: 0, rate: 0, count: 0, rateT: 0, paused: false };
+const RE_SENSOR = /FL\s*=\s*(-?\d+)\s*\/\/\s*L\s*=\s*(-?\d+)\s*\/\/\s*R\s*=\s*(-?\d+)\s*\/\/\s*FR\s*=\s*(-?\d+)\s*\/\/\s*BATT\s*=\s*(-?[\d.]+)\s*\/\/\s*GyroZ\s*=\s*(-?[\d.]+)/;
+const LIVE_COLS = {
+  sensor: ["FL", "L", "R", "FR", "BATT", "GyroZ"],
+  cal: ["FL", "L", "R", "FR", "FL_mm", "L_mm", "R_mm", "FR_mm"],
+};
+function liveLine(line) {
+  let kind = null, vals = null;
+  const m = line.match(RE_SENSOR);
+  if (m) { kind = "sensor"; vals = m.slice(1).map(Number); }
+  else if (/^CAL,-?\d/.test(line)) { const f = line.split(",").slice(1).map(Number); if (f.length >= 8 && f.every(isFinite)) { kind = "cal"; vals = f.slice(0, 8); } }
+  if (!kind || live.paused) return;
+  /* USBシリアルは数行まとめて届くので、同じときに届いた行は、前に届いた時刻から今までのあいだに等間隔に並べる */
+  livePending.push([kind, vals]);
+  if (livePending.length === 1) queueMicrotask(liveFlush);
+}
+let livePending = [], liveLastArrive = 0;
+function liveFlush() {
+  const batch = livePending; livePending = [];
+  const now = performance.now() / 1000;
+  const prev = (liveLastArrive && now - liveLastArrive < 0.5) ? liveLastArrive : now - 0.01 * batch.length;
+  liveLastArrive = now;
+  batch.forEach(([kind, vals], k) => livePush(kind, vals, prev + (now - prev) * (k + 1) / batch.length, now));
+}
+function livePush(kind, vals, tAt, now) {
+  const first = !live.t.length;
+  if (live.kind !== kind) { live.kind = kind; live.t = []; live.cols = {}; live.t0 = tAt; for (const c of LIVE_COLS[kind]) live.cols[c] = []; }
+  live.t.push(tAt - live.t0);
+  LIVE_COLS[kind].forEach((c, j) => live.cols[c].push(vals[j]));
+  const keepFrom = live.t[live.t.length - 1] - LIVE_KEEP_S;
+  let cut = 0;
+  while (cut < live.t.length && live.t[cut] < keepFrom) cut++;
+  if (cut > 500) { live.t.splice(0, cut); for (const c in live.cols) live.cols[c].splice(0, cut); }
+  live.count++;
+  if (now - live.rateT >= 1) { live.rate = Math.round(live.count / (now - live.rateT || 1)); live.count = 0; live.rateT = now; liveListDirty = true; }
+  if (first) liveListDirty = true;
+  liveDirty = true;
+}
+let liveDirty = false, liveListDirty = false, liveView = null;
+setInterval(() => {
+  if (liveListDirty) { liveListDirty = false; renderList(); }
+  if (liveDirty && selected === LIVE && liveView) { liveDirty = false; liveView.update(); }
+}, 150);
+function renderLive(view) {
+  const card = el("div", { class: "card" });
+  const pause = el("button", { text: live.paused ? "再開" : "止める" });
+  pause.addEventListener("click", () => { live.paused = !live.paused; pause.textContent = live.paused ? "再開" : "止める"; });
+  const save = el("button", { text: "ファイルに保存(CSV)" });
+  save.addEventListener("click", () => {
+    const cols = LIVE_COLS[live.kind] || [];
+    const rows = ["t," + cols.join(",")];
+    for (let i = 0; i < live.t.length; i++) rows.push([live.t[i].toFixed(3), ...cols.map((c) => live.cols[c][i])].join(","));
+    download(`${stamp(new Date())}_sensor.csv`, rows.join("\n") + "\n");
+  });
+  const tiles = el("div", { class: "row" });
+  card.append(el("h2", { text: live.kind === "cal" ? "距離の表(モード3 No.4)の値" : "センサの値(モード4 No.0)" }),
+    el("div", { class: "row" }, pause, save, el("span", { class: "note", text: `直近${LIVE_SHOW_S}秒を流れるグラフにする(覚えているのは${LIVE_KEEP_S}秒)。指すと値が出る。` })),
+    tiles);
+  view.append(card);
+  const colors = [css("--s1"), css("--s2"), css("--s3"), css("--s4")];
+  const groups = live.kind === "cal"
+    ? [{ title: "センサ値", unit: "", cols: ["FL", "L", "R", "FR"] }, { title: "距離(今の表で変換)", unit: "mm", cols: ["FL_mm", "L_mm", "R_mm", "FR_mm"] }]
+    : [{ title: "センサ値(10回の移動平均)", unit: "", cols: ["FL", "L", "R", "FR"] }, { title: "電池", unit: "V", cols: ["BATT"] }, { title: "角速度", unit: "deg/s", cols: ["GyroZ"] }];
+  const link = new LinkedX();
+  const charts = groups.map((g) => {
+    const series = g.cols.map((c, j) => ({ name: c, color: colors[j % 4], x: live.t, y: live.cols[c] || [] }));
+    return { g, chart: new LineChart(card, g.title, g.unit, series, link, 170, { xName: "t [s]", xDigits: 2 }) };
+  });
+  const tileCols = live.kind === "cal" ? LIVE_COLS.cal : LIVE_COLS.sensor;
+  const tileEls = tileCols.map((c) => { const v = el("b", { text: "-" }); tiles.append(el("div", { class: "tile" }, el("div", { class: "note", text: c }), v)); return [c, v]; });
+  liveView = {
+    update() {
+      const n = live.t.length;
+      if (!n) return;
+      const t1 = live.t[n - 1], t0 = Math.max(live.t[0], t1 - LIVE_SHOW_S);
+      for (const { chart } of charts) {
+        for (const s of chart.series) { s.x = live.t; s.y = live.cols[s.name] || []; }
+        chart.full = [t0, Math.max(t1, t0 + 0.001)];
+        chart.draw();
+      }
+      for (const [c, v] of tileEls) { const a = live.cols[c]; if (a && a.length) v.textContent = String(a[a.length - 1]); }
+    },
+  };
+  liveView.update();
+}
+
+/* ================= 感度合わせ・そのほか ================= */
+function copyLine(text) {
+  const btn = el("button", { text: "コピー" });
+  btn.addEventListener("click", async () => { try { await navigator.clipboard.writeText(text); btn.textContent = "コピーした"; setTimeout(() => (btn.textContent = "コピー"), 1200); } catch (e) { /* */ } });
+  return el("div", { class: "copyline" }, btn, el("code", { text }));
+}
+function renderCenter(view, b) {
+  const card = el("div", { class: "card" });
+  card.append(el("h2", { text: `感度合わせ ${timeStr(b.time)}` }));
+  for (const l of b.lines) {
+    const m = l.match(/^(\S+\.c):\s+(.*)$/);
+    if (m) { card.append(el("h3", { text: m[1] }), copyLine(m[2])); }
+    else card.append(el("div", { class: "note", text: l }));
+  }
+  view.append(card);
+  rawCard(view, b);
+}
+/* センサ値の記録(SENSOR)の行を読む。行は「名前,平均,いちばん小さい値,いちばん大きい値」 */
+function sensorRows(b) {
+  const rows = [];
+  for (const l of b.lines) {
+    const f = l.split(",");
+    if (f.length >= 4 && isFinite(+f[1])) rows.push({ name: f[0], average: +f[1], min: +f[2], max: +f[3] });
+  }
+  return rows;
+}
+/* センサ値の記録：この記録の表と、読み込んだ全部の記録の一覧(メモごと。表にコピーしやすい形) */
+function renderSensor(view, b) {
+  const card = el("div", { class: "card" });
+  card.append(el("h2", { text: `センサ値の記録 ${timeStr(b.time)}` + (b.memo ? ` [${b.memo}]` : "") }));
+  const t = el("table");
+  t.append(el("tr", null, ...["センサ", "平均", "いちばん小さい", "いちばん大きい", "ゆれ(大 − 小)"].map((h, j) => el("th", { class: j === 0 ? "l" : "", text: h }))));
+  for (const r of sensorRows(b)) t.append(el("tr", null, el("td", { class: "l", text: r.name }), el("td", { text: fmt(r.average, 1) }), el("td", { text: fmt(r.min, 0) }), el("td", { text: fmt(r.max, 0) }), el("td", { text: fmt(r.max - r.min, 0) })));
+  card.append(t);
+  view.append(card);
+
+  const all = blocks.filter((x) => x.type === "SENSOR");
+  const card2 = el("div", { class: "card" });
+  card2.append(el("h2", { text: `読み込んだセンサ値の記録 ${all.length} 個(平均)` }),
+    el("div", { class: "note", text: "logs/ のファイルをまとめて開くと、ここに全部並ぶ。下の文字は、そのまま表計算やチャットに貼れる。" }));
+  const lines = ["memo,time,FL,L,R,FR"];
+  for (const x of all) {
+    const v = {};
+    for (const r of sensorRows(x)) v[r.name] = r.average;
+    lines.push([x.memo, timeStr(x.time), v.FL, v.L, v.R, v.FR].join(","));
+  }
+  const cl = copyLine(lines.join("\n"));
+  cl.style.alignItems = "flex-start";
+  cl.querySelector("code").style.whiteSpace = "pre";	//1 行ずつ改行して見せる
+  card2.append(cl);
+  view.append(card2);
+  rawCard(view, b);
+}
+function rawCard(view, b) {
+  const btn = el("button", { text: "ファイルに保存" });
+  btn.addEventListener("click", () => download(fileName(b), b.raw));
+  const pre = el("pre", { text: b.raw.length > 200000 ? b.raw.slice(0, 200000) + "\n…(長いので途中まで)" : b.raw });
+  pre.style.maxHeight = "240px";
+  const det = el("details", null, el("summary", { text: "元のデータ" }), pre);
+  view.append(el("div", { class: "card" }, el("div", { class: "row" }, btn, el("span", { class: "note", text: fileName(b) })), det));
+}
+function renderView() {
+  const view = $("view");
+  view.replaceChildren();
+  zoomResetters = [];
+  hideTip();
+  const b = selected;
+  if (!b) { view.append(welcome()); return; }
+  try {
+    if (b.type === "LOG") renderLog(view, b);
+    else if (b.type === "EDGE") renderEdge(view, b);
+    else if (b.type === "MAZE") renderMaze(view, b);
+    else if (b.type === "CENTER") renderCenter(view, b);
+    else if (b.type === "SENSOR") renderSensor(view, b);
+    else if (b.type === "NOISE") renderNoise(view, b);
+    else if (b === LIVE) renderLive(view);
+    else rawCard(view, b);
+  } catch (e) {
+    view.append(el("div", { class: "card warn", text: "表示できませんでした: " + e.message }));
+    rawCard(view, b);
+  }
+}
+function welcome() {
+  const d = el("div", { class: "empty" });
+  d.append(el("h2", { text: "ロボットをUSBシリアルでつなぎ、「接続」を押す" }),
+    el("p", { text: "Tera Term は閉じておく。「保存先フォルダ」でリポジトリの logs/ を選ぶと、届いたデータを自動でファイルにする。" }),
+    el("p", { text: "ロボットでモード7 No.1(ログ出力)を選ぶと、残っているデータ(調整の結果・センサ値の記録・迷路・走行ログ)が全部届き、種類ごとに分けて表示する。センサ値の表示(モード5 No.1)は、流れるグラフになる。" }),
+    el("p", { text: "「メモ」に、測った条件(例: R 64mm)を書いてからデータを出すと、ファイル名と中身に入る。" }));
+  if (!("serial" in navigator)) d.append(el("p", { class: "warn", text: "このブラウザでは USB シリアルを読めません(Windows の Chrome か Edge で開く)。保存したファイルを開いて見ることはできる。" }));
+  return d;
+}
+
+/* ================= ボタン ================= */
+$("bConnect").addEventListener("click", connect);
+$("bDisconnect").addEventListener("click", disconnect);
+$("bDir").addEventListener("click", pickDir);
+$("bOpen").addEventListener("click", () => $("fOpen").click());
+$("fOpen").addEventListener("change", (e) => { openFiles([...e.target.files]); e.target.value = ""; });
+$("bSession").addEventListener("click", saveSession);
+$("bConsole").addEventListener("click", () => $("console").classList.toggle("hide"));
+$("bClear").addEventListener("click", () => { consoleLines.length = 0; consoleDirty = true; });
+document.addEventListener("dragover", (e) => e.preventDefault());
+document.addEventListener("drop", (e) => { e.preventDefault(); openFiles([...e.dataTransfer.files]); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderView);
+renderView();
+</script>
+</body>
+</html>

@@ -41,6 +41,8 @@ software/main-controller/
 ├── CUBEMX_SETUP.md               .ioc の設定値
 ├── KOGUMA_PORTING.md             KOGUMA コードの棚卸しと移植判断
 ├── MODES.md                      機体の操作、LED の表し方、モードの割り当て、迷路・ゴールの保存
+├── tools/viewer.html             ビューア：機体の出力をグラフ・表・迷路にし、logs/ に保存する（KOGUMA のビューアを写して直したもの）
+├── logs/                         実機の出力を残すフォルダ（残し方は logs/README.md）
 │
 └── TORANEKO.Mk3/                 CubeMX（CMake）プロジェクト
     ├── TORANEKO.Mk3.ioc          CubeMX 設定（ピン・クロック・周辺機能）
@@ -116,7 +118,7 @@ software/main-controller/
     │       ├── goal.c/.h         ゴールの位置（機体で入れて Flash に保存する。大きさは 2×2）
     │       ├── ui.c/.h           モード選択の操作、LED での表示と合図（ブザーはない）
     │       ├── log.c/.h          走行ログの記録と吸い出し
-    │       ├── output.c/.h       出力（迷路と走行ログを、KOGUMA のビューアで読める形で PC へ出す）
+    │       ├── output.c/.h       出力（迷路と走行ログを、ビューア（tools/viewer.html）で読める形で PC へ出す）
     │       ├── failsafe.c/.h     異常の検知（衝突、電圧低下など）と停止（.h だけ）
     │       └── flash.c/.h        迷路とゴールの位置の Flash への保存と読み込み（何をどの順番で書くか。HAL は使わない）
     │
