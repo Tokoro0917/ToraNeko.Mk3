@@ -5,6 +5,7 @@ KOGUMA（クラシックサイズ機）とは別系譜の機体です。前身�
 回路図・基板データ・配線資料なども含めて一元管理し、ソフトとハードの変更履歴を紐付けて追跡できるようにします。
 
 ロボットの詳細な概要・仕様は [docs/overview.md](./docs/overview.md) を参照してください。
+機体で選べるモードの一覧は [software/main-controller/README.md の「モード一覧」](software/main-controller/README.md#モード一覧今のファームウェアで選べるもの) にあります。
 
 ## ディレクトリ構成
 
