@@ -5,7 +5,7 @@
  * ビルドと実行（このフォルダで）:  make
  *
  * ■ しくみ
- * mode.c・ui.c・goal.c が使う関数（時計、LED、タイヤ、スイッチ、前センサの手、Flash、探索、ログ出力、
+ * mode.c・ui.c・goal.c が使う関数（時計、LED、タイヤ、スイッチ、前センサの手、Flash、探索、ログ出力、センサ値の表示、
  * フェイルセーフの解除）を、ここで仮に作る。
  *   - 時計：timebase_wait_ms() が呼ばれると、その分だけ仮の時計を進める
  *   - 入力：「何 ms に、タイヤを何段回す・スイッチを押す・手をかざす」という予定を先に作っておき、
@@ -21,7 +21,8 @@
  *   4. モードを選んで、スタートして、探索を呼ぶまで（LED の表示と時刻、走り終わったら「うまくいった」、走ったあとも同じモード・No.）
  *   5. No.0 では決定しない、モードと No. は一周する、スタート待ちでの選び直し、前センサの手のチャタリング、
  *      フェイルセーフ（点滅、スイッチで解除、ロード中）、道がなくなった
- *   6. ログ出力（終わったら「うまくいった」）、ゴールの位置の入力（使えない位置のときは x に戻る）、迷路呼び出し
+ *   6. ログ出力（終わったら「うまくいった」）、ゴールの位置の入力（使えない位置のときは x に戻る）、迷路呼び出し、
+ *      センサ値の表示（スタート待ちをしない）、エンコーダの歪みを測る・直進・その場 180° 旋回・スラローム 90°（スタート待ちのあとに呼ぶ）
  */
 #include <stdbool.h>
 #include <stdint.h>
@@ -40,6 +41,7 @@
 #include "sys/goal.h"
 #include "sys/mode.h"
 #include "sys/output.h"
+#include "sys/shortest.h"
 #include "sys/ui.h"
 
 /* ---------------------------------------------------------------------------
@@ -62,6 +64,9 @@ static void check(bool ok, const char *message)
  * ------------------------------------------------------------------------- */
 
 static uint32_t s_now_ms = 0;          /* 仮の時計 [ms] */
+
+/* モード選択に戻るときに出す「ロード中」の長さ [ms]（7 個 × 0.15 秒）。mode_run_once() は最後にこれを出してから戻る */
+#define LOADING_MS 1050
 static uint32_t s_time_limit_ms = 0;   /* これを過ぎたら、終わらないとみなしてテストをやめる */
 
 /* 入力の種類 */
@@ -209,10 +214,30 @@ static int s_flash_maze_load_count = 0;
 static int s_failsafe_clear_count = 0;
 
 static int s_output_count = 0;    /* 出力が呼ばれた回数 */
+static int s_sensor_view_count = 0;         /* センサ値の表示が呼ばれた回数 */
+static uint32_t s_sensor_view_time_ms = 0;  /* センサ値の表示が呼ばれた時刻 [ms] */
+static int s_encoder_cal_count = 0;         /* エンコーダの歪みを測るのが呼ばれた回数 */
+static int s_sensor_record_count = 0;       /* センサ値の記録（モード5 No.2）が呼ばれた回数 */
+static int s_record_print_count = 0;        /* センサ値の記録を出すのが呼ばれた回数 */
+static int s_record_print_output_count = 0; /* センサ値の記録を出したときの、出力が呼ばれた回数（出力より前に出すか） */
+static int s_straight_count = 0;            /* 直進（モード6 No.1）が呼ばれた回数 */
+static int s_pivot_count = 0;               /* その場 180° 旋回（モード2 No.4）が呼ばれた回数 */
+static int s_slalom_count = 0;              /* スラローム 90°（モード2 No.1）が呼ばれた回数 */
+static int s_along_wall_count = 0;          /* 壁に沿って直進（モード6 No.7）が呼ばれた回数 */
+static int s_uturn_count = 0;               /* U ターン（モード2 No.2）が呼ばれた回数 */
+static int s_align_count = 0;               /* 壁合わせだけ（モード2 No.5）が呼ばれた回数 */
+static int s_result_print_count = 0;        /* 調整の動きの結果を出すのが呼ばれた回数 */
+static int s_result_print_output_count = 0; /* そのとき、出力が何回呼ばれていたか（出力より前に出すことを確かめる） */
 static int s_output_goal_x = 0;   /* 出力に渡されたゴール */
 static int s_output_goal_y = 0;
 
 static explore_result_t s_explore_result = EXPLORE_RESULT_DONE;  /* 探索が返す結果 */
+static bool s_shortest_route = true;        /* 最短走行の道があることにするか */
+static int s_shortest_count = 0;            /* 最短走行が呼ばれた回数 */
+static int s_shortest_number = 0;           /* 最短走行に渡された No. */
+static int s_shortest_goal_x = -1;          /* 最短走行に渡されたゴール */
+static int s_shortest_goal_y = -1;
+static uint32_t s_shortest_time_ms = 0;     /* 最短走行が呼ばれた時刻 */
 static int s_explore_count = 0;           /* 探索が呼ばれた回数 */
 static explore_type_t s_explore_type = EXPLORE_ROUND_TRIP;
 static int s_explore_goal[4];             /* 渡されたゴール（x、y、幅、高さ） */
@@ -238,9 +263,29 @@ static void reset_world(void)
   s_flash_has_maze = false;
   s_flash_maze_load_count = 0;
   s_failsafe_clear_count = 0;
+  s_sensor_view_count = 0;
+  s_sensor_view_time_ms = 0;
+  s_encoder_cal_count = 0;
+  s_sensor_record_count = 0;
+  s_record_print_count = 0;
+  s_record_print_output_count = 0;
+  s_straight_count = 0;
+  s_pivot_count = 0;
+  s_slalom_count = 0;
+  s_along_wall_count = 0;
+  s_uturn_count = 0;
+  s_align_count = 0;
+  s_result_print_count = 0;
+  s_result_print_output_count = 0;
   s_output_count = 0;
   s_explore_result = EXPLORE_RESULT_DONE;
   s_explore_count = 0;
+  s_shortest_route = true;
+  s_shortest_count = 0;
+  s_shortest_number = 0;
+  s_shortest_goal_x = -1;
+  s_shortest_goal_y = -1;
+  s_shortest_time_ms = 0;
   s_explore_time_ms = 0;
 }
 
@@ -355,6 +400,75 @@ void output_all(int goal_x, int goal_y)
   s_output_goal_y = goal_y;
 }
 
+/* センサ値の表示：出さずに、呼ばれた時刻を覚える */
+void sensor_view_run(void)
+{
+  s_sensor_view_count = s_sensor_view_count + 1;
+  s_sensor_view_time_ms = s_now_ms;
+}
+
+/* 調整の動きの結果を出す：出さずに、呼ばれたことと、そのときの出力の回数を覚える */
+void adjust_print_last_result(void)
+{
+  s_result_print_count = s_result_print_count + 1;
+  s_result_print_output_count = s_output_count;
+}
+
+/* U ターン：走らずに、呼ばれたことを覚える */
+void adjust_uturn(void)
+{
+  s_uturn_count = s_uturn_count + 1;
+}
+
+/* 壁合わせだけ：動かずに、呼ばれたことを覚える */
+void adjust_front_align(void)
+{
+  s_align_count = s_align_count + 1;
+}
+
+/* 壁に沿って直進：走らずに、呼ばれたことを覚える */
+void adjust_straight_along_wall(void)
+{
+  s_along_wall_count = s_along_wall_count + 1;
+}
+
+/* スラローム 90°：走らずに、呼ばれたことを覚える */
+void adjust_slalom_90(void)
+{
+  s_slalom_count = s_slalom_count + 1;
+}
+
+/* その場 180° 旋回：回らずに、呼ばれたことを覚える */
+void adjust_pivot_180(void)
+{
+  s_pivot_count = s_pivot_count + 1;
+}
+
+/* 直進：走らずに、呼ばれたことを覚える */
+void adjust_straight(void)
+{
+  s_straight_count = s_straight_count + 1;
+}
+
+/* センサ値の記録：測らずに、呼ばれたことを覚える */
+void sensor_record_run(void)
+{
+  s_sensor_record_count = s_sensor_record_count + 1;
+}
+
+/* センサ値の記録を出す：出さずに、呼ばれたことと、そのときの出力の回数を覚える */
+void sensor_record_print(void)
+{
+  s_record_print_count = s_record_print_count + 1;
+  s_record_print_output_count = s_output_count;
+}
+
+/* エンコーダの歪みを測る：回さずに、呼ばれたことを覚える */
+void encoder_cal_run(void)
+{
+  s_encoder_cal_count = s_encoder_cal_count + 1;
+}
+
 /* 探索：走らずに、呼ばれたことを覚える。走っているあいだはタイヤが回るので、回った量も足す */
 explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int goal_width, int goal_height)
 {
@@ -368,6 +482,25 @@ explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int go
   s_left_count = s_left_count + 100000;
   s_right_count = s_right_count + 77777;
   return s_explore_result;
+}
+
+/* 最短走行の道があるか：決めておいた答えを返す */
+bool shortest_has_route(int goal_x, int goal_y)
+{
+  (void)goal_x;  /* 使わない引数（(void) を付けると、使っていないという警告が出ない） */
+  (void)goal_y;
+  return s_shortest_route;
+}
+
+/* 最短走行：走らずに、呼ばれたことと、渡された値を覚える */
+shortest_result_t shortest_run(int number, int goal_x, int goal_y)
+{
+  s_shortest_count = s_shortest_count + 1;
+  s_shortest_number = number;
+  s_shortest_goal_x = goal_x;
+  s_shortest_goal_y = goal_y;
+  s_shortest_time_ms = s_now_ms;
+  return SHORTEST_RESULT_DONE;
 }
 
 /* ---------------------------------------------------------------------------
@@ -412,9 +545,9 @@ static void test_inputs(void)
   /* タイヤ：1 段に足りない回転は覚えておき、足すと 1 段になる。後ろに回すと負 */
   reset_world();
   ui_init();
-  add_event(100, INPUT_RIGHT_COUNT, 150);
-  add_event(200, INPUT_RIGHT_COUNT, 150);
-  add_event(300, INPUT_RIGHT_COUNT, -350);
+  add_event(100, INPUT_RIGHT_COUNT, UI_TIRE_COUNT_PER_STEP / 2);         /* 半段 */
+  add_event(200, INPUT_RIGHT_COUNT, UI_TIRE_COUNT_PER_STEP / 2);         /* もう半段 */
+  add_event(300, INPUT_RIGHT_COUNT, -(UI_TIRE_COUNT_PER_STEP + 50));    /* 後ろに 1 段と少し */
   ui_wait_ms(150);
   check(ui_read_right_steps() == 0, "半段だけ回しても、まだ 0 段");
   ui_wait_ms(100);
@@ -457,7 +590,7 @@ static void test_goal(void)
   printf("[3] ゴール\n");
   reset_world();
   goal_init();
-  check(goal_get_x() == 15 && goal_get_y() == 15, "Flash にゴールがなければ、中央の 2×2（15, 15）");
+  check(goal_get_x() == 7 && goal_get_y() == 7, "Flash にゴールがなければ、基準のゴール（7, 7）");
 
   s_flash_has_goal = true;
   s_flash_goal_x = 3;
@@ -468,7 +601,7 @@ static void test_goal(void)
   s_flash_goal_x = 0;
   s_flash_goal_y = 0;
   goal_init();
-  check(goal_get_x() == 15 && goal_get_y() == 15, "Flash のゴールがおかしい（スタートを含む）ときは中央");
+  check(goal_get_x() == 7 && goal_get_y() == 7, "Flash のゴールがおかしい（スタートを含む）ときは基準のゴール");
 
   check(goal_is_valid(30, 30), "(30, 30) は使える（2×2 が迷路の右上の角に入る）");
   check(!goal_is_valid(31, 5), "(31, 5) は迷路からはみ出す");
@@ -513,7 +646,10 @@ static void test_select_and_start(void)
   check_leds_at(1800, "1111111", "手をかざしているあいだは、全部点く");
   check_leds_at(2500, "0000000", "手を離すと、全部消える");
   check_leds_at(s_explore_time_ms + 500, "1111111", "走り終わったら、全部を 1 秒点ける（うまくいった）");
-  check(s_now_ms >= s_explore_time_ms + 1000 && s_now_ms <= s_explore_time_ms + 1020, "うまくいったの合図は 1 秒");
+  check(s_now_ms >= s_explore_time_ms + 1000 + LOADING_MS && s_now_ms <= s_explore_time_ms + 1030 + LOADING_MS,
+        "うまくいったの合図は 1 秒、そのあと「ロード中」を出して戻る");
+  check_leds_at(s_now_ms - 100, "1111111", "戻る前に「ロード中」を出す（最後は 7 個全部）");
+  check_leds_at(s_now_ms, "0000000", "「ロード中」が終わったら、全部消す");
   check_leds_at(s_now_ms, "0000000", "合図のあとは消す");
 
   /* 2 回目：選び直さずにスイッチを押せば、同じモード・No. で走る */
@@ -593,6 +729,7 @@ static void test_reselect(void)
   press_switch_at(1500);      /* スタート待ちで押す：選び直し */
   mode_run_once();
   check(s_explore_count == 0, "スタート待ちでスイッチを押すと走らない");
+  check_leds_at(s_now_ms - 100, "1111111", "選び直しに戻る前に「ロード中」を出す");
   check_leds_at(s_now_ms, "0000000", "選び直しに戻るとき、LED を消す");
 
   /* 選び直しで、そのまま決定してスタートすると、片道で走る */
@@ -661,24 +798,205 @@ static void test_no_route(void)
   check(s_failsafe_clear_count == 0, "フェイルセーフの解除はしない");
 }
 
+/* 最短走行（モード1）は、スタート待ちのあとに、選んだ No. と今のゴールで走る */
+static void test_shortest(void)
+{
+  printf("[5] 最短走行\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 1);    /* モード1 */
+  rotate_right_at(100, 2);   /* No.2 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_shortest_count == 1, "最短走行が 1 回呼ばれる");
+  check(s_shortest_number == 2, "選んだ No. を渡す");
+  check(s_shortest_goal_x == goal_get_x() && s_shortest_goal_y == goal_get_y(), "今のゴールを渡す");
+  check(s_shortest_time_ms >= 3000, "スタート待ち（手を離して 1 秒）のあとに走る");
+  check(s_explore_count == 0, "探索は呼ばれない");
+}
+
+/* 最短走行で道がないときは、走らずに「できなかった」を出して選び直す */
+static void test_shortest_no_route(void)
+{
+  printf("[5] 最短走行で道がないとき\n");
+  reset_world();
+  mode_init();
+  s_shortest_route = false;
+
+  rotate_left_at(100, 1);    /* モード1 */
+  rotate_right_at(100, 1);   /* No.1 */
+  press_switch_at(500);      /* 決定 */
+  mode_run_once();
+
+  check(s_shortest_count == 0, "最短走行は呼ばれない");
+  check_leds_at(840, "1100011", "決定の点滅のあと、外側の 4 個が点く（できなかった）");
+  check_leds_at(920, "0000000", "速く点滅する（消えたところ）");
+}
+
 /* ---------------------------------------------------------------------------
- * 6. ログ出力、ゴールの位置の入力、迷路呼び出し
+ * 6. ログ出力、ゴールの位置の入力、迷路呼び出し、センサ値の表示
  * ------------------------------------------------------------------------- */
+
+/* センサ値の表示（モード5 No.1）は、スタート待ちをせずに、決定したらすぐ始まる */
+static void test_sensor_view(void)
+{
+  printf("[6] センサ値の表示はスタート待ちをしない\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 5);    /* モード5 */
+  rotate_right_at(100, 1);   /* No.1 */
+  press_switch_at(500);      /* 決定（手はかざさない） */
+  mode_run_once();
+
+  check(s_sensor_view_count == 1, "センサ値の表示が 1 回呼ばれる");
+  check(s_sensor_view_time_ms < 500 + 1000, "手をかざさなくても、決定してすぐ始まる");
+  check(s_explore_count == 0, "探索は呼ばれない");
+  check(s_now_ms >= s_sensor_view_time_ms + LOADING_MS, "センサ値の表示を終えたあとも「ロード中」を出して戻る");
+}
+
+/* エンコーダの歪みを測る（モード6 No.6）は、ほかと同じくスタート待ちのあとに始まる */
+static void test_encoder_cal(void)
+{
+  printf("[6] エンコーダの歪みを測る\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 6);    /* モード6 */
+  rotate_right_at(100, 6);   /* No.6 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_encoder_cal_count == 1, "エンコーダの歪みを測るのが 1 回呼ばれる");
+  check(s_explore_count == 0 && s_sensor_view_count == 0 && s_straight_count == 0, "ほかのモードは呼ばれない");
+}
+
+/* センサ値の記録（モード5 No.2）は、No.1 と違い、スタート待ちのあとに始まる */
+static void test_sensor_record(void)
+{
+  printf("[6] センサ値の記録\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 5);    /* モード5 */
+  rotate_right_at(100, 2);   /* No.2 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_sensor_record_count == 1, "センサ値の記録が 1 回呼ばれる");
+  check(s_sensor_view_count == 0 && s_explore_count == 0, "センサ値の表示・探索は呼ばれない");
+}
+
+/* 直進（モード6 No.1）は、ほかと同じくスタート待ちのあとに始まる */
+static void test_straight(void)
+{
+  printf("[6] 直進\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 6);    /* モード6 */
+  rotate_right_at(100, 1);   /* No.1 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_straight_count == 1, "直進が 1 回呼ばれる");
+  check(s_encoder_cal_count == 0 && s_explore_count == 0 && s_pivot_count == 0, "ほかのモードは呼ばれない");
+}
+
+/* その場 180° 旋回（モード2 No.4）は、ほかと同じくスタート待ちのあとに始まる */
+static void test_pivot(void)
+{
+  printf("[6] その場 180° 旋回\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 2);    /* モード2 */
+  rotate_right_at(100, 4);   /* No.4 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_pivot_count == 1, "その場 180° 旋回が 1 回呼ばれる");
+  check(s_straight_count == 0 && s_explore_count == 0 && s_slalom_count == 0, "ほかのモードは呼ばれない");
+}
+
+/* スラローム 90°（モード2 No.1）は、ほかと同じくスタート待ちのあとに始まる */
+static void test_slalom(void)
+{
+  printf("[6] スラローム 90°\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 2);    /* モード2 */
+  rotate_right_at(100, 1);   /* No.1 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_slalom_count == 1, "スラローム 90° が 1 回呼ばれる");
+  check(s_pivot_count == 0 && s_explore_count == 0, "ほかのモードは呼ばれない");
+}
+
+/* 壁に沿って直進（モード6 No.7）は、ほかと同じくスタート待ちのあとに始まる */
+static void test_along_wall(void)
+{
+  printf("[6] 壁に沿って直進\n");
+  reset_world();
+  mode_init();
+
+  rotate_left_at(100, 6);    /* モード6 */
+  rotate_right_at(100, 7);   /* No.7 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_along_wall_count == 1, "壁に沿って直進が 1 回呼ばれる");
+  check(s_straight_count == 0 && s_encoder_cal_count == 0, "ほかのモードは呼ばれない");
+}
+
+/* U ターン（モード2 No.2）と壁合わせだけ（モード2 No.5）は、ほかと同じくスタート待ちのあとに始まる */
+static void test_uturn_and_align(void)
+{
+  printf("[6] U ターン、壁合わせだけ\n");
+  reset_world();
+  mode_init();
+  rotate_left_at(100, 2);    /* モード2 */
+  rotate_right_at(100, 2);   /* No.2 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+  check(s_uturn_count == 1 && s_align_count == 0 && s_pivot_count == 0, "No.2 で U ターンが 1 回呼ばれる");
+
+  reset_world();
+  mode_init();
+  rotate_left_at(100, 2);    /* モード2 */
+  rotate_right_at(100, 5);   /* No.5 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+  check(s_align_count == 1 && s_uturn_count == 0 && s_pivot_count == 0, "No.5 で壁合わせだけが 1 回呼ばれる");
+}
 
 /* モード7 No.2 を選んで、x = 20、y = 3 を入れる */
 static void test_goal_input(void)
 {
   printf("[6] ゴールの位置を入れる\n");
   reset_world();
-  mode_init();   /* Flash にゴールがないので、最初は (15, 15) */
+  mode_init();   /* Flash にゴールがないので、最初は基準のゴール (7, 7) */
 
   rotate_left_at(100, -1);    /* モード7 */
   rotate_right_at(100, 2);    /* No.2 */
   press_switch_at(1000);      /* 決定 */
   hand_at(2000, 500);         /* スタート：3530 ms ごろから x の入力 */
-  rotate_right_at(5000, 5);   /* x = 15 + 5 = 20 */
+  rotate_right_at(5000, 13);  /* x = 7 + 13 = 20 */
   press_switch_at(7000);      /* x を決める：y の入力へ */
-  rotate_right_at(9000, -12); /* y = 15 - 12 = 3 */
+  rotate_right_at(9000, -4);  /* y = 7 - 4 = 3 */
   press_switch_at(11000);     /* y を決める：保存 */
   mode_run_once();
 
@@ -700,18 +1018,18 @@ static void test_goal_input_invalid(void)
   rotate_right_at(100, 2);
   press_switch_at(2000);
   hand_at(4000, 500);          /* x の入力は 5830 ms ごろから */
-  rotate_right_at(8000, -15);  /* x = 0 */
+  rotate_right_at(8000, -7);   /* x = 0 */
   press_switch_at(10000);
-  rotate_right_at(12000, -15); /* y = 0 */
+  rotate_right_at(12000, -7);  /* y = 0 */
   press_switch_at(14000);      /* (0, 0)：保存せず、x の入力に戻る */
-  rotate_right_at(18000, 1);   /* x = 15 + 1 = 16（最初の値は、今のゴールの 15） */
+  rotate_right_at(18000, 1);   /* x = 7 + 1 = 8（最初の値は、今のゴールの 7） */
   press_switch_at(20000);
-  press_switch_at(24000);      /* y = 15 のまま */
+  press_switch_at(24000);      /* y = 7 のまま */
   mode_run_once();
 
   check_leds_at(14050, "1100011", "(0, 0) では、外側の 4 個を速く点滅させる");
   check(s_flash_goal_save_count == 1, "保存は 1 回だけ（入れ直したとき）");
-  check(goal_get_x() == 16 && goal_get_y() == 15, "ゴールが (16, 15) になる");
+  check(goal_get_x() == 8 && goal_get_y() == 7, "ゴールが (8, 7) になる");
 }
 
 /* ログ出力：モード7 No.1 を選んでスタートすると、今のゴールを渡して出力を呼ぶ */
@@ -729,9 +1047,11 @@ static void test_output(void)
   hand_at(1500, 500);
   mode_run_once();
   check(s_output_count == 1, "出力を 1 回呼ぶ");
+  check(s_result_print_count == 1 && s_result_print_output_count == 0, "出力の前に、調整の動きの結果を 1 回出す");
+  check(s_record_print_count == 1 && s_record_print_output_count == 0, "出力の前に、センサ値の記録を 1 回出す");
   check(s_output_goal_x == 8 && s_output_goal_y == 9, "今のゴールを渡す（ビューアがゴールを描くのに使う）");
   check(s_explore_count == 0, "走らない");
-  check_leds_at(s_now_ms - 500, "1111111", "出し終わったら、全部を 1 秒点ける（うまくいった）");
+  check_leds_at(s_now_ms - LOADING_MS - 500, "1111111", "出し終わったら、全部を 1 秒点ける（うまくいった）");
 }
 
 /* 迷路呼び出し（モード7 No.15）：保存した迷路があれば全部を 1 秒点け、なければ外側の 4 個を速く点滅させる */
@@ -747,7 +1067,7 @@ static void test_load_maze(void)
   hand_at(1500, 500);
   mode_run_once();
   check(s_flash_maze_load_count == 1, "迷路呼び出しで、Flash の迷路を 1 回読む");
-  check_leds_at(s_now_ms - 500, "1111111", "呼び出せたら、全部を点ける");
+  check_leds_at(s_now_ms - LOADING_MS - 500, "1111111", "呼び出せたら、全部を点ける");
 
   reset_world();
   mode_init();
@@ -758,7 +1078,7 @@ static void test_load_maze(void)
   hand_at(1500, 500);
   mode_run_once();
   check(s_flash_maze_load_count == 1, "保存した迷路がなくても、Flash を読みに行く");
-  check_leds_at(s_now_ms - 160 + 40, "1100011", "保存した迷路がなければ、外側の 4 個を速く点滅させる");
+  check_leds_at(s_now_ms - LOADING_MS - 160 + 40, "1100011", "保存した迷路がなければ、外側の 4 個を速く点滅させる");
 }
 
 /* ---------------------------------------------------------------------------
@@ -781,6 +1101,16 @@ int main(void)
   test_goal_input();
   test_goal_input_invalid();
   test_load_maze();
+  test_sensor_view();
+  test_encoder_cal();
+  test_sensor_record();
+  test_shortest();
+  test_shortest_no_route();
+  test_straight();
+  test_pivot();
+  test_slalom();
+  test_along_wall();
+  test_uturn_and_align();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

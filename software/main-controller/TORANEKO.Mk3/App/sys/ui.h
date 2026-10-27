@@ -15,8 +15,10 @@
 #define UI_POLL_MS 10
 
 /* タイヤを何カウント回すと 1 段（モードや No. が 1 つ）変わるか。
- * 仮の値（KOGUMA と同じ 300）。ToraNeko のタイヤは 14mm で小さいので、実機で回しやすい量に決め直す */
-#define UI_TIRE_COUNT_PER_STEP 300
+ * エンコーダはタイヤの軸に付いていて、タイヤ 1 回転 16384 カウント。
+ * 8192（タイヤ半回転）を仮に置いた（KOGUMA の 300 は KOGUMA の数え方の値で、ToraNeko ではタイヤ 7° ほどになり
+ * 細かすぎる）。実機で回しやすい量に決め直す */
+#define UI_TIRE_COUNT_PER_STEP 8192
 
 void ui_init(void);
 
@@ -42,5 +44,6 @@ void ui_wait_ms(uint32_t wait_ms);
 /* 待つ */
 bool ui_wait_start(int mode, int number);
 void ui_wait_failsafe_reset(void);
+void ui_stop_for_low_battery(void);
 
 #endif /* SYS_UI_H */

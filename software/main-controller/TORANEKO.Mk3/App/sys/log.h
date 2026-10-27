@@ -44,8 +44,8 @@ typedef struct {
   float angle_deg;           /* 角度 [deg]（動作ごとに 0 から） */
   int sensor_left;           /* 左の横センサの値（LPF だけ。1 回だけの落ち込みも見える） */
   int sensor_right;          /* 右の横センサの値 */
-  float wall_dist_left_mm;   /* 左の壁までの距離 [mm]（横壁制御が使う値） */
-  float wall_dist_right_mm;  /* 右の壁までの距離 [mm] */
+  float wall_dist_left_mm;   /* 左の壁までの距離 [mm]（横壁制御が使う値。前壁合わせのあいだは左前のセンサの値） */
+  float wall_dist_right_mm;  /* 右の壁までの距離 [mm]（前壁合わせのあいだは右前のセンサの値） */
   int wall_used;             /* 横壁制御に使った壁（1 左、2 右、3 両方、0 なし） */
   float wall_error;          /* 横壁制御の誤差 */
   float wall_p;              /* 横壁制御の P 項 */

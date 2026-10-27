@@ -11,7 +11,7 @@ static int s_goal_x = GOAL_DEFAULT_X;
 static int s_goal_y = GOAL_DEFAULT_Y;
 
 /* 電源を入れたときに呼ぶ。Flash に保存したゴールを読む。
- * 保存したことがない、または値がおかしいときは、迷路の中央の 2×2 にする */
+ * 保存したことがない、または値がおかしいときは、基準のゴール（goal.h の GOAL_DEFAULT_X・Y）にする */
 void goal_init(void)
 {
   int goal_x = GOAL_DEFAULT_X;

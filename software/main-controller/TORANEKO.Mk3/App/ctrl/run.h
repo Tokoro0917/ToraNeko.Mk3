@@ -2,7 +2,7 @@
  * run.h
  * 機体を動かす（直進・スラローム・止まる・発進など）
  *
- * 中身（run.c）はステップ7で作る。今は、探索（sys/explore.c）が使う動きの形だけを先に決めておく。
+ * 中身は run.c（2026-10-24 に作った。横の壁に沿う補正と前壁合わせは、まだない）。探索（sys/explore.c）が使う動き。
  * PC のテストでは、test/test_maze.c の中の「仮の機体」がこの関数を持っている。
  *
  * ■ 探索の動き（探索の速さ、吸引なし）
@@ -30,12 +30,14 @@
 #ifndef CTRL_RUN_H
 #define CTRL_RUN_H
 
+#include <stdint.h>
+
 /* 止まっているところから発進するときの向きの変え方 */
 typedef enum {
   RUN_TURN_NONE,   /* 向きを変えずに発進する */
   RUN_TURN_LEFT,   /* その場で左に 90° 回ってから発進する */
   RUN_TURN_RIGHT,  /* その場で右に 90° 回ってから発進する */
-  RUN_TURN_BACK,   /* その場で 180° 回ってから発進する（U ターン） */
+  RUN_TURN_BACK,   /* その場で左に 90° を 2 回回ってから発進する（U ターン。回るたびに、前に壁があれば前壁合わせ） */
 } run_turn_t;
 
 void run_search_start(void);
@@ -44,5 +46,21 @@ void run_search_turn_left(void);
 void run_search_turn_right(void);
 void run_search_stop_at_center(void);
 void run_search_go_from_center(run_turn_t turn);
+
+/* 最短走行（モード1。sys/shortest.c）の動き。曲がるところは探索と同じスラロームで、直進だけ速く走る。
+ *   run_fast_start()                       制御とログを始める（動かない）
+ *   run_fast_straight(距離, 最高速, 加速度) ターンの速さで終わる直進（止まっているところからでもよい）
+ *   run_fast_turn_left()・_right()          ターンの速さで、スラローム 90°
+ *   run_fast_stop(距離, 最高速, 加速度)     進みながら止まり、モーターの出力を 0 にして、ログを止める
+ * フェイルセーフで止まったときは、探索と同じく、すぐに戻る */
+void run_fast_start(void);
+void run_fast_straight(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
+void run_fast_turn_left(void);
+void run_fast_turn_right(void);
+void run_fast_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
+
+/* 走っているあいだに、動きが戻ってから次の動きを頼まれるまでの、いちばん長かった時間 [µs]（発進してから）。
+ * 探索の計算が長すぎないかを確かめる（300mm/s では 1ms で 0.3mm 進む）。モード7 No.1 で出す */
+uint32_t run_get_longest_wait_us(void);
 
 #endif /* CTRL_RUN_H */
