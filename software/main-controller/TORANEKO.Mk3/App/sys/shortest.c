@@ -10,6 +10,8 @@
  *   3. ゴールの区画のまん中で止まる
  *
  * 大回りと斜めの動きは、まだ実機で合わせていないので使わない（曲がるところは、探索と同じ小回りだけ）。
+ * 経路は、この走り方で本当にかかる時間が短いものを選ぶ（ダイクストラの走行時間のコスト。maze/dijkstra.c）。
+ * 曲がるのはどれも 300mm/s なので、直進を長く・曲がる回数を少なくした道ほど、直進の速さが効いて速い。
  * 速さは No. ごとに決める（config/run_params.h の SHORTEST1〜3）。No. が大きいほど速い。
  *
  * ■ スタートの位置
@@ -20,6 +22,7 @@
 
 #include "config/run_params.h"
 #include "ctrl/run.h"
+#include "maze/dijkstra.h"
 #include "maze/path.h"
 #include "sys/failsafe.h"
 #include "sys/goal.h"
@@ -50,11 +53,16 @@ static float accel_mm_s2(int number)
   return SHORTEST1_ACCEL_MM_S2;
 }
 
-/* 最短経路を作って s_path に入れる。走れる経路ができなければ false。
+/* 最短経路を作って s_path に入れる。number は No.（直進の速さで、選ぶ経路が変わる）。走れる経路ができなければ false。
  * 最初の動きは直進でないといけない（スタート区画の中で曲がる動きは作っていない） */
-static bool make_path(int goal_x, int goal_y)
+static bool make_path(int number, int goal_x, int goal_y)
 {
-  if (!path_make_shortest_small_turn(goal_x, goal_y, GOAL_WIDTH, GOAL_HEIGHT, &s_path)) {
+  /* ダイクストラを、この No. の速さで走る時間で比べるようにしてから経路を作り、終わったら元に戻す
+   * （未知壁探索など、ほかでダイクストラを使うときに影響しないように） */
+  dijkstra_set_time_cost_small_turn(SEARCH_SPEED_MM_S, max_speed_mm_s(number), accel_mm_s2(number));
+  bool found = path_make_shortest_small_turn(goal_x, goal_y, GOAL_WIDTH, GOAL_HEIGHT, &s_path);
+  dijkstra_set_step_cost();
+  if (!found) {
     return false;
   }
   if (s_path.count == 0) {
@@ -66,10 +74,10 @@ static bool make_path(int goal_x, int goal_y)
   return true;
 }
 
-/* スタートからゴールへの道があるか（モードを決めたときに調べる） */
-bool shortest_has_route(int goal_x, int goal_y)
+/* スタートからゴールへの道があるか（モードを決めたときに調べる。number は No.） */
+bool shortest_has_route(int number, int goal_x, int goal_y)
 {
-  return make_path(goal_x, goal_y);
+  return make_path(number, goal_x, goal_y);
 }
 
 /* 経路の i 番目の直進の長さ [mm]。最初の直進は、スタートの置き方の分だけ短くする（先頭のコメント） */
@@ -102,7 +110,7 @@ static void run_step(int i, float max_speed, float accel)
 /* 最短走行をする（流れは先頭のコメント）。number は No.（速さを選ぶ） */
 shortest_result_t shortest_run(int number, int goal_x, int goal_y)
 {
-  if (!make_path(goal_x, goal_y)) {
+  if (!make_path(number, goal_x, goal_y)) {
     return SHORTEST_RESULT_NO_ROUTE;
   }
   float max_speed = max_speed_mm_s(number);

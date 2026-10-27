@@ -50,13 +50,13 @@ test: test_maze test_mode test_output test_flash test_trajectory test_wall_dist
 
 # dijkstra.c は test_maze.c の中で #include している（テストで中の関数を使うため）
 test_maze: test_maze.c $(MAZE_SOURCES) $(APP_DIR)/maze/dijkstra.c $(APP_HEADERS)
-	$(CC) $(CFLAGS) -o $@ test_maze.c $(MAZE_SOURCES)
+	$(CC) $(CFLAGS) -o $@ test_maze.c $(MAZE_SOURCES) -lm
 
 test_mode: test_mode.c $(MODE_SOURCES) $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_mode.c $(MODE_SOURCES)
 
 test_output: test_output.c $(OUTPUT_SOURCES) $(APP_HEADERS)
-	$(CC) $(CFLAGS) -o $@ test_output.c $(OUTPUT_SOURCES)
+	$(CC) $(CFLAGS) -o $@ test_output.c $(OUTPUT_SOURCES) -lm
 
 test_trajectory: test_trajectory.c $(APP_DIR)/ctrl/trajectory.c $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_trajectory.c $(APP_DIR)/ctrl/trajectory.c -lm

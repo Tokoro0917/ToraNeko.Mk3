@@ -324,7 +324,7 @@ void mode_run_once(void)
 {
   select_mode();
 
-  if (s_mode == 1 && !shortest_has_route(goal_get_x(), goal_get_y())) {
+  if (s_mode == 1 && !shortest_has_route(s_number, goal_get_x(), goal_get_y())) {
     ui_signal_error();  /* 最短走行で、スタートからゴールへの道がない。走らずに選び直す */
   } else if (s_mode == 5 && s_number == 1) {
     sensor_view_run();  /* スタート待ちをしない */

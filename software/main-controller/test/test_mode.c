@@ -494,8 +494,9 @@ explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int go
 }
 
 /* 最短走行の道があるか：決めておいた答えを返す */
-bool shortest_has_route(int goal_x, int goal_y)
+bool shortest_has_route(int number, int goal_x, int goal_y)
 {
+  (void)number;
   (void)goal_x;  /* 使わない引数（(void) を付けると、使っていないという警告が出ない） */
   (void)goal_y;
   return s_shortest_route;
