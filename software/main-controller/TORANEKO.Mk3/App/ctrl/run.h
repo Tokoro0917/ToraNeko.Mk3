@@ -30,6 +30,7 @@
 #ifndef CTRL_RUN_H
 #define CTRL_RUN_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /* 止まっているところから発進するときの向きの変え方 */
@@ -47,17 +48,35 @@ void run_search_turn_right(void);
 void run_search_stop_at_center(void);
 void run_search_go_from_center(run_turn_t turn);
 
-/* 最短走行（モード1。sys/shortest.c）の動き。曲がるところは探索と同じスラロームで、直進だけ速く走る。
- *   run_fast_start()                       制御とログを始める（動かない）
- *   run_fast_straight(距離, 最高速, 加速度) ターンの速さで終わる直進（止まっているところからでもよい）
- *   run_fast_turn_left()・_right()          ターンの速さで、スラローム 90°
- *   run_fast_stop(距離, 最高速, 加速度)     進みながら止まり、モーターの出力を 0 にして、ログを止める
+/* 最短走行（モード1 は sys/shortest.c、モード3 のターンの調整は sys/turn_test.c）の動き。
+ *   run_fast_start()                                  制御とログを始める（動かない）
+ *   run_fast_straight(距離, 最高速, 終わりの速さ, 加速度) 直進（止まっているところからでもよい）。横の壁に沿う補正を入れる
+ *   run_fast_diag_straight(…)                         斜めの直進（同じ。横の壁に沿う補正は入れない）
+ *   run_fast_turn_left()・_right()                     探索の速さ（300mm/s）で、小回りのスラローム 90°
+ *   run_fast_turn(ターン, 左なら true)                 ターンの速さ（config/turn_params.h）で、大回り・斜めのターン
+ *   run_fast_stop(距離, 最高速, 加速度)                進みながら止まり、モーターの出力を 0 にして、ログを止める
+ *   run_fast_diag_stop(…)                             斜めに進みながら止まる（同じ。横の壁に沿う補正は入れない）
  * フェイルセーフで止まったときは、探索と同じく、すぐに戻る */
+
+/* 大回り・斜めのターン（始めと終わりの位置は config/turn_params.h の先頭のコメント） */
+typedef enum {
+  RUN_FAST_TURN_BIG90,   /* 大回り 90°：区画のまん中 → 区画のまん中 */
+  RUN_FAST_TURN_BIG180,  /* 大回り 180°：区画のまん中 → 区画のまん中（反対向き） */
+  RUN_FAST_TURN_IN45,    /* 斜め入り 45°：区画のまん中 → 壁の辺のまん中（斜め） */
+  RUN_FAST_TURN_IN135,   /* 斜め入り 135° */
+  RUN_FAST_TURN_OUT45,   /* 斜め出 45°：壁の辺のまん中（斜め） → 区画のまん中 */
+  RUN_FAST_TURN_OUT135,  /* 斜め出 135° */
+  RUN_FAST_TURN_V90,     /* V90°：壁の辺のまん中（斜め） → 壁の辺のまん中（斜め） */
+} run_fast_turn_t;
+
 void run_fast_start(void);
-void run_fast_straight(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
+void run_fast_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2);
+void run_fast_diag_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2);
 void run_fast_turn_left(void);
 void run_fast_turn_right(void);
+void run_fast_turn(run_fast_turn_t turn, bool is_left);
 void run_fast_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
+void run_fast_diag_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
 
 /* 走っているあいだに、動きが戻ってから次の動きを頼まれるまでの、いちばん長かった時間 [µs]（発進してから）。
  * 探索の計算が長すぎないかを確かめる（300mm/s では 1ms で 0.3mm 進む）。モード7 No.1 で出す */

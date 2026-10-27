@@ -472,6 +472,15 @@ void sensor_record_print(void)
   s_record_print_output_count = s_output_count;
 }
 
+/* 最短走行のターン（モード3）：走らずに、呼ばれた回数と No. を覚える */
+static int s_turn_test_count = 0;
+static int s_turn_test_number = 0;
+void turn_test_run(int number)
+{
+  s_turn_test_count = s_turn_test_count + 1;
+  s_turn_test_number = number;
+}
+
 /* エンコーダの歪みを測る：回さずに、呼ばれたことを覚える */
 void encoder_cal_run(void)
 {
@@ -868,6 +877,25 @@ static void test_sensor_view(void)
   check(s_now_ms >= s_sensor_view_time_ms + LOADING_MS, "センサ値の表示を終えたあとも「ロード中」を出して戻る");
 }
 
+/* 最短走行のターン（モード3 No.1〜7）は、スタート待ちのあとに、選んだ No. で走る。No.8 からはまだない */
+static void test_turn_test(void)
+{
+  printf("[6] 最短走行のターン（モード3）\n");
+  reset_world();
+  mode_init();
+  s_turn_test_count = 0;
+  s_turn_test_number = 0;
+
+  rotate_left_at(100, 3);    /* モード3 */
+  rotate_right_at(100, 7);   /* No.7 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_turn_test_count == 1 && s_turn_test_number == 7, "モード3 No.7 で、ターンのテストが No.7 で 1 回呼ばれる");
+  check(mode_has_action(3, 1) && !mode_has_action(3, 8) && !mode_has_action(3, 0), "モード3 は No.1〜7 だけ決定できる");
+}
+
 /* 壁までの距離の表示（モード5 No.3）も、No.1 と同じくスタート待ちをしない */
 static void test_distance_view(void)
 {
@@ -1133,6 +1161,7 @@ int main(void)
   test_encoder_cal();
   test_sensor_record();
   test_distance_view();
+  test_turn_test();
   test_shortest();
   test_shortest_no_route();
   test_straight();

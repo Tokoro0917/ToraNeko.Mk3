@@ -76,6 +76,7 @@ set(APP_SOURCES
     App/sys/scheduler.c
     App/sys/sensor_record.c
     App/sys/shortest.c
+    App/sys/turn_test.c
     App/sys/sensor_view.c
     App/sys/ui.c
 )

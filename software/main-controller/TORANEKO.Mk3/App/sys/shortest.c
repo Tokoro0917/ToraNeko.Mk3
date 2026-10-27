@@ -99,7 +99,7 @@ static void run_step(int i, float max_speed, float accel)
   if (motion == MOTION_STRAIGHT && is_last) {
     run_fast_stop(straight_distance_mm(i), max_speed, accel);
   } else if (motion == MOTION_STRAIGHT) {
-    run_fast_straight(straight_distance_mm(i), max_speed, accel);
+    run_fast_straight(straight_distance_mm(i), max_speed, SEARCH_SPEED_MM_S, accel);  /* 次の小回りの速さで終わる */
   } else if (motion == MOTION_TURN_LEFT) {
     run_fast_turn_left();
   } else if (motion == MOTION_TURN_RIGHT) {

@@ -20,6 +20,7 @@
  *   モード2 No.2     U ターン（行き止まりで止まり、前壁合わせ、180°、戻って止まる）
  *   モード2 No.4     その場 180° 旋回（左に回って止まる。旋回の制御の係数を合わせる）
  *   モード2 No.5     壁合わせだけ（前の壁で位置と向きを直す）
+ *   モード3 No.1〜7  最短走行のターンを 1 つずつ（大回り 90°・180°、斜め入り 45°・135°、斜め出 45°・135°、V90°。左だけ）
  *   モード5 No.1     センサ値の表示（スイッチを押すと終わる）
  *   モード5 No.2     センサ値の記録（区画のまん中で 1 秒測り、平均をモード7 No.1 で出す）
  *   モード5 No.3     壁までの距離の表示（センサの値と距離 [mm] を出し続ける。スイッチを押すと終わる）
@@ -43,6 +44,7 @@
 #include "sys/output.h"
 #include "sys/sensor_record.h"
 #include "sys/shortest.h"
+#include "sys/turn_test.h"
 #include "sys/sensor_view.h"
 #include "sys/ui.h"
 
@@ -84,6 +86,12 @@ bool mode_has_action(int mode, int number)
   if (mode == 1) {
     if (number >= 1 && number <= 3) {
       return true;  /* 最短走行 */
+    }
+    return false;
+  }
+  if (mode == 3) {
+    if (number >= 1 && number <= 7) {
+      return true;  /* 最短走行のターン */
     }
     return false;
   }
@@ -304,6 +312,8 @@ static void run_selected(void)
     adjust_pivot_180();
   } else if (s_mode == 2 && s_number == 5) {
     adjust_front_align();
+  } else if (s_mode == 3) {
+    turn_test_run(s_number);
   } else if (s_mode == 5 && s_number == 2) {
     sensor_record_run();
   } else if (s_mode == 6 && s_number == 1) {

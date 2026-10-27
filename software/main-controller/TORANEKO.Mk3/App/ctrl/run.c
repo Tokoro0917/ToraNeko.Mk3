@@ -16,10 +16,12 @@
  *   向きを変えて発進：その場で 90° 回ってから（回らないこともある）、45mm 進みながら速くして、入口へ。
  *                    U ターンは 90° を 2 回（左に 90° → 左に 90°）
  *
- * ■ 最短走行の動き（モード1。sys/shortest.c が使う）
+ * ■ 最短走行の動き（モード1 は sys/shortest.c、モード3 は sys/turn_test.c が使う）
  *   発進       ：制御を始めるだけ（動かない）。すぐあとに直進を頼む
- *   直進       ：決めた距離を、最高速まで速くしてから、ターンの速さ（探索と同じ 300mm/s）まで遅くして進む
+ *   直進       ：決めた距離を、最高速まで速くしてから、決めた終わりの速さ（次のターンの速さ）まで遅くして進む
+ *   斜めの直進 ：同じ。斜めのあいだは、横の壁に沿って走る補正を入れない（横のセンサが柱や斜めの壁を見るので）
  *   左・右     ：探索と同じスラローム（前距離 → 90° → 後距離）
+ *   大回り・斜めのターン：前距離 → スラローム → 後距離。値は config/turn_params.h（ターンの速さで曲がる）
  *   止まる     ：決めた距離を進みながら止まり、モーターの出力を 0 にする
  *
  * ■ 横の壁に沿って走る補正
@@ -39,6 +41,7 @@
 #include <stdbool.h>
 
 #include "config/run_params.h"
+#include "config/turn_params.h"
 #include "ctrl/control.h"
 #include "ctrl/trajectory.h"
 #include "ctrl/wall_ctrl.h"
@@ -241,14 +244,79 @@ void run_fast_start(void)
   start_control();
 }
 
-/* distance_mm まっすぐ進む。max_speed_mm_s まで速くしてから、ターンの速さ（探索の速さ）まで遅くして戻る */
-void run_fast_straight(float distance_mm, float max_speed_mm_s, float accel_mm_s2)
+/* distance_mm まっすぐ進む。max_speed_mm_s まで速くしてから、end_speed_mm_s（次のターンの速さ）まで遅くして戻る。
+ * 横の壁に沿って走る補正を入れる */
+void run_fast_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2)
 {
   if (failsafe_is_stopped()) {
     return;
   }
-  trajectory_start_straight(distance_mm, max_speed_mm_s, SEARCH_SPEED_MM_S, accel_mm_s2);
+  control_set_wall_control(true);
+  trajectory_start_straight(distance_mm, max_speed_mm_s, end_speed_mm_s, accel_mm_s2);
   wait_until_done();
+}
+
+/* 斜めに distance_mm まっすぐ進む（run_fast_straight と同じ。横の壁に沿って走る補正は入れない） */
+void run_fast_diag_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2)
+{
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  control_set_wall_control(false);
+  trajectory_start_straight(distance_mm, max_speed_mm_s, end_speed_mm_s, accel_mm_s2);
+  wait_until_done();
+}
+
+/* ターンの速さで、前距離 pre_mm → 角度 angle_deg（左が +）のスラローム → 後距離 post_mm と走る。
+ * 前距離・後距離はまっすぐなので、加速度は何でもよい（速さは変わらない）。横の壁に沿って走る補正は入れない */
+static void fast_turn(float angle_deg, float omega_deg_s, float pre_mm, float post_mm)
+{
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  control_set_wall_control(false);
+  trajectory_start_straight(pre_mm, FAST_TURN_SPEED_MM_S, FAST_TURN_SPEED_MM_S, SEARCH_ACCEL_MM_S2);
+  wait_until_done();
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  trajectory_start_slalom(angle_deg, FAST_TURN_SPEED_MM_S, omega_deg_s, FAST_TURN_ALPHA_DEG_S2);
+  wait_until_done();
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  trajectory_start_straight(post_mm, FAST_TURN_SPEED_MM_S, FAST_TURN_SPEED_MM_S, SEARCH_ACCEL_MM_S2);
+  wait_until_done();
+}
+
+/* 左に曲がるなら angle_deg、右なら −angle_deg */
+static float signed_angle(float angle_deg, bool is_left)
+{
+  if (is_left) {
+    return angle_deg;
+  }
+  return -angle_deg;
+}
+
+/* 大回り・斜めのターンを 1 つ走る（is_left が true なら左）。ターンの速さで走っているところから呼ぶ。
+ * 始める位置と終わる位置は、config/turn_params.h の先頭のコメントと test/test_turn.c の表 */
+void run_fast_turn(run_fast_turn_t turn, bool is_left)
+{
+  if (turn == RUN_FAST_TURN_BIG90) {
+    fast_turn(signed_angle(90.0f, is_left), BIG90_OMEGA_DEG_S, BIG90_PRE_MM, BIG90_POST_MM);
+  } else if (turn == RUN_FAST_TURN_BIG180) {
+    fast_turn(signed_angle(180.0f, is_left), BIG180_OMEGA_DEG_S, BIG180_PRE_MM, BIG180_POST_MM);
+  } else if (turn == RUN_FAST_TURN_IN45) {
+    fast_turn(signed_angle(45.0f, is_left), IN45_OMEGA_DEG_S, IN45_PRE_MM, IN45_POST_MM);
+  } else if (turn == RUN_FAST_TURN_IN135) {
+    fast_turn(signed_angle(135.0f, is_left), IN135_OMEGA_DEG_S, IN135_PRE_MM, IN135_POST_MM);
+  } else if (turn == RUN_FAST_TURN_OUT45) {
+    fast_turn(signed_angle(45.0f, is_left), OUT45_OMEGA_DEG_S, OUT45_PRE_MM, OUT45_POST_MM);
+  } else if (turn == RUN_FAST_TURN_OUT135) {
+    fast_turn(signed_angle(135.0f, is_left), OUT135_OMEGA_DEG_S, OUT135_PRE_MM, OUT135_POST_MM);
+  } else if (turn == RUN_FAST_TURN_V90) {
+    fast_turn(signed_angle(90.0f, is_left), V90_OMEGA_DEG_S, V90_PRE_MM, V90_POST_MM);
+  }
 }
 
 /* ターンの速さで走っている → 探索と同じスラロームで左 90° */
@@ -263,8 +331,8 @@ void run_fast_turn_right(void)
   slalom(-SLALOM_ANGLE_DEG);
 }
 
-/* distance_mm 進みながら止まり（max_speed_mm_s まで速くしてもよい）、モーターの出力を 0 にして、ログを止める */
-void run_fast_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2)
+/* distance_mm 進みながら止まり、モーターの出力を 0 にして、ログを止める（run_fast_stop・run_fast_diag_stop の中身） */
+static void stop_after(float distance_mm, float max_speed_mm_s, float accel_mm_s2)
 {
   if (!failsafe_is_stopped()) {
     trajectory_start_straight(distance_mm, max_speed_mm_s, 0.0f, accel_mm_s2);
@@ -276,4 +344,19 @@ void run_fast_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2)
   control_stop();
   control_set_wall_control(false);
   log_stop();
+}
+
+/* distance_mm 進みながら止まり（max_speed_mm_s まで速くしてもよい）、モーターの出力を 0 にして、ログを止める。
+ * 横の壁に沿って走る補正は入れる */
+void run_fast_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2)
+{
+  control_set_wall_control(true);
+  stop_after(distance_mm, max_speed_mm_s, accel_mm_s2);
+}
+
+/* 斜めに distance_mm 進みながら止まる（run_fast_stop と同じ。横の壁に沿って走る補正は入れない） */
+void run_fast_diag_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2)
+{
+  control_set_wall_control(false);
+  stop_after(distance_mm, max_speed_mm_s, accel_mm_s2);
 }
