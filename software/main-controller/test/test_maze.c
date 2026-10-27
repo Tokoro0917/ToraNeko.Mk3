@@ -1728,6 +1728,8 @@ static bool s_sim_failsafe = false;    /* フェイルセーフで止まって�
 static bool s_sim_all_walls = false;   /* true なら、センサがいつも「前・左・右とも壁あり」と答える（読み間違いの試験） */
 static int s_sim_error_count = 0;      /* おかしな使い方をされた回数 */
 static int s_sim_stop_count = 0;       /* 止まった回数（U ターンと、未知壁探索で計算するときなど） */
+static int s_sim_known_count = 0;      /* 既知区間加速（run_search_known_straight）で走った回数 */
+static int s_sim_known_cells = 0;      /* 既知区間加速で走った区画の数の合計 */
 static int s_sim_save_count = 0;       /* Flash に保存した回数 */
 static int s_sim_after_failsafe_count = 0;  /* フェイルセーフで止まったあとに、動きを頼まれた回数（run.h の約束では 0 のはず） */
 static bool s_sim_uturn_only = false;  /* true なら、止まったあとの発進は U ターンだけのはず（往復・片道は、U ターンと最後のほかで止まらない） */
@@ -1797,6 +1799,8 @@ static void sim_place_at_start(int failsafe_at)
   s_sim_failsafe = false;
   s_sim_error_count = 0;
   s_sim_stop_count = 0;
+  s_sim_known_count = 0;
+  s_sim_known_cells = 0;
   s_sim_save_count = 0;
   s_sim_after_failsafe_count = 0;
   s_sim_before_record_count = 0;
@@ -1862,6 +1866,24 @@ void run_search_straight(void)
   }
   sim_must_be_moving("止まっているのに直進した");
   sim_go(s_sim_dir);
+}
+
+/* 走っている → 見たことのある区画を cells 区画まっすぐ進む（既知区間加速）。
+ * 通る区画（今の区画から、着く区画の手前まで）が、どれも壁を記録した区画かも調べる */
+void run_search_known_straight(int cells)
+{
+  if (!sim_begin_motion()) {
+    return;
+  }
+  sim_must_be_moving("止まっているのに既知区間加速で走った");
+  s_sim_known_count = s_sim_known_count + 1;
+  s_sim_known_cells = s_sim_known_cells + cells;
+  for (int i = 0; i < cells; i++) {
+    if (!maze_map_is_visited(s_sim_x, s_sim_y)) {
+      sim_error("見たことのない区画を、既知区間加速で走った");
+    }
+    sim_go(s_sim_dir);
+  }
 }
 
 /* 走っている → 左の区画へ曲がる */
@@ -2001,7 +2023,19 @@ static const char *explore_type_name(explore_type_t type)
   if (type == EXPLORE_UNKNOWN_WALLS) {
     return "未知壁探索";
   }
+  if (type == EXPLORE_UNKNOWN_WALLS_KNOWN) {
+    return "未知壁探索＋既知区間加速";
+  }
   return "往復";
+}
+
+/* 未知壁探索（既知区間加速ありも）か */
+static bool is_unknown_walls_type(explore_type_t type)
+{
+  if (type == EXPLORE_UNKNOWN_WALLS || type == EXPLORE_UNKNOWN_WALLS_KNOWN) {
+    return true;
+  }
+  return false;
 }
 
 /* 空の迷路から、走り方 type で探索させる。最後まで走り、終わりの場所・保存・壁が正しければ true。
@@ -2012,7 +2046,7 @@ static bool explore_and_check(explore_type_t type, bool verbose)
 
   maze_map_init();
   sim_place_at_start(-1);
-  if (type != EXPLORE_UNKNOWN_WALLS) {
+  if (!is_unknown_walls_type(type)) {
     s_sim_uturn_only = true;  /* 往復・片道は計算のために止まらない */
   }
   explore_result_t result = explore_run(type, s_goal_x, s_goal_y, s_goal_width, s_goal_height);
@@ -2046,13 +2080,13 @@ static bool explore_and_check(explore_type_t type, bool verbose)
     }
   }
   int cost = recorded_route_cost();
-  if (type == EXPLORE_UNKNOWN_WALLS && cost != best_cost) {
+  if (is_unknown_walls_type(type) && cost != best_cost) {
     ok = false;
   }
 
   if (verbose) {
-    printf("  %s: 動き %d 回、止まった %d 回、最後の位置 (%d,%d)、最短経路のコスト %d（全部の壁を知っているとき %d）\n",
-           explore_type_name(type), s_sim_motion_count, s_sim_stop_count, s_sim_x, s_sim_y, cost, best_cost);
+    printf("  %s: 動き %d 回（うち既知区間加速 %d 回・%d 区画）、止まった %d 回、最後の位置 (%d,%d)、最短経路のコスト %d（全部の壁を知っているとき %d）\n",
+           explore_type_name(type), s_sim_motion_count, s_sim_known_count, s_sim_known_cells, s_sim_stop_count, s_sim_x, s_sim_y, cost, best_cost);
   }
   return ok;
 }
@@ -2072,6 +2106,10 @@ static void test_explore_types(const char *file_path, int unknown_walls_stop_cou
   check(explore_and_check(EXPLORE_ONE_WAY, true), "片道：ゴールで止まり、保存する");
   check(explore_and_check(EXPLORE_UNKNOWN_WALLS, true), "未知壁探索：スタートに戻り、最短経路が全部の壁を知っているときと同じ");
   check(s_sim_stop_count == unknown_walls_stop_count, "未知壁探索で止まった回数が、前に確かめた回数と同じ");
+  int motions_without_known = s_sim_motion_count;
+  check(explore_and_check(EXPLORE_UNKNOWN_WALLS_KNOWN, true), "未知壁探索＋既知区間加速：No.3 と同じく、スタートに戻り、最短経路が同じ");
+  check(s_sim_stop_count == unknown_walls_stop_count, "既知区間加速でも、止まる回数は No.3 と同じ（同じ道を通る）");
+  check(s_sim_known_count > 0 && s_sim_motion_count < motions_without_known, "既知区間加速を使い、動きの回数が No.3 より少ない");
 }
 
 /* 走り方 type で、failsafe_at 回目の動きでフェイルセーフを起こす。
@@ -2116,7 +2154,7 @@ static bool failsafe_and_continue(explore_type_t type, int failsafe_at)
   if (result != EXPLORE_RESULT_DONE || s_sim_error_count != 0 || count_wrong_walls() != 0) {
     ok = false;
   }
-  if (type == EXPLORE_UNKNOWN_WALLS && recorded_route_cost() != best_cost) {
+  if (is_unknown_walls_type(type) && recorded_route_cost() != best_cost) {
     ok = false;
   }
   return ok;
@@ -2209,6 +2247,7 @@ static void test_explore_random(int maze_count)
   int fail_count = 0;
   int failsafe_fail_count = 0;
   int unknown_walls_stop_total = 0;  /* 未知壁探索で止まった回数の合計 */
+  int known_stop_diff_count = 0;     /* 既知区間加速ありで、止まった回数が No.3 と違った迷路の数 */
   for (int maze_index = 0; maze_index < maze_count; maze_index++) {
     s_random_seed = (unsigned int)(maze_index + 20001);
     make_random_true_maze();
@@ -2222,8 +2261,18 @@ static void test_explore_random(int maze_count)
       fail_count = fail_count + 1;
     }
     unknown_walls_stop_total = unknown_walls_stop_total + s_sim_stop_count;
+    int stops_without_known = s_sim_stop_count;
+    if (!explore_and_check(EXPLORE_UNKNOWN_WALLS_KNOWN, false)) {
+      fail_count = fail_count + 1;
+    }
+    if (s_sim_stop_count != stops_without_known) {
+      known_stop_diff_count = known_stop_diff_count + 1;
+    }
     int failsafe_at = 1 + random_below(300);
     if (!failsafe_and_continue(EXPLORE_UNKNOWN_WALLS, failsafe_at)) {
+      failsafe_fail_count = failsafe_fail_count + 1;
+    }
+    if (!failsafe_and_continue(EXPLORE_UNKNOWN_WALLS_KNOWN, failsafe_at)) {
       failsafe_fail_count = failsafe_fail_count + 1;
     }
   }
@@ -2232,7 +2281,8 @@ static void test_explore_random(int maze_count)
   /* 前に確かめた合計（2026-10-15）。「見に行く壁がなくなったら、止まらずに帰る」をやめると増える（10692 回になる）。
    * explore.c の止まり方を変えたときは、変わった理由を確かめてから、この数を直す */
   check(unknown_walls_stop_total == 10646, "未知壁探索で止まった回数の合計が、前に確かめた回数と同じ");
-  check(fail_count == 0, "ランダムな迷路でも、3 つの走り方が正しく終わる");
+  check(fail_count == 0, "ランダムな迷路でも、4 つの走り方が正しく終わる");
+  check(known_stop_diff_count == 0, "既知区間加速ありでも、止まる回数は No.3 と同じ（同じ道を通る）");
   check(failsafe_fail_count == 0, "ランダムな迷路でも、フェイルセーフのあと続きから探索できる");
 }
 

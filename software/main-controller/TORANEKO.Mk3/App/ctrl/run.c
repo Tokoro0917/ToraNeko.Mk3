@@ -176,6 +176,18 @@ void run_search_straight(void)
   mark_return();
 }
 
+/* 走っている → 見たことのある区画を cells 区画まっすぐ進み、その先の区画の入口の辺へ（既知区間加速。sys/explore.c）。
+ * KNOWN_MAX_SPEED_MM_S まで速くしてから、探索の速さに戻して着く */
+void run_search_known_straight(int cells)
+{
+  measure_wait();
+  if (!failsafe_is_stopped()) {
+    trajectory_start_straight(cells * CELL_MM, KNOWN_MAX_SPEED_MM_S, SEARCH_SPEED_MM_S, KNOWN_ACCEL_MM_S2);
+    wait_until_done();
+  }
+  mark_return();
+}
+
 /* 走っている → スラロームで左 90° */
 void run_search_turn_left(void)
 {

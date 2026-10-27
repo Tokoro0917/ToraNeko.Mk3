@@ -12,6 +12,8 @@
  *
  *   run_search_start()            スタート区画から走り出し、北隣の区画 (0, 1) の入口の辺まで進む
  *   run_search_straight()         走っている → 1 区画まっすぐ進み、次の区画の入口の辺へ
+ *   run_search_known_straight(n)  走っている → 見たことのある区画を n 区画まっすぐ速く進み、その先の区画の入口の辺へ
+ *                                 （既知区間加速。探索の速さで着く）
  *   run_search_turn_left()        走っている → スラロームで左 90°（区画の中で曲がり、左の区画の入口の辺へ）
  *   run_search_turn_right()       走っている → スラロームで右 90°
  *   run_search_stop_at_center()   走っている → 今入った区画の真ん中で止まる
@@ -43,6 +45,7 @@ typedef enum {
 
 void run_search_start(void);
 void run_search_straight(void);
+void run_search_known_straight(int cells);
 void run_search_turn_left(void);
 void run_search_turn_right(void);
 void run_search_stop_at_center(void);

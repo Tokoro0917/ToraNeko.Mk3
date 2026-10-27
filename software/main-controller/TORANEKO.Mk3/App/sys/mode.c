@@ -13,7 +13,7 @@
  *   続けて押したスイッチが、次の決定にならない（2026-10-22 に決定）
  *
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す）
- *   モード0 No.1〜3  探索（往復・片道・未知壁探索）
+ *   モード0 No.1〜4  探索（往復・片道・未知壁探索・未知壁探索＋既知区間加速）
  *   モード1 No.1〜3  最短走行（曲がるところは探索と同じ小回り。直進の速さが No.1 → 3 で速くなる）。
  *                    決定したときに道がなければ、「できなかった」を出して選び直す
  *   モード2 No.1     スラローム 90°（探索の速さで左に曲がり、左の区画のまん中で止まる）
@@ -78,7 +78,7 @@ int mode_get_number(void)
 bool mode_has_action(int mode, int number)
 {
   if (mode == 0) {
-    if (number >= 1 && number <= 3) {
+    if (number >= 1 && number <= 4) {
       return true;  /* 探索 */
     }
     return false;
@@ -187,7 +187,7 @@ static void select_mode(void)
  * モード0：探索
  * ------------------------------------------------------------------------- */
 
-/* 探索走行をする（No.1 往復、No.2 片道、No.3 未知壁探索） */
+/* 探索走行をする（No.1 往復、No.2 片道、No.3 未知壁探索、No.4 未知壁探索＋既知区間加速） */
 static void run_explore(int number)
 {
   explore_type_t type = EXPLORE_ROUND_TRIP;
@@ -195,6 +195,8 @@ static void run_explore(int number)
     type = EXPLORE_ONE_WAY;
   } else if (number == 3) {
     type = EXPLORE_UNKNOWN_WALLS;
+  } else if (number == 4) {
+    type = EXPLORE_UNKNOWN_WALLS_KNOWN;
   }
 
   explore_result_t result = explore_run(type, goal_get_x(), goal_get_y(), GOAL_WIDTH, GOAL_HEIGHT);

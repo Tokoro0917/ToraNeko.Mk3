@@ -680,6 +680,22 @@ static void test_select_and_start(void)
   check(s_explore_count == 2 && s_explore_type == EXPLORE_ROUND_TRIP, "2 回目も往復で走る");
 }
 
+/* モード0 No.4 は、未知壁探索＋既知区間加速で走る */
+static void test_explore_known(void)
+{
+  printf("[5] モード0 No.4 は未知壁探索＋既知区間加速\n");
+  reset_world();
+  mode_init();
+
+  rotate_right_at(100, 4);   /* No.4 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+
+  check(s_explore_count == 1 && s_explore_type == EXPLORE_UNKNOWN_WALLS_KNOWN, "No.4 は未知壁探索＋既知区間加速");
+  check(!mode_has_action(0, 5), "モード0 の No.5 は決定できない");
+}
+
 /* No.0 では決定しない。そのあと No.3 にすると、未知壁探索で走る */
 static void test_number_zero(void)
 {
@@ -1148,6 +1164,7 @@ int main(void)
   test_goal();
   test_select_and_start();
   test_number_zero();
+  test_explore_known();
   test_wrap();
   test_reselect();
   test_hand_debounce();
