@@ -407,6 +407,15 @@ void sensor_view_run(void)
   s_sensor_view_time_ms = s_now_ms;
 }
 
+/* 壁までの距離の表示：出さずに、呼ばれた回数と時刻を覚える */
+static int s_distance_view_count = 0;
+static uint32_t s_distance_view_time_ms = 0;
+void sensor_view_distance_run(void)
+{
+  s_distance_view_count = s_distance_view_count + 1;
+  s_distance_view_time_ms = s_now_ms;
+}
+
 /* 調整の動きの結果を出す：出さずに、呼ばれたことと、そのときの出力の回数を覚える */
 void adjust_print_last_result(void)
 {
@@ -858,6 +867,24 @@ static void test_sensor_view(void)
   check(s_now_ms >= s_sensor_view_time_ms + LOADING_MS, "センサ値の表示を終えたあとも「ロード中」を出して戻る");
 }
 
+/* 壁までの距離の表示（モード5 No.3）も、No.1 と同じくスタート待ちをしない */
+static void test_distance_view(void)
+{
+  printf("[6] 壁までの距離の表示はスタート待ちをしない\n");
+  reset_world();
+  mode_init();
+  s_distance_view_count = 0;
+
+  rotate_left_at(100, 5);    /* モード5 */
+  rotate_right_at(100, 3);   /* No.3 */
+  press_switch_at(500);      /* 決定（手はかざさない） */
+  mode_run_once();
+
+  check(s_distance_view_count == 1, "壁までの距離の表示が 1 回呼ばれる");
+  check(s_distance_view_time_ms < 500 + 1000, "手をかざさなくても、決定してすぐ始まる");
+  check(s_sensor_view_count == 0, "センサ値の表示（No.1）は呼ばれない");
+}
+
 /* エンコーダの歪みを測る（モード6 No.6）は、ほかと同じくスタート待ちのあとに始まる */
 static void test_encoder_cal(void)
 {
@@ -1104,6 +1131,7 @@ int main(void)
   test_sensor_view();
   test_encoder_cal();
   test_sensor_record();
+  test_distance_view();
   test_shortest();
   test_shortest_no_route();
   test_straight();

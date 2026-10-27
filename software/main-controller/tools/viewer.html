@@ -10,6 +10,7 @@
   ToraNeko 用に直したもの(2026-10-25):
     - 種類 SENSOR(センサ値の記録、モード5 No.2)と RESULT(調整の動きの結果)を足した
     - 「メモ」に書いたこと(例: R 64mm)を、保存するファイルの名前と中身に入れる
+    - 壁までの距離の表示(モード5 No.3)は、KOGUMA のモード3 No.4 と同じ CAL の行なので、流れるグラフで見られる
     - 横の壁までの距離は区画中心で 42mm、電圧は V
   ネットは使わない(外から何も読み込まない)。Windows + Chrome / Edge で、このファイルを開いて使う。
 
@@ -357,7 +358,7 @@ function renderList() {
   if (live.t.length) {
     const d = el("div", { class: "blk" + (selected === LIVE ? " sel" : "") },
       el("div", { class: "t", text: "センサの値(そのまま)" }),
-      el("div", { class: "s", text: `${live.kind === "cal" ? "距離の表(モード3 No.4)" : "センサ表示(モード4 No.0)"}・${live.rate} 行/秒` }));
+      el("div", { class: "s", text: `${live.kind === "cal" ? "壁までの距離(モード5 No.3)" : "センサ値の表示(モード5 No.1)"}・${live.rate} 行/秒` }));
     d.addEventListener("click", () => select(LIVE));
     list.append(d);
   }
@@ -1472,7 +1473,7 @@ function sensorRows(b) {
   const rows = [];
   for (const l of b.lines) {
     const f = l.split(",");
-    if (f.length >= 4 && isFinite(+f[1])) rows.push({ name: f[0], average: +f[1], min: +f[2], max: +f[3] });
+    if (f.length >= 4 && isFinite(+f[1])) rows.push({ name: f[0], average: +f[1], min: +f[2], max: +f[3], mm: f.length >= 5 ? +f[4] : NaN });
   }
   return rows;
 }
@@ -1481,15 +1482,15 @@ function renderSensor(view, b) {
   const card = el("div", { class: "card" });
   card.append(el("h2", { text: `センサ値の記録 ${timeStr(b.time)}` + (b.memo ? ` [${b.memo}]` : "") }));
   const t = el("table");
-  t.append(el("tr", null, ...["センサ", "平均", "いちばん小さい", "いちばん大きい", "ゆれ(大 − 小)"].map((h, j) => el("th", { class: j === 0 ? "l" : "", text: h }))));
-  for (const r of sensorRows(b)) t.append(el("tr", null, el("td", { class: "l", text: r.name }), el("td", { text: fmt(r.average, 1) }), el("td", { text: fmt(r.min, 0) }), el("td", { text: fmt(r.max, 0) }), el("td", { text: fmt(r.max - r.min, 0) })));
+  t.append(el("tr", null, ...["センサ", "平均", "いちばん小さい", "いちばん大きい", "ゆれ(大 − 小)", "距離 mm(今の表)"].map((h, j) => el("th", { class: j === 0 ? "l" : "", text: h }))));
+  for (const r of sensorRows(b)) t.append(el("tr", null, el("td", { class: "l", text: r.name }), el("td", { text: fmt(r.average, 1) }), el("td", { text: fmt(r.min, 0) }), el("td", { text: fmt(r.max, 0) }), el("td", { text: fmt(r.max - r.min, 0) }), el("td", { text: fmt(r.mm, 1) })));
   card.append(t);
   view.append(card);
 
   const all = blocks.filter((x) => x.type === "SENSOR");
   const card2 = el("div", { class: "card" });
   card2.append(el("h2", { text: `読み込んだセンサ値の記録 ${all.length} 個(平均)` }),
-    el("div", { class: "note", text: "logs/ のファイルをまとめて開くと、ここに全部並ぶ。下の文字は、そのまま表計算やチャットに貼れる。" }));
+    el("div", { class: "note", text: "logs/ のファイルをまとめて開くと、ここに全部並ぶ。下の文字は、そのまま表計算やチャットに貼れる。距離の表(ctrl/wall_dist.c)に貼る行は tools/wall_table.py で作る。" }));
   const lines = ["memo,time,FL,L,R,FR"];
   for (const x of all) {
     const v = {};

@@ -7,6 +7,7 @@
 #   test_output  出力と走行ログ（App/sys/output.c、log.c）。./test_output --dump ファイル で実機の出力を確かめる
 #   test_flash  迷路とゴールの位置の保存（App/sys/flash.c）。Flash は仮の配列
 #   test_trajectory  目標の速さを作る処理（App/ctrl/trajectory.c）
+#   test_wall_dist  壁センサの値を距離 [mm] に直す処理（App/ctrl/wall_dist.c）
 
 APP_DIR = ../TORANEKO.Mk3/App
 
@@ -39,9 +40,10 @@ FLASH_SOURCES = \
 	$(APP_DIR)/sys/flash.c \
 	$(APP_DIR)/maze/maze_map.c
 
-test: test_maze test_mode test_output test_flash test_trajectory
+test: test_maze test_mode test_output test_flash test_trajectory test_wall_dist
 	./test_mode
 	./test_trajectory
+	./test_wall_dist
 	./test_output
 	./test_flash
 	./test_maze
@@ -59,10 +61,13 @@ test_output: test_output.c $(OUTPUT_SOURCES) $(APP_HEADERS)
 test_trajectory: test_trajectory.c $(APP_DIR)/ctrl/trajectory.c $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_trajectory.c $(APP_DIR)/ctrl/trajectory.c -lm
 
+test_wall_dist: test_wall_dist.c $(APP_DIR)/ctrl/wall_dist.c $(APP_HEADERS)
+	$(CC) $(CFLAGS) -o $@ test_wall_dist.c $(APP_DIR)/ctrl/wall_dist.c -lm
+
 test_flash: test_flash.c $(FLASH_SOURCES) $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_flash.c $(FLASH_SOURCES)
 
 clean:
-	rm -f test_maze test_mode test_output test_flash test_trajectory
+	rm -f test_maze test_mode test_output test_flash test_trajectory test_wall_dist
 
 .PHONY: test clean

@@ -17,6 +17,7 @@
 #include <stdio.h>
 
 #include "ctrl/wall_ctrl.h"
+#include "ctrl/wall_dist.h"
 #include "drv/led.h"
 #include "drv/timebase.h"
 #include "sys/ui.h"
@@ -88,18 +89,24 @@ void sensor_record_run(void)
   ui_signal_ok();
 }
 
-/* 1 つのセンサの記録を 1 行出す（センサの名前,平均,いちばん小さい値,いちばん大きい値） */
-static void print_stat(const char *name, const sensor_stat_t *stat)
+/* 記録の平均（整数。表で距離に直すのに使う） */
+static int32_t average_of(const sensor_stat_t *stat)
+{
+  return stat->sum / RECORD_COUNT;
+}
+
+/* 1 つのセンサの記録を 1 行出す（センサの名前,平均,いちばん小さい値,いちばん大きい値,平均を今の表で直した距離 [mm]） */
+static void print_stat(const char *name, const sensor_stat_t *stat, float distance_mm)
 {
   float average = (float)stat->sum / RECORD_COUNT;  /* (float) で小数にしてから割る（整数どうしで割ると小数が切り捨てられる） */
-  printf("%s,%.1f,%ld,%ld\r\n", name, average, stat->min, stat->max);
+  printf("%s,%.1f,%ld,%ld,%.1f\r\n", name, average, stat->min, stat->max, distance_mm);
 }
 
 /* 最後に測ったセンサの値をシリアルに出す。モード7 No.1（ログ出力）でも呼ぶ。まだ測っていなければ何も出さない。
  * ビューア（tools/viewer.html）が 1 つのデータとして受け取って保存できるように、次の形で出す。
  *   #BEGIN SENSOR n=測った回数
- *   sensor,average,min,max
- *   FL,3243.9,3239,3249     （左前・左・右・右前の順）
+ *   sensor,average,min,max,mm
+ *   FL,3243.9,3239,3249,42.0     （左前・左・右・右前の順。mm は平均を今の表（ctrl/wall_dist.c）で直した距離）
  *   #END SENSOR */
 void sensor_record_print(void)
 {
@@ -107,10 +114,10 @@ void sensor_record_print(void)
     return;
   }
   printf("\r\n#BEGIN SENSOR n=%d\r\n", RECORD_COUNT);
-  printf("sensor,average,min,max\r\n");
-  print_stat("FL", &s_front_left);
-  print_stat("L", &s_left);
-  print_stat("R", &s_right);
-  print_stat("FR", &s_front_right);
+  printf("sensor,average,min,max,mm\r\n");
+  print_stat("FL", &s_front_left, wall_dist_front_left_mm(average_of(&s_front_left)));
+  print_stat("L", &s_left, wall_dist_left_mm(average_of(&s_left)));
+  print_stat("R", &s_right, wall_dist_right_mm(average_of(&s_right)));
+  print_stat("FR", &s_front_right, wall_dist_front_right_mm(average_of(&s_front_right)));
   printf("#END SENSOR\r\n");
 }

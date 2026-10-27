@@ -50,6 +50,7 @@ set(APP_SOURCES
     App/ctrl/run.c
     App/ctrl/trajectory.c
     App/ctrl/wall_ctrl.c
+    App/ctrl/wall_dist.c
     App/drv/encoder.c
     App/drv/flash_memory.c
     App/drv/imu.c
@@ -112,6 +113,7 @@ set(APP_FAST_SOURCES
     App/ctrl/odometry.c
     App/ctrl/trajectory.c
     App/ctrl/wall_ctrl.c
+    App/ctrl/wall_dist.c
 )
 set_source_files_properties(${APP_FAST_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-O2")
 
