@@ -30,6 +30,7 @@
 #include "ctrl/control.h"
 #include "ctrl/odometry.h"
 #include "drv/encoder.h"
+#include "drv/fan.h"
 #include "drv/imu.h"
 #include "drv/wall.h"
 #include "drv/timebase.h"
@@ -58,6 +59,7 @@ static void run_control(void)
   /* 壁センサの測定は、エンコーダと IMU を読み終えてから始める（裏で進み、約 0.16ms で終わる）。
    * LED に流れる 155mA のパルスが、読み取りに混ざらないようにするため */
   wall_start_measure();
+  fan_update();          /* 吸引ファンの PWM の割合を、今の電池の電圧で計算し直す（回していなければ 0 のまま） */
 }
 
 /* 割り込みの間隔を記録する */

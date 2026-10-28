@@ -52,6 +52,7 @@ set(APP_SOURCES
     App/ctrl/wall_ctrl.c
     App/ctrl/wall_dist.c
     App/drv/encoder.c
+    App/drv/fan.c
     App/drv/flash_memory.c
     App/drv/imu.c
     App/drv/led.c

@@ -91,6 +91,11 @@
 #define WALL_EDGE_POSITION_MM 70.0f
 #define WALL_EDGE_WINDOW_MM   20.0f  /* WALL_EDGE_POSITION_MM からこれ以上ずれて見つかったら、読み違いとして使わない [mm] */
 
+/* ---- 吸引（drv/fan.c。2026-10-28） ---- */
+
+#define SUCTION_VOLTAGE_V 2.0f  /* 吸引ファンにかける電圧 [V]（仮。モード6 No.3 で吸い付き方を見て決める。上限は drv/fan.c の FAN_LIMIT_V） */
+#define SUCTION_RAMP_MS   500   /* 0 から SUCTION_VOLTAGE_V まで上げるのにかける時間 [ms]（急に回して電池の電圧が落ちないように） */
+
 /* ---- その場旋回 ---- */
 
 #define PIVOT_OMEGA_DEG_S  720.0f   /* 最高の角速度 [deg/s]（KOGUMA は 2000。まずゆっくり） */
