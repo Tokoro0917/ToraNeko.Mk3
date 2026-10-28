@@ -5,7 +5,7 @@
  * ■ 流れ（mode_run_once() の 1 回ぶん）
  *   1. 左タイヤでモード、右タイヤで No. を選ぶ。スイッチで決定する
  *   2. スタート待ち（前センサに手をかざして離すと、1 秒後に始まる。スイッチで 1 に戻る）。
- *      センサ値の表示（モード5 No.1）は、前センサの値を見たいので、スタート待ちをせずにすぐ始める
+ *      センサ値の表示（モード5 No.1）と壁までの距離の表示（No.3）は、前センサの値を見たいので、スタート待ちをせずにすぐ始める
  *   3. 選んだモードを走らせる。終わったら、同じモード・No. のまま 1 に戻る
  *      （最後まで走れたら「うまくいった」、フェイルセーフならスイッチで解除するまで待ち、道がなくなったら「できなかった」を出す）
  *   1 に戻るときは、どの道からでも（スタート待ちで取り消したとき、センサ値の表示を終えたとき、走り終わったとき、
@@ -13,15 +13,17 @@
  *   続けて押したスイッチが、次の決定にならない（2026-10-22 に決定）
  *
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す）
- *   モード0 No.1〜3  探索（往復・片道・未知壁探索）
+ *   モード0 No.1〜4  探索（往復・片道・未知壁探索・未知壁探索＋既知区間加速）
  *   モード1 No.1〜3  最短走行（曲がるところは探索と同じ小回り。直進の速さが No.1 → 3 で速くなる）。
  *                    決定したときに道がなければ、「できなかった」を出して選び直す
  *   モード2 No.1     スラローム 90°（探索の速さで左に曲がり、左の区画のまん中で止まる）
  *   モード2 No.2     U ターン（行き止まりで止まり、前壁合わせ、180°、戻って止まる）
  *   モード2 No.4     その場 180° 旋回（左に回って止まる。旋回の制御の係数を合わせる）
  *   モード2 No.5     壁合わせだけ（前の壁で位置と向きを直す）
+ *   モード3 No.1〜7  最短走行のターンを 1 つずつ（大回り 90°・180°、斜め入り 45°・135°、斜め出 45°・135°、V90°。左だけ）
  *   モード5 No.1     センサ値の表示（スイッチを押すと終わる）
  *   モード5 No.2     センサ値の記録（区画のまん中で 1 秒測り、平均をモード7 No.1 で出す）
+ *   モード5 No.3     壁までの距離の表示（センサの値と距離 [mm] を出し続ける。スイッチを押すと終わる）
  *   モード6 No.1     直進（ゆっくり 360mm 走って止まる。タイヤの直径と、制御の係数を合わせる）
  *   モード6 No.6     エンコーダの歪みを測る
  *   モード6 No.7     壁に沿って直進（横の壁に沿って走る補正を入れて、4 区画走って止まる）（タイヤを浮かせて、左右のモーターを回す）
@@ -42,6 +44,7 @@
 #include "sys/output.h"
 #include "sys/sensor_record.h"
 #include "sys/shortest.h"
+#include "sys/turn_test.h"
 #include "sys/sensor_view.h"
 #include "sys/ui.h"
 
@@ -75,7 +78,7 @@ int mode_get_number(void)
 bool mode_has_action(int mode, int number)
 {
   if (mode == 0) {
-    if (number >= 1 && number <= 3) {
+    if (number >= 1 && number <= 4) {
       return true;  /* 探索 */
     }
     return false;
@@ -83,6 +86,12 @@ bool mode_has_action(int mode, int number)
   if (mode == 1) {
     if (number >= 1 && number <= 3) {
       return true;  /* 最短走行 */
+    }
+    return false;
+  }
+  if (mode == 3) {
+    if (number >= 1 && number <= 7) {
+      return true;  /* 最短走行のターン */
     }
     return false;
   }
@@ -107,6 +116,9 @@ bool mode_has_action(int mode, int number)
     }
     if (number == 2) {
       return true;  /* センサ値の記録 */
+    }
+    if (number == 3) {
+      return true;  /* 壁までの距離の表示 */
     }
     return false;
   }
@@ -175,7 +187,7 @@ static void select_mode(void)
  * モード0：探索
  * ------------------------------------------------------------------------- */
 
-/* 探索走行をする（No.1 往復、No.2 片道、No.3 未知壁探索） */
+/* 探索走行をする（No.1 往復、No.2 片道、No.3 未知壁探索、No.4 未知壁探索＋既知区間加速） */
 static void run_explore(int number)
 {
   explore_type_t type = EXPLORE_ROUND_TRIP;
@@ -183,6 +195,8 @@ static void run_explore(int number)
     type = EXPLORE_ONE_WAY;
   } else if (number == 3) {
     type = EXPLORE_UNKNOWN_WALLS;
+  } else if (number == 4) {
+    type = EXPLORE_UNKNOWN_WALLS_KNOWN;
   }
 
   explore_result_t result = explore_run(type, goal_get_x(), goal_get_y(), GOAL_WIDTH, GOAL_HEIGHT);
@@ -300,6 +314,8 @@ static void run_selected(void)
     adjust_pivot_180();
   } else if (s_mode == 2 && s_number == 5) {
     adjust_front_align();
+  } else if (s_mode == 3) {
+    turn_test_run(s_number);
   } else if (s_mode == 5 && s_number == 2) {
     sensor_record_run();
   } else if (s_mode == 6 && s_number == 1) {
@@ -320,10 +336,12 @@ void mode_run_once(void)
 {
   select_mode();
 
-  if (s_mode == 1 && !shortest_has_route(goal_get_x(), goal_get_y())) {
+  if (s_mode == 1 && !shortest_has_route(s_number, goal_get_x(), goal_get_y())) {
     ui_signal_error();  /* 最短走行で、スタートからゴールへの道がない。走らずに選び直す */
   } else if (s_mode == 5 && s_number == 1) {
     sensor_view_run();  /* スタート待ちをしない */
+  } else if (s_mode == 5 && s_number == 3) {
+    sensor_view_distance_run();  /* スタート待ちをしない（前センサの値を見たいので） */
   } else if (ui_wait_start(s_mode, s_number)) {
     run_selected();
   }

@@ -1,8 +1,8 @@
 name: firmware-build
 
 # メイン基板のファームウェア（CubeMX が生成した CMake プロジェクト）が ARM 向けにビルドできることと、
-# App/ の PC 上のテスト（test/ の make：test_mode・test_output・test_flash・test_maze・test_trajectory）が通ることを確認する。
-# ジョブの名前 maze-test は、PR のチェックの名前として使われているので変えない（中身は 5 つのテスト全部）。
+# App/ の PC 上のテスト（test/ の make：test_mode・test_output・test_flash・test_maze・test_trajectory・test_wall_dist・test_turn）が通ることを確認する。
+# ジョブの名前 maze-test は、PR のチェックの名前として使われているので変えない（中身は 7 つのテスト全部）。
 on:
   push:
     branches: [main]
@@ -54,5 +54,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: PC 上のテスト（test_mode・test_output・test_flash・test_maze・test_trajectory）
+      - name: PC 上のテスト（test_mode・test_output・test_flash・test_maze・test_trajectory・test_wall_dist・test_turn）
         run: make

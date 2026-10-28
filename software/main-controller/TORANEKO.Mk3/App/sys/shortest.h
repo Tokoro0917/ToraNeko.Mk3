@@ -14,7 +14,7 @@ typedef enum {
   SHORTEST_RESULT_NO_ROUTE,  /* スタートからゴールへの道がない（走らない） */
 } shortest_result_t;
 
-bool shortest_has_route(int goal_x, int goal_y);
+bool shortest_has_route(int number, int goal_x, int goal_y);
 shortest_result_t shortest_run(int number, int goal_x, int goal_y);
 
 #endif /* SYS_SHORTEST_H */

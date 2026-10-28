@@ -407,6 +407,15 @@ void sensor_view_run(void)
   s_sensor_view_time_ms = s_now_ms;
 }
 
+/* 壁までの距離の表示：出さずに、呼ばれた回数と時刻を覚える */
+static int s_distance_view_count = 0;
+static uint32_t s_distance_view_time_ms = 0;
+void sensor_view_distance_run(void)
+{
+  s_distance_view_count = s_distance_view_count + 1;
+  s_distance_view_time_ms = s_now_ms;
+}
+
 /* 調整の動きの結果を出す：出さずに、呼ばれたことと、そのときの出力の回数を覚える */
 void adjust_print_last_result(void)
 {
@@ -463,6 +472,15 @@ void sensor_record_print(void)
   s_record_print_output_count = s_output_count;
 }
 
+/* 最短走行のターン（モード3）：走らずに、呼ばれた回数と No. を覚える */
+static int s_turn_test_count = 0;
+static int s_turn_test_number = 0;
+void turn_test_run(int number)
+{
+  s_turn_test_count = s_turn_test_count + 1;
+  s_turn_test_number = number;
+}
+
 /* エンコーダの歪みを測る：回さずに、呼ばれたことを覚える */
 void encoder_cal_run(void)
 {
@@ -485,8 +503,9 @@ explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int go
 }
 
 /* 最短走行の道があるか：決めておいた答えを返す */
-bool shortest_has_route(int goal_x, int goal_y)
+bool shortest_has_route(int number, int goal_x, int goal_y)
 {
+  (void)number;
   (void)goal_x;  /* 使わない引数（(void) を付けると、使っていないという警告が出ない） */
   (void)goal_y;
   return s_shortest_route;
@@ -659,6 +678,22 @@ static void test_select_and_start(void)
   mode_run_once();
   check(mode_get_mode() == 0 && mode_get_number() == 1, "走ったあとも、モード0・No.1 のまま");
   check(s_explore_count == 2 && s_explore_type == EXPLORE_ROUND_TRIP, "2 回目も往復で走る");
+}
+
+/* モード0 No.4 は、未知壁探索＋既知区間加速で走る */
+static void test_explore_known(void)
+{
+  printf("[5] モード0 No.4 は未知壁探索＋既知区間加速\n");
+  reset_world();
+  mode_init();
+
+  rotate_right_at(100, 4);   /* No.4 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+
+  check(s_explore_count == 1 && s_explore_type == EXPLORE_UNKNOWN_WALLS_KNOWN, "No.4 は未知壁探索＋既知区間加速");
+  check(!mode_has_action(0, 5), "モード0 の No.5 は決定できない");
 }
 
 /* No.0 では決定しない。そのあと No.3 にすると、未知壁探索で走る */
@@ -856,6 +891,43 @@ static void test_sensor_view(void)
   check(s_sensor_view_time_ms < 500 + 1000, "手をかざさなくても、決定してすぐ始まる");
   check(s_explore_count == 0, "探索は呼ばれない");
   check(s_now_ms >= s_sensor_view_time_ms + LOADING_MS, "センサ値の表示を終えたあとも「ロード中」を出して戻る");
+}
+
+/* 最短走行のターン（モード3 No.1〜7）は、スタート待ちのあとに、選んだ No. で走る。No.8 からはまだない */
+static void test_turn_test(void)
+{
+  printf("[6] 最短走行のターン（モード3）\n");
+  reset_world();
+  mode_init();
+  s_turn_test_count = 0;
+  s_turn_test_number = 0;
+
+  rotate_left_at(100, 3);    /* モード3 */
+  rotate_right_at(100, 7);   /* No.7 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+
+  check(s_turn_test_count == 1 && s_turn_test_number == 7, "モード3 No.7 で、ターンのテストが No.7 で 1 回呼ばれる");
+  check(mode_has_action(3, 1) && !mode_has_action(3, 8) && !mode_has_action(3, 0), "モード3 は No.1〜7 だけ決定できる");
+}
+
+/* 壁までの距離の表示（モード5 No.3）も、No.1 と同じくスタート待ちをしない */
+static void test_distance_view(void)
+{
+  printf("[6] 壁までの距離の表示はスタート待ちをしない\n");
+  reset_world();
+  mode_init();
+  s_distance_view_count = 0;
+
+  rotate_left_at(100, 5);    /* モード5 */
+  rotate_right_at(100, 3);   /* No.3 */
+  press_switch_at(500);      /* 決定（手はかざさない） */
+  mode_run_once();
+
+  check(s_distance_view_count == 1, "壁までの距離の表示が 1 回呼ばれる");
+  check(s_distance_view_time_ms < 500 + 1000, "手をかざさなくても、決定してすぐ始まる");
+  check(s_sensor_view_count == 0, "センサ値の表示（No.1）は呼ばれない");
 }
 
 /* エンコーダの歪みを測る（モード6 No.6）は、ほかと同じくスタート待ちのあとに始まる */
@@ -1092,6 +1164,7 @@ int main(void)
   test_goal();
   test_select_and_start();
   test_number_zero();
+  test_explore_known();
   test_wrap();
   test_reselect();
   test_hand_debounce();
@@ -1104,6 +1177,8 @@ int main(void)
   test_sensor_view();
   test_encoder_cal();
   test_sensor_record();
+  test_distance_view();
+  test_turn_test();
   test_shortest();
   test_shortest_no_route();
   test_straight();

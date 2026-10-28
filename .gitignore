@@ -44,6 +44,8 @@ cmake-build-*/
 software/main-controller/test/test_maze
 software/main-controller/test/test_mode
 software/main-controller/test/test_trajectory
+software/main-controller/test/test_wall_dist
+software/main-controller/test/test_turn
 software/main-controller/test/test_output
 software/main-controller/test/test_flash
 software/main-controller/test/test_output_dump.txt

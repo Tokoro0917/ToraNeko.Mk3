@@ -14,6 +14,13 @@
  *   - 未知壁探索で計算するとき（ダイクストラは重いので、止まっているときだけ計算する。KOGUMA と同じ）
  *   - 終わり（スタートに戻ったとき、片道でゴールに着いたとき）
  *
+ * ■ 既知区間加速（No.4 だけ。2026-10-27 に追加）
+ * 走っているとき（行き・未知壁を見に行くあいだ・帰り）、今いる区画から先に「見たことのある区画をまっすぐ進む」が 2 区画以上続くなら、
+ * 1 区画ずつではなく、まとめて速く走る（run_search_known_straight()。速さは config/run_params.h の KNOWN_*）。
+ * 見たことのある区画では、壁がもうわかっているので、1 区画ずつ止まらずに考えても同じ道になる（maze/path.c の
+ * path_make_known と同じ考え方）。曲がるところは、ふだんどおり 1 区画ずつ小回りで走る。
+ * まっすぐ進む区画を数えるだけにして、経路（path_t。約 4KB）は作らない（RAM が残り少ないため）。
+ *
  * ■ Flash への保存（MODES.md の 5）
  *   - スタートに戻ったとき、片道でゴールに止まったとき
  *   - フェイルセーフで止まったとき（最後に壁を記録した 5 区画ぶんを、記録する前の状態に戻してから）
@@ -39,6 +46,8 @@ static int s_x = 0;
 static int s_y = 0;
 static direction_t s_dir = DIR_NORTH;
 static bool s_stopped = true;
+
+static bool s_use_known = false;  /* 既知区間加速をするか（No.4 のときだけ true） */
 
 /* ---------------------------------------------------------------------------
  * 1 区画ぶんの動き
@@ -131,6 +140,53 @@ static void move(action_t action)
   s_y = maze_next_y(s_y, s_dir);
 }
 
+/* 今いる区画（入口の辺にいる）から、見たことのある区画をまっすぐ何区画続けて進めるかを数える（既知区間加速）。
+ * 見たことのない区画、目的地、まっすぐ以外の動きになる区画の手前で数えるのをやめる。
+ * 歩数マップ（search_update_step_map()）は、呼ぶ前に作っておくこと */
+static int count_known_straight(void)
+{
+  int x = s_x;
+  int y = s_y;
+  int count = 0;
+  while (count < MAZE_SIZE) {
+    if (!maze_map_is_visited(x, y)) {
+      break;
+    }
+    if (search_is_in_target(x, y)) {
+      break;
+    }
+    if (search_decide_action(x, y, s_dir) != ACTION_FORWARD) {
+      break;
+    }
+    count = count + 1;
+    x = maze_next_x(x, s_dir);
+    y = maze_next_y(y, s_dir);
+  }
+  return count;
+}
+
+/* 既知区間加速：走っているときに、まっすぐ進む見たことのある区画が 2 区画以上続くなら、まとめて速く走る。
+ * 走ったら true（位置を進め、着いた区画の壁を記録してある）。走らなかったら false */
+static bool try_known_straight(void)
+{
+  if (!s_use_known || s_stopped) {
+    return false;
+  }
+  int count = count_known_straight();
+  if (count < 2) {
+    return false;  /* 1 区画だけなら、ふだんの直進と同じ */
+  }
+  run_search_known_straight(count);
+  for (int i = 0; i < count; i++) {
+    s_x = maze_next_x(s_x, s_dir);
+    s_y = maze_next_y(s_y, s_dir);
+  }
+  if (!failsafe_is_stopped()) {
+    record_walls_here();
+  }
+  return true;
+}
+
 /* ---------------------------------------------------------------------------
  * 区間ごとの走り方
  * ------------------------------------------------------------------------- */
@@ -146,6 +202,12 @@ static explore_result_t run_to_target(void)
     }
 
     search_update_step_map();
+    if (try_known_straight()) {
+      if (failsafe_is_stopped()) {
+        return EXPLORE_RESULT_FAILSAFE;
+      }
+      continue;  /* 見たことのある区画をまとめて走った。着いた区画で、また考える */
+    }
     action_t action = search_decide_action(s_x, s_y, s_dir);
     if (action == ACTION_STOP) {
       stop_here();  /* どこへ進んでも目的地に着けない */
@@ -215,6 +277,12 @@ static explore_result_t scan_unknown_walls(int goal_x, int goal_y, int goal_widt
      * その区画に入れば、センサでその壁を見られる */
     search_set_target(cell_x, cell_y, 1, 1);
     search_update_step_map();
+    if (try_known_straight()) {
+      if (failsafe_is_stopped()) {
+        return EXPLORE_RESULT_FAILSAFE;
+      }
+      continue;  /* 見たことのある区画をまとめて走った。着いた区画で、また見に行く壁を確かめる */
+    }
     action_t action = search_decide_action(s_x, s_y, s_dir);
     if (action == ACTION_STOP) {
       /* その区画へ行けない（普通は起きない）。
@@ -279,6 +347,13 @@ static explore_result_t finish_done(void)
 explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int goal_width, int goal_height)
 {
   explore_result_t result;
+
+  /* 既知区間加速は No.4 だけ。No.4 は、ほかは未知壁探索（No.3）と同じ */
+  s_use_known = false;
+  if (type == EXPLORE_UNKNOWN_WALLS_KNOWN) {
+    s_use_known = true;
+    type = EXPLORE_UNKNOWN_WALLS;
+  }
 
   /* この走行で記録した壁だけを、フェイルセーフのときに戻すようにする */
   maze_map_clear_recent_cells();

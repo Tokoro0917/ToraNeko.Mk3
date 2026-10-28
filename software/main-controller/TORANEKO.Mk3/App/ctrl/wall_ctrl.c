@@ -26,6 +26,7 @@
  */
 #include "ctrl/wall_ctrl.h"
 
+#include "ctrl/wall_dist.h"
 #include "drv/wall.h"
 
 #define FRONT_LEFT_WALL_THRESHOLD  600   /* 左前：これより大きければ前に壁 */
@@ -76,6 +77,30 @@ int32_t wall_ctrl_get_right(void)
 int32_t wall_ctrl_get_front_right(void)
 {
   return wall_get_b_minus_dark(4);
+}
+
+/* 前の壁までの距離 [mm]（左前のセンサから。表は ctrl/wall_dist.c） */
+float wall_ctrl_get_front_left_mm(void)
+{
+  return wall_dist_front_left_mm(wall_ctrl_get_front_left());
+}
+
+/* 左の壁までの距離 [mm] */
+float wall_ctrl_get_left_mm(void)
+{
+  return wall_dist_left_mm(wall_ctrl_get_left());
+}
+
+/* 右の壁までの距離 [mm] */
+float wall_ctrl_get_right_mm(void)
+{
+  return wall_dist_right_mm(wall_ctrl_get_right());
+}
+
+/* 前の壁までの距離 [mm]（右前のセンサから） */
+float wall_ctrl_get_front_right_mm(void)
+{
+  return wall_dist_front_right_mm(wall_ctrl_get_front_right());
 }
 
 /* 前に壁があるか（左前と右前の両方が、しきい値より大きいとき。KOGUMA と同じ） */

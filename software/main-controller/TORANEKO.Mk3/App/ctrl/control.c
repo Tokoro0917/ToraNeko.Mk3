@@ -27,7 +27,8 @@
  * 前センサの値が横の壁の光で大きくなっていると、下がっても距離のずれが減らず、下がり続けてしまう
  * （2026-10-24 の U ターンで 44mm 下がった）。なので、合わせ始めた位置から前後に
  * ALIGN_DISTANCE_LIMIT_MM より遠くへは動かさない（それより先へ動く向きの目標の速さは 0 にする）。
- * ログの dist_L・dist_R の列には、前壁合わせのあいだだけ、左前・右前のセンサの値を入れる。
+ * ログの dist_L・dist_R の列には、ふだんは横の壁までの距離 [mm]、前壁合わせのあいだだけ、
+ * 左前・右前のセンサから求めた前の壁までの距離 [mm] を入れる（どれも区画のまん中で 42mm）。
  *
  * ■ ずれの足し合わせ
  * 「速さのずれ × 0.5ms」を足していくと、目標の位置と本当の位置のずれ [mm] になる。
@@ -286,10 +287,12 @@ static void record_log(void)
   values.voltage_left_v = s_left_voltage_v;
   values.voltage_right_v = s_right_voltage_v;
   values.battery_v = wall_get_battery_v();
+  values.wall_dist_left_mm = wall_ctrl_get_left_mm();    /* 横の壁までの距離 [mm]（区画のまん中で 42） */
+  values.wall_dist_right_mm = wall_ctrl_get_right_mm();
   if (s_front_align) {
     values.phase = LOG_PHASE_ALIGN;
-    values.wall_dist_left_mm = wall_ctrl_get_front_left();    /* dist_L の列に左前のセンサの値（3276 までしか残らない） */
-    values.wall_dist_right_mm = wall_ctrl_get_front_right();  /* dist_R の列に右前のセンサの値 */
+    values.wall_dist_left_mm = wall_ctrl_get_front_left_mm();    /* 前壁合わせのあいだは、dist_L の列に左前から求めた前の壁までの距離 */
+    values.wall_dist_right_mm = wall_ctrl_get_front_right_mm();  /* dist_R の列に右前から求めた前の壁までの距離 */
   } else if (trajectory_get_kind() == TRAJECTORY_PIVOT) {
     values.phase = LOG_PHASE_PIVOT;
   } else if (trajectory_get_kind() == TRAJECTORY_SLALOM) {

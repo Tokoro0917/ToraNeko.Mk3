@@ -50,6 +50,7 @@ set(APP_SOURCES
     App/ctrl/run.c
     App/ctrl/trajectory.c
     App/ctrl/wall_ctrl.c
+    App/ctrl/wall_dist.c
     App/drv/encoder.c
     App/drv/flash_memory.c
     App/drv/imu.c
@@ -75,6 +76,7 @@ set(APP_SOURCES
     App/sys/scheduler.c
     App/sys/sensor_record.c
     App/sys/shortest.c
+    App/sys/turn_test.c
     App/sys/sensor_view.c
     App/sys/ui.c
 )
@@ -112,6 +114,7 @@ set(APP_FAST_SOURCES
     App/ctrl/odometry.c
     App/ctrl/trajectory.c
     App/ctrl/wall_ctrl.c
+    App/ctrl/wall_dist.c
 )
 set_source_files_properties(${APP_FAST_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-O2")
 

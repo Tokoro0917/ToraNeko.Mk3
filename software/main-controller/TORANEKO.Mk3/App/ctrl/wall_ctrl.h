@@ -40,4 +40,10 @@ int32_t wall_ctrl_get_left(void);
 int32_t wall_ctrl_get_right(void);
 int32_t wall_ctrl_get_front_right(void);
 
+/* 4 つの壁センサの値を、壁までの距離 [mm] に直したもの（ctrl/wall_dist.c。区画のまん中で 42mm） */
+float wall_ctrl_get_front_left_mm(void);
+float wall_ctrl_get_left_mm(void);
+float wall_ctrl_get_right_mm(void);
+float wall_ctrl_get_front_right_mm(void);
+
 #endif /* CTRL_WALL_CTRL_H */

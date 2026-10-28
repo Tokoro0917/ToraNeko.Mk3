@@ -1456,6 +1456,256 @@ static void test_dijkstra_exact(int maze_count)
 }
 
 /* ---------------------------------------------------------------------------
+ * 8b. 走行時間のコスト（dijkstra_set_time_cost_small_turn）のテスト
+ * ------------------------------------------------------------------------- */
+
+/* 確認用の計算で使う、状態「点 + 来た向き + その向きに続けて来た歩数」ごとのコスト */
+static int s_ref_time_cost[2][MAZE_SIZE + 1][MAZE_SIZE + 1][8][DIJKSTRA_TABLE_LENGTH];
+
+/* 走行時間のコストで、向き dir の区間の step 歩目のコスト（表より長い区間は表の最後の値） */
+static int time_step_cost(dir8_t dir, int step)
+{
+  if (is_orthogonal(dir)) {
+    return dijkstra_get_orth_step_cost(step);
+  }
+  return dijkstra_get_diag_step_cost(step);
+}
+
+/* 確認用：走行時間のコストで、本当の最短のコストを求める（calc_reference_cost の走行時間版）。
+ * 状態に「来た向き」と「その向きに続けて来た歩数」まで含め、コストが変わらなくなるまで何度も見直す。
+ * 歩数は表の長さ − 1 で止める（それより先は 1 歩のコストが同じなので、止めても答えは変わらない） */
+static int calc_reference_time_cost(int goal_x, int goal_y, int goal_width, int goal_height)
+{
+  int last_step = DIJKSTRA_TABLE_LENGTH - 1;
+  for (int row = 0; row < 2; row++) {
+    for (int x = 0; x <= MAZE_SIZE; x++) {
+      for (int y = 0; y <= MAZE_SIZE; y++) {
+        for (int i = 0; i < 8; i++) {
+          for (int k = 0; k <= last_step; k++) {
+            s_ref_time_cost[row][x][y][i][k] = REF_COST_MAX;
+          }
+        }
+      }
+    }
+  }
+
+  /* ゴールの入口は、ゴールから外へ向かう向きで、歩数 0・コスト 0 */
+  for (int x = goal_x; x < goal_x + goal_width; x++) {
+    for (int y = goal_y; y < goal_y + goal_height; y++) {
+      for (int i = 0; i < 4; i++) {
+        direction_t dir = (direction_t)i;
+        if (maze_is_in_area(maze_next_x(x, dir), maze_next_y(y, dir), goal_x, goal_y, goal_width, goal_height)) {
+          continue;
+        }
+        edge_t edge;
+        dir8_t outward;
+        if (dir == DIR_NORTH) {
+          edge = make_edge(true, x, y + 1);
+          outward = DIR8_NORTH;
+        } else if (dir == DIR_SOUTH) {
+          edge = make_edge(true, x, y);
+          outward = DIR8_SOUTH;
+        } else if (dir == DIR_EAST) {
+          edge = make_edge(false, x + 1, y);
+          outward = DIR8_EAST;
+        } else {
+          edge = make_edge(false, x, y);
+          outward = DIR8_WEST;
+        }
+        if (is_open(edge, true)) {
+          s_ref_time_cost[edge.is_row][edge.x][edge.y][outward][0] = 0;
+        }
+      }
+    }
+  }
+
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (int row = 0; row < 2; row++) {
+      for (int x = 0; x <= MAZE_SIZE; x++) {
+        for (int y = 0; y <= MAZE_SIZE; y++) {
+          for (int i = 0; i < 8; i++) {
+            for (int k = 0; k <= last_step; k++) {
+              int cost = s_ref_time_cost[row][x][y][i][k];
+              if (cost == REF_COST_MAX) {
+                continue;
+              }
+              dir8_t came_dir = (dir8_t)i;
+              edge_t from = make_edge(row == 1, x, y);
+              direction_t crossing = crossing_after(from, came_dir);
+              for (int dir_index = 0; dir_index < 8; dir_index++) {
+                dir8_t dir = (dir8_t)dir_index;
+                if (!is_forward_move(crossing, dir)) {
+                  continue;
+                }
+                edge_t to;
+                int cell_x;
+                int cell_y;
+                if (!move_from(from, dir, &to, &cell_x, &cell_y)) {
+                  continue;
+                }
+                if (!maze_is_inside(cell_x, cell_y) || !is_open(to, true)) {
+                  continue;
+                }
+                int next_k = 1;
+                if (dir == came_dir) {
+                  next_k = k + 1;  /* 同じ向きに続ける（ゴールの入口の歩数 0 からなら 1 歩目） */
+                }
+                int next_cost = cost + time_step_cost(dir, next_k);
+                if (next_k > last_step) {
+                  next_k = last_step;
+                }
+                if (next_cost < s_ref_time_cost[to.is_row][to.x][to.y][dir][next_k]) {
+                  s_ref_time_cost[to.is_row][to.x][to.y][dir][next_k] = next_cost;
+                  changed = true;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /* スタートの区画の北の壁を、ゴール側から見て南向き（南・南東・南西）に通る状態のうち、いちばん安いもの */
+  int best = REF_COST_MAX;
+  for (int k = 0; k <= last_step; k++) {
+    if (s_ref_time_cost[1][0][1][DIR8_SOUTH][k] < best) {
+      best = s_ref_time_cost[1][0][1][DIR8_SOUTH][k];
+    }
+    if (s_ref_time_cost[1][0][1][DIR8_SOUTH_EAST][k] < best) {
+      best = s_ref_time_cost[1][0][1][DIR8_SOUTH_EAST][k];
+    }
+    if (s_ref_time_cost[1][0][1][DIR8_SOUTH_WEST][k] < best) {
+      best = s_ref_time_cost[1][0][1][DIR8_SOUTH_WEST][k];
+    }
+  }
+  return best;
+}
+
+/* dijkstra_find_route() が返した区画の並びのコストを、走行時間のコストで数え直す（ゴール側から） */
+static int count_route_time_cost(void)
+{
+  int length = dijkstra_get_route_length();
+  int last = length - 1;
+  dir8_t previous = DIR8_NONE;  /* ゴールの入口からは、どの向きでも 1 歩目から数える */
+  int run_length = 0;
+  int cost = 0;
+  for (int i = last - 1; i >= 1; i--) {
+    direction_t heading_in = maze_direction_between(dijkstra_get_route_x(i - 1), dijkstra_get_route_y(i - 1),
+                                                    dijkstra_get_route_x(i), dijkstra_get_route_y(i));
+    direction_t heading_out = maze_direction_between(dijkstra_get_route_x(i), dijkstra_get_route_y(i),
+                                                     dijkstra_get_route_x(i + 1), dijkstra_get_route_y(i + 1));
+    dir8_t hop = reverse_dir8(hop_direction(heading_in, heading_out));  /* ゴール側から見た向き */
+    if (hop == previous) {
+      run_length = run_length + 1;
+    } else {
+      run_length = 1;
+    }
+    cost = cost + time_step_cost(hop, run_length);
+    previous = hop;
+  }
+  return cost;
+}
+
+/* 表の形：1 歩目からだんだん安くなり（増えない）、どれも 1 以上。速さを上げないときは 1 歩のコストが同じ */
+static void test_time_cost_table(void)
+{
+  printf("[8b] 走行時間のコストの表\n");
+  dijkstra_set_time_cost_small_turn(300.0f, 300.0f, 1000.0f);
+  check(dijkstra_get_orth_step_cost(1) == 60, "300mm/s のまま 90mm は 0.3 秒 = コスト 60（5ms 単位）");
+  check(dijkstra_get_orth_step_cost(10) == 60, "最高速が 300 なら、何歩目でも 60");
+  check(dijkstra_get_diag_step_cost(1) == 60, "斜め（小回りのジグザグ）の 1 歩も 60");
+
+  dijkstra_set_time_cost_small_turn(300.0f, 1000.0f, 3000.0f);
+  bool ok = true;
+  for (int k = 1; k < DIJKSTRA_TABLE_LENGTH; k++) {
+    if (dijkstra_get_orth_step_cost(k) < 1 || dijkstra_get_diag_step_cost(k) < 1) {
+      ok = false;
+    }
+    if (k > 1 && dijkstra_get_orth_step_cost(k) > dijkstra_get_orth_step_cost(k - 1)) {
+      ok = false;
+    }
+  }
+  check(ok, "表はどれも 1 以上で、k 歩目は k−1 歩目より大きくない");
+  check(dijkstra_get_orth_step_cost(30) < dijkstra_get_orth_step_cost(1), "長い直線ほど 1 歩が安い（速度が乗る）");
+  check(dijkstra_get_orth_step_cost(30) == 18, "1000mm/s に乗ったら 1 歩 90mm は 0.09 秒 = コスト 18");
+  dijkstra_set_step_cost();
+  check(!dijkstra_is_time_cost(), "dijkstra_set_step_cost() で 3 つの数のコストに戻る");
+}
+
+/* ランダムな迷路で、走行時間のコストでも、ダイクストラの答えが本当の最短か */
+static void test_dijkstra_exact_time(int maze_count, float max_speed_mm_s, float accel_mm_s2)
+{
+  printf("[8b] 走行時間のコスト（最高速 %.0fmm/s）で本当の最短か：ランダムな迷路 %d 個\n", max_speed_mm_s, maze_count);
+  int not_shortest_count = 0;
+  int wrong_cost_count = 0;
+  for (int maze_index = 0; maze_index < maze_count; maze_index++) {
+    s_random_seed = (unsigned int)(maze_index + 30001);
+    make_random_true_maze();
+    copy_true_maze_to_map();
+    dijkstra_set_time_cost_small_turn(300.0f, max_speed_mm_s, accel_mm_s2);
+    bool found = dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+    if (!found) {
+      not_shortest_count = not_shortest_count + 1;
+    } else {
+      if (dijkstra_get_route_cost() != calc_reference_time_cost(s_goal_x, s_goal_y, s_goal_width, s_goal_height)) {
+        not_shortest_count = not_shortest_count + 1;
+      }
+      if (dijkstra_get_route_cost() != count_route_time_cost()) {
+        wrong_cost_count = wrong_cost_count + 1;
+      }
+    }
+    dijkstra_set_step_cost();
+  }
+  printf("  本当の最短でなかった迷路: %d 個、返した道のコストと報告したコストが違った迷路: %d 個\n",
+         not_shortest_count, wrong_cost_count);
+  check(not_shortest_count == 0, "走行時間のコストでも、ダイクストラの答えは本当の最短");
+  check(wrong_cost_count == 0, "走行時間のコストでも、返した道のコストと報告したコストが同じ");
+}
+
+/* 経路の中の、探索用の左右のターンの数 */
+static int count_small_turns(const path_t *path)
+{
+  int turns = 0;
+  for (int i = 0; i < path->count; i++) {
+    if (path->steps[i].motion == MOTION_TURN_LEFT || path->steps[i].motion == MOTION_TURN_RIGHT) {
+      turns = turns + 1;
+    }
+  }
+  return turns;
+}
+
+/* 中に壁がない迷路で (7,7) へ：3 つの数のコストではジグザグ（斜め）になり、
+ * 走行時間のコスト（小回り、直進 1000mm/s）では曲がる回数が少なくなる */
+static void test_time_cost_no_zigzag(void)
+{
+  printf("[8b] 走行時間のコストでは、小回りのジグザグを選ばない\n");
+  make_open_true_maze();
+  copy_true_maze_to_map();
+  s_goal_x = 7;
+  s_goal_y = 7;
+  s_goal_width = 2;
+  s_goal_height = 2;
+  static path_t s_path;
+
+  dijkstra_set_step_cost();
+  path_make_shortest_small_turn(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &s_path);
+  int turns_step_cost = count_small_turns(&s_path);
+
+  dijkstra_set_time_cost_small_turn(300.0f, 1000.0f, 3000.0f);
+  bool found = path_make_shortest_small_turn(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &s_path);
+  int turns_time_cost = count_small_turns(&s_path);
+  dijkstra_set_step_cost();
+
+  printf("  ターンの数：3 つの数のコスト %d 回、走行時間のコスト %d 回\n", turns_step_cost, turns_time_cost);
+  check(found, "道が見つかる");
+  check(turns_time_cost <= 2, "走行時間のコストでは、曲がるのは 2 回まで（直進 → 曲がる → 直進）");
+  check(replay_path(&s_path, 0, 0, DIR_NORTH, true), "その経路は壁を通らず、ゴールに着く");
+}
+
+/* ---------------------------------------------------------------------------
  * 9. 探索走行（sys/explore.c）のテスト
  *
  * explore.c が使う「機体を動かす」（ctrl/run.h）、「壁を見る」（ctrl/wall_ctrl.h）、
@@ -1478,6 +1728,8 @@ static bool s_sim_failsafe = false;    /* フェイルセーフで止まって�
 static bool s_sim_all_walls = false;   /* true なら、センサがいつも「前・左・右とも壁あり」と答える（読み間違いの試験） */
 static int s_sim_error_count = 0;      /* おかしな使い方をされた回数 */
 static int s_sim_stop_count = 0;       /* 止まった回数（U ターンと、未知壁探索で計算するときなど） */
+static int s_sim_known_count = 0;      /* 既知区間加速（run_search_known_straight）で走った回数 */
+static int s_sim_known_cells = 0;      /* 既知区間加速で走った区画の数の合計 */
 static int s_sim_save_count = 0;       /* Flash に保存した回数 */
 static int s_sim_after_failsafe_count = 0;  /* フェイルセーフで止まったあとに、動きを頼まれた回数（run.h の約束では 0 のはず） */
 static bool s_sim_uturn_only = false;  /* true なら、止まったあとの発進は U ターンだけのはず（往復・片道は、U ターンと最後のほかで止まらない） */
@@ -1547,6 +1799,8 @@ static void sim_place_at_start(int failsafe_at)
   s_sim_failsafe = false;
   s_sim_error_count = 0;
   s_sim_stop_count = 0;
+  s_sim_known_count = 0;
+  s_sim_known_cells = 0;
   s_sim_save_count = 0;
   s_sim_after_failsafe_count = 0;
   s_sim_before_record_count = 0;
@@ -1612,6 +1866,24 @@ void run_search_straight(void)
   }
   sim_must_be_moving("止まっているのに直進した");
   sim_go(s_sim_dir);
+}
+
+/* 走っている → 見たことのある区画を cells 区画まっすぐ進む（既知区間加速）。
+ * 通る区画（今の区画から、着く区画の手前まで）が、どれも壁を記録した区画かも調べる */
+void run_search_known_straight(int cells)
+{
+  if (!sim_begin_motion()) {
+    return;
+  }
+  sim_must_be_moving("止まっているのに既知区間加速で走った");
+  s_sim_known_count = s_sim_known_count + 1;
+  s_sim_known_cells = s_sim_known_cells + cells;
+  for (int i = 0; i < cells; i++) {
+    if (!maze_map_is_visited(s_sim_x, s_sim_y)) {
+      sim_error("見たことのない区画を、既知区間加速で走った");
+    }
+    sim_go(s_sim_dir);
+  }
 }
 
 /* 走っている → 左の区画へ曲がる */
@@ -1751,7 +2023,19 @@ static const char *explore_type_name(explore_type_t type)
   if (type == EXPLORE_UNKNOWN_WALLS) {
     return "未知壁探索";
   }
+  if (type == EXPLORE_UNKNOWN_WALLS_KNOWN) {
+    return "未知壁探索＋既知区間加速";
+  }
   return "往復";
+}
+
+/* 未知壁探索（既知区間加速ありも）か */
+static bool is_unknown_walls_type(explore_type_t type)
+{
+  if (type == EXPLORE_UNKNOWN_WALLS || type == EXPLORE_UNKNOWN_WALLS_KNOWN) {
+    return true;
+  }
+  return false;
 }
 
 /* 空の迷路から、走り方 type で探索させる。最後まで走り、終わりの場所・保存・壁が正しければ true。
@@ -1762,7 +2046,7 @@ static bool explore_and_check(explore_type_t type, bool verbose)
 
   maze_map_init();
   sim_place_at_start(-1);
-  if (type != EXPLORE_UNKNOWN_WALLS) {
+  if (!is_unknown_walls_type(type)) {
     s_sim_uturn_only = true;  /* 往復・片道は計算のために止まらない */
   }
   explore_result_t result = explore_run(type, s_goal_x, s_goal_y, s_goal_width, s_goal_height);
@@ -1796,13 +2080,13 @@ static bool explore_and_check(explore_type_t type, bool verbose)
     }
   }
   int cost = recorded_route_cost();
-  if (type == EXPLORE_UNKNOWN_WALLS && cost != best_cost) {
+  if (is_unknown_walls_type(type) && cost != best_cost) {
     ok = false;
   }
 
   if (verbose) {
-    printf("  %s: 動き %d 回、止まった %d 回、最後の位置 (%d,%d)、最短経路のコスト %d（全部の壁を知っているとき %d）\n",
-           explore_type_name(type), s_sim_motion_count, s_sim_stop_count, s_sim_x, s_sim_y, cost, best_cost);
+    printf("  %s: 動き %d 回（うち既知区間加速 %d 回・%d 区画）、止まった %d 回、最後の位置 (%d,%d)、最短経路のコスト %d（全部の壁を知っているとき %d）\n",
+           explore_type_name(type), s_sim_motion_count, s_sim_known_count, s_sim_known_cells, s_sim_stop_count, s_sim_x, s_sim_y, cost, best_cost);
   }
   return ok;
 }
@@ -1822,6 +2106,10 @@ static void test_explore_types(const char *file_path, int unknown_walls_stop_cou
   check(explore_and_check(EXPLORE_ONE_WAY, true), "片道：ゴールで止まり、保存する");
   check(explore_and_check(EXPLORE_UNKNOWN_WALLS, true), "未知壁探索：スタートに戻り、最短経路が全部の壁を知っているときと同じ");
   check(s_sim_stop_count == unknown_walls_stop_count, "未知壁探索で止まった回数が、前に確かめた回数と同じ");
+  int motions_without_known = s_sim_motion_count;
+  check(explore_and_check(EXPLORE_UNKNOWN_WALLS_KNOWN, true), "未知壁探索＋既知区間加速：No.3 と同じく、スタートに戻り、最短経路が同じ");
+  check(s_sim_stop_count == unknown_walls_stop_count, "既知区間加速でも、止まる回数は No.3 と同じ（同じ道を通る）");
+  check(s_sim_known_count > 0 && s_sim_motion_count < motions_without_known, "既知区間加速を使い、動きの回数が No.3 より少ない");
 }
 
 /* 走り方 type で、failsafe_at 回目の動きでフェイルセーフを起こす。
@@ -1866,7 +2154,7 @@ static bool failsafe_and_continue(explore_type_t type, int failsafe_at)
   if (result != EXPLORE_RESULT_DONE || s_sim_error_count != 0 || count_wrong_walls() != 0) {
     ok = false;
   }
-  if (type == EXPLORE_UNKNOWN_WALLS && recorded_route_cost() != best_cost) {
+  if (is_unknown_walls_type(type) && recorded_route_cost() != best_cost) {
     ok = false;
   }
   return ok;
@@ -1959,6 +2247,7 @@ static void test_explore_random(int maze_count)
   int fail_count = 0;
   int failsafe_fail_count = 0;
   int unknown_walls_stop_total = 0;  /* 未知壁探索で止まった回数の合計 */
+  int known_stop_diff_count = 0;     /* 既知区間加速ありで、止まった回数が No.3 と違った迷路の数 */
   for (int maze_index = 0; maze_index < maze_count; maze_index++) {
     s_random_seed = (unsigned int)(maze_index + 20001);
     make_random_true_maze();
@@ -1972,8 +2261,18 @@ static void test_explore_random(int maze_count)
       fail_count = fail_count + 1;
     }
     unknown_walls_stop_total = unknown_walls_stop_total + s_sim_stop_count;
+    int stops_without_known = s_sim_stop_count;
+    if (!explore_and_check(EXPLORE_UNKNOWN_WALLS_KNOWN, false)) {
+      fail_count = fail_count + 1;
+    }
+    if (s_sim_stop_count != stops_without_known) {
+      known_stop_diff_count = known_stop_diff_count + 1;
+    }
     int failsafe_at = 1 + random_below(300);
     if (!failsafe_and_continue(EXPLORE_UNKNOWN_WALLS, failsafe_at)) {
+      failsafe_fail_count = failsafe_fail_count + 1;
+    }
+    if (!failsafe_and_continue(EXPLORE_UNKNOWN_WALLS_KNOWN, failsafe_at)) {
       failsafe_fail_count = failsafe_fail_count + 1;
     }
   }
@@ -1982,7 +2281,8 @@ static void test_explore_random(int maze_count)
   /* 前に確かめた合計（2026-10-15）。「見に行く壁がなくなったら、止まらずに帰る」をやめると増える（10692 回になる）。
    * explore.c の止まり方を変えたときは、変わった理由を確かめてから、この数を直す */
   check(unknown_walls_stop_total == 10646, "未知壁探索で止まった回数の合計が、前に確かめた回数と同じ");
-  check(fail_count == 0, "ランダムな迷路でも、3 つの走り方が正しく終わる");
+  check(fail_count == 0, "ランダムな迷路でも、4 つの走り方が正しく終わる");
+  check(known_stop_diff_count == 0, "既知区間加速ありでも、止まる回数は No.3 と同じ（同じ道を通る）");
   check(failsafe_fail_count == 0, "ランダムな迷路でも、フェイルセーフのあと続きから探索できる");
 }
 
@@ -2006,6 +2306,10 @@ int main(void)
   test_random_mazes(2000);
   test_unknown_wall_random(300);
   test_dijkstra_exact(500);
+  test_time_cost_table();
+  test_dijkstra_exact_time(100, 600.0f, 2000.0f);
+  test_dijkstra_exact_time(100, 1000.0f, 3000.0f);
+  test_time_cost_no_zigzag();
   test_explore_types("mazes/maze32_center2x2.txt", 28);
   test_explore_types("mazes/maze32_offset3x3.txt", 40);
   test_explore_failsafe("mazes/maze32_center2x2.txt");

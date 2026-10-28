@@ -23,6 +23,11 @@
 #define SEARCH_SPEED_MM_S  300.0f   /* 探索の速さ [mm/s] */
 #define SEARCH_ACCEL_MM_S2 1000.0f  /* 探索の加速度 [mm/s²]（止まったところから 45mm で 300mm/s になる） */
 
+/* ---- 既知区間加速（探索 No.4。見たことのある区画がまっすぐ 2 区画以上続くところ）（仮） ---- */
+
+#define KNOWN_MAX_SPEED_MM_S 600.0f   /* 最高速 [mm/s] */
+#define KNOWN_ACCEL_MM_S2    2000.0f  /* 加速度 [mm/s²]（300 → 600mm/s に 68mm。2 区画あれば上げて戻せる） */
+
 /* ---- 探索のスラローム（小回り 90°） ---- */
 
 #define SLALOM_ANGLE_DEG    90.0f    /* 曲がる角度 [deg] */

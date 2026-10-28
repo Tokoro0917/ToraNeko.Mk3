@@ -35,6 +35,19 @@
  * ただしゴールの入口だけは、外へ向かう向きにそのまま進む区間の最初の 1 歩を COST_CONTINUE にする
  * （KOGUMA と同じ。ゴールにまっすぐ入る道を少し安くする）。
  *
+ * ■ 走行時間のコスト（2026-10-27。KOGUMA の #99「区間のコストを走行時間の表にする」を持ち込んだもの）
+ * dijkstra_set_time_cost_small_turn() を呼ぶと、上の 3 つの数のかわりに、本当に走る時間に近いコストを使う。
+ * 区間の k 歩目のコストを表（s_orth_step_cost・s_diag_step_cost）にしておき、区間のコストは
+ *     表[1] + 表[2] + … + 表[k]  ≒  その区間を走る時間
+ * にする。長い直線ほど速度が乗って 1 歩あたりが速くなることを表せる（3 つの数では表せない）。
+ *   - 単位は 5ms（COST_PER_SECOND）。コストは 2 バイトの整数（〜60000）なので、300 秒より長い道は「たどり着けない」になる
+ *   - 表の k 歩目は、k−1 歩目より大きくしない。大きいと「区間を途中で切って 2 つにする」ほうが安く見えて、
+ *     区間ごとに広げる今のやり方で本当の最短にならない（KOGUMA で確かめたこと）
+ *   - 今の最短走行（sys/shortest.c）は、曲がるところを全部小回りで走るので、斜めの 1 歩（ジグザグの 1 区画）は
+ *     ターンの速さで 1 区画（90mm）走る時間にする。縦横の区間は、ターンの速さから最高速まで上げて戻す時間
+ *   - ゴールの入口からそのまま進む区間も、ほかと同じ表[1] から数える（KOGUMA と同じ）
+ * dijkstra_set_step_cost() で、上の 3 つの数のコストに戻す（何も呼ばなければ 3 つの数のコスト）。
+ *
  * ■ 探し方
  * ゴールの入口の点を、ゴールから外へ向かう向きでコスト 0 にして、そこから広げていく。
  * 状態のコストが下がったら、その状態を「もう一度調べる」待ち行列に入れ直す（KOGUMA と同じ。SPFA と呼ばれる方法）。
@@ -43,13 +56,22 @@
  */
 #include "maze/dijkstra.h"
 
+#include <math.h>
 #include <stdint.h>
+
+#include "config/run_params.h"
 
 /* コスト。KOGUMA の ST_COST, DIAG_COST, CON_COST と同じ値 */
 #define COST_STRAIGHT 5
 #define COST_DIAGONAL 3
 #define COST_CONTINUE 2
 #define COST_MAX 60000  /* まだたどり着いていない */
+
+/* 走行時間のコスト（先頭のコメント）。コスト 1 が 5ms */
+#define COST_PER_SECOND 200.0f
+static bool s_use_time_cost = false;                        /* 走行時間のコストを使うか */
+static uint16_t s_orth_step_cost[DIJKSTRA_TABLE_LENGTH];  /* 縦横の区間の k 歩目のコスト（[0] は使わない） */
+static uint16_t s_diag_step_cost[DIJKSTRA_TABLE_LENGTH];  /* 斜めの区間の k 歩目のコスト */
 
 /* 8 方向 */
 typedef enum {
@@ -391,11 +413,26 @@ static bool is_orthogonal(dir8_t dir)
   return false;
 }
 
+/* 走行時間のコストで、向き dir の区間の step 歩目のコスト（表より長い区間は、表の最後の値） */
+static uint16_t get_next_step_cost(dir8_t dir, int step)
+{
+  if (step >= DIJKSTRA_TABLE_LENGTH) {
+    step = DIJKSTRA_TABLE_LENGTH - 1;
+  }
+  if (is_orthogonal(dir)) {
+    return s_orth_step_cost[step];
+  }
+  return s_diag_step_cost[step];
+}
+
 /* 状態 from から、向き dir の区間を始めるときの最初の 1 歩のコスト。
  * ふつうは、縦横なら COST_STRAIGHT、斜めなら COST_DIAGONAL。
  * ゴールの入口（コスト 0 の状態）から外へ向かう向きにそのまま進むときだけ COST_CONTINUE（KOGUMA と同じ） */
 static uint16_t get_first_step_cost(state_t from, dir8_t dir)
 {
+  if (s_use_time_cost) {
+    return get_next_step_cost(dir, 1);
+  }
   if (get_cost(from) == 0 && dir == get_dir(from)) {
     return COST_CONTINUE;
   }
@@ -537,7 +574,8 @@ static void add_goal_entrances(int goal_x, int goal_y, int goal_width, int goal_
 static void spread_run(state_t from, dir8_t dir, bool unknown_as_wall)
 {
   edge_t edge = from.edge;
-  uint16_t cost = get_cost(from) + get_first_step_cost(from, dir);
+  /* コストの足し算は 4 バイトの整数でする（2 バイトのままだと、60000 を超えたときに小さな数に戻ってしまう） */
+  uint32_t cost = get_cost(from) + get_first_step_cost(from, dir);
 
   for (int run_length = 1; run_length <= 2 * MAZE_SIZE; run_length++) {
     edge_t next_edge;
@@ -553,9 +591,12 @@ static void spread_run(state_t from, dir8_t dir, bool unknown_as_wall)
       return;  /* 壁があって通れない */
     }
 
+    if (cost >= COST_MAX) {
+      return;  /* 長すぎる道（300 秒より長い）は、たどり着けないことにする */
+    }
     state_t to = make_state(next_edge, crossing_after(next_edge, dir));
     if (cost < get_cost(to)) {
-      set_cost(to, cost);
+      set_cost(to, (uint16_t)cost);
       set_dir(to, dir);
       set_run_length(to, run_length);
       queue_push(to);  /* コストが下がったので、その先ももう一度調べる */
@@ -563,7 +604,11 @@ static void spread_run(state_t from, dir8_t dir, bool unknown_as_wall)
 
     /* 同じ向きにもう 1 歩 */
     edge = next_edge;
-    cost = cost + COST_CONTINUE;
+    if (s_use_time_cost) {
+      cost = cost + get_next_step_cost(dir, run_length + 1);
+    } else {
+      cost = cost + COST_CONTINUE;
+    }
   }
 }
 
@@ -580,6 +625,83 @@ static void spread_costs(bool unknown_as_wall)
       spread_run(from, dir, unknown_as_wall);
     }
   }
+}
+
+/* ===========================================================================
+ * 走行時間のコストの表（先頭のコメント）
+ * ======================================================================== */
+
+/* 距離 distance_mm を、速さ speed_mm_s から（最高 max_speed_mm_s まで）上げて、また speed_mm_s に戻して走る時間 [s]。
+ * 加速と減速は同じ加速度 accel_mm_s2 の台形（ctrl/trajectory.c と同じ形） */
+static float straight_time_s(float distance_mm, float speed_mm_s, float max_speed_mm_s, float accel_mm_s2)
+{
+  /* 最高速まで上げて戻すのに使う距離 = (最高速² − 速さ²) ÷ 加速度（上げる分と戻す分の合計） */
+  float peak_mm_s = max_speed_mm_s;
+  float change_mm = (peak_mm_s * peak_mm_s - speed_mm_s * speed_mm_s) / accel_mm_s2;
+  if (change_mm > distance_mm) {
+    /* 最高速まで届かない（三角形）。上げて戻すだけで distance_mm を使い切る速さまで */
+    peak_mm_s = sqrtf(speed_mm_s * speed_mm_s + accel_mm_s2 * distance_mm);
+    change_mm = distance_mm;
+  }
+  float change_time_s = 2.0f * (peak_mm_s - speed_mm_s) / accel_mm_s2;
+  float cruise_time_s = (distance_mm - change_mm) / peak_mm_s;
+  return change_time_s + cruise_time_s;
+}
+
+/* 表 table を作る。k 歩目のコスト = （k 歩の時間 − k−1 歩までのコストの合計）。
+ * 1 より小さくしない。k−1 歩目より大きくしない（先頭のコメント） */
+static void make_step_table(uint16_t table[], float step_mm, float speed_mm_s, float max_speed_mm_s, float accel_mm_s2)
+{
+  int sum = 0;
+  table[0] = 0;
+  for (int k = 1; k < DIJKSTRA_TABLE_LENGTH; k++) {
+    float time_s = straight_time_s(step_mm * k, speed_mm_s, max_speed_mm_s, accel_mm_s2);
+    int step_cost = (int)(time_s * COST_PER_SECOND + 0.5f) - sum;
+    if (step_cost < 1) {
+      step_cost = 1;
+    }
+    if (k > 1 && step_cost > table[k - 1]) {
+      step_cost = table[k - 1];
+    }
+    table[k] = (uint16_t)step_cost;
+    sum = sum + step_cost;
+  }
+}
+
+/* 走行時間のコストを使う。曲がるところを全部小回り（ターンの速さ turn_speed_mm_s）で走る最短走行用。
+ *   縦横の区間：1 歩 90mm を、ターンの速さから max_speed_mm_s まで上げて戻す（加速度 accel_mm_s2）
+ *   斜めの区間：1 歩（ジグザグの 1 区画）を、ターンの速さのまま 90mm 走る（小回りを続けるので速度は上がらない） */
+void dijkstra_set_time_cost_small_turn(float turn_speed_mm_s, float max_speed_mm_s, float accel_mm_s2)
+{
+  if (max_speed_mm_s < turn_speed_mm_s) {
+    max_speed_mm_s = turn_speed_mm_s;
+  }
+  make_step_table(s_orth_step_cost, CELL_MM, turn_speed_mm_s, max_speed_mm_s, accel_mm_s2);
+  make_step_table(s_diag_step_cost, CELL_MM, turn_speed_mm_s, turn_speed_mm_s, accel_mm_s2);
+  s_use_time_cost = true;
+}
+
+/* 3 つの数（COST_STRAIGHT・COST_DIAGONAL・COST_CONTINUE）のコストに戻す */
+void dijkstra_set_step_cost(void)
+{
+  s_use_time_cost = false;
+}
+
+/* 縦横・斜めの区間の k 歩目のコスト（PC のテストで、表を確かめるのに使う） */
+int dijkstra_get_orth_step_cost(int step)
+{
+  return get_next_step_cost(DIR8_NORTH, step);
+}
+
+int dijkstra_get_diag_step_cost(int step)
+{
+  return get_next_step_cost(DIR8_NORTH_EAST, step);
+}
+
+/* 走行時間のコストを使っているか */
+bool dijkstra_is_time_cost(void)
+{
+  return s_use_time_cost;
 }
 
 /* 道に区画を 1 つ足す */
