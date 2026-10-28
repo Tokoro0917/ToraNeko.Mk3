@@ -694,6 +694,7 @@ static void test_explore_known(void)
 
   check(s_explore_count == 1 && s_explore_type == EXPLORE_UNKNOWN_WALLS_KNOWN, "No.4 は未知壁探索＋既知区間加速");
   check(!mode_has_action(0, 5), "モード0 の No.5 は決定できない");
+  check(mode_has_action(1, 4) && mode_has_action(1, 5) && !mode_has_action(1, 6), "モード1 は No.1〜5 を決定できる");
 }
 
 /* No.0 では決定しない。そのあと No.3 にすると、未知壁探索で走る */

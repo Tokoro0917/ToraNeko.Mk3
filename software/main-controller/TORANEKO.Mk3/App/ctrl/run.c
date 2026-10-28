@@ -438,25 +438,29 @@ void run_fast_diag_straight(float distance_mm, float max_speed_mm_s, float end_s
   wait_until_done();
 }
 
-/* ターンの速さで、前距離 pre_mm → 角度 angle_deg（左が +）のスラローム → 後距離 post_mm と走る。
- * 前距離・後距離はまっすぐなので、加速度は何でもよい（速さは変わらない）。横の壁に沿って走る補正は入れない */
-static void fast_turn(float angle_deg, float omega_deg_s, float pre_mm, float post_mm)
+/* 速さ speed_mm_s で、前距離 pre_mm → 角度 angle_deg（左が +）のスラローム → 後距離 post_mm と走る。
+ * 前距離・後距離はまっすぐなので、加速度は何でもよい（速さは変わらない）。横の壁に沿って走る補正は入れない。
+ * ターンの速さ（FAST_TURN_SPEED_MM_S）より遅いとき（スタートの直後で速さが足りないときなど）は、
+ * 最高角速度を k 倍、角加速度を k² 倍にする（k = 速さ ÷ ターンの速さ）。こうすると、曲がる形はまったく同じで、
+ * かかる時間だけが 1/k 倍になるので、前距離・後距離はそのまま使える（KOGUMA の最初のターンと同じ考え方） */
+static void fast_turn(float speed_mm_s, float angle_deg, float omega_deg_s, float pre_mm, float post_mm)
 {
   if (failsafe_is_stopped()) {
     return;
   }
+  float ratio = speed_mm_s / FAST_TURN_SPEED_MM_S;  /* k */
   control_set_wall_control(false);
-  trajectory_start_straight(pre_mm, FAST_TURN_SPEED_MM_S, FAST_TURN_SPEED_MM_S, SEARCH_ACCEL_MM_S2);
+  trajectory_start_straight(pre_mm, speed_mm_s, speed_mm_s, SEARCH_ACCEL_MM_S2);
   wait_until_done();
   if (failsafe_is_stopped()) {
     return;
   }
-  trajectory_start_slalom(angle_deg, FAST_TURN_SPEED_MM_S, omega_deg_s, FAST_TURN_ALPHA_DEG_S2);
+  trajectory_start_slalom(angle_deg, speed_mm_s, omega_deg_s * ratio, FAST_TURN_ALPHA_DEG_S2 * ratio * ratio);
   wait_until_done();
   if (failsafe_is_stopped()) {
     return;
   }
-  trajectory_start_straight(post_mm, FAST_TURN_SPEED_MM_S, FAST_TURN_SPEED_MM_S, SEARCH_ACCEL_MM_S2);
+  trajectory_start_straight(post_mm, speed_mm_s, speed_mm_s, SEARCH_ACCEL_MM_S2);
   wait_until_done();
 }
 
@@ -469,24 +473,25 @@ static float signed_angle(float angle_deg, bool is_left)
   return -angle_deg;
 }
 
-/* 大回り・斜めのターンを 1 つ走る（is_left が true なら左）。ターンの速さで走っているところから呼ぶ。
+/* 大回り・斜めのターンを 1 つ、速さ speed_mm_s で走る（is_left が true なら左）。その速さで走っているところから呼ぶ。
+ * ふつうはターンの速さ（FAST_TURN_SPEED_MM_S）。それより遅くてもよい（fast_turn() のコメント）。
  * 始める位置と終わる位置は、config/turn_params.h の先頭のコメントと test/test_turn.c の表 */
-void run_fast_turn(run_fast_turn_t turn, bool is_left)
+void run_fast_turn(run_fast_turn_t turn, bool is_left, float speed_mm_s)
 {
   if (turn == RUN_FAST_TURN_BIG90) {
-    fast_turn(signed_angle(90.0f, is_left), BIG90_OMEGA_DEG_S, BIG90_PRE_MM, BIG90_POST_MM);
+    fast_turn(speed_mm_s, signed_angle(90.0f, is_left), BIG90_OMEGA_DEG_S, BIG90_PRE_MM, BIG90_POST_MM);
   } else if (turn == RUN_FAST_TURN_BIG180) {
-    fast_turn(signed_angle(180.0f, is_left), BIG180_OMEGA_DEG_S, BIG180_PRE_MM, BIG180_POST_MM);
+    fast_turn(speed_mm_s, signed_angle(180.0f, is_left), BIG180_OMEGA_DEG_S, BIG180_PRE_MM, BIG180_POST_MM);
   } else if (turn == RUN_FAST_TURN_IN45) {
-    fast_turn(signed_angle(45.0f, is_left), IN45_OMEGA_DEG_S, IN45_PRE_MM, IN45_POST_MM);
+    fast_turn(speed_mm_s, signed_angle(45.0f, is_left), IN45_OMEGA_DEG_S, IN45_PRE_MM, IN45_POST_MM);
   } else if (turn == RUN_FAST_TURN_IN135) {
-    fast_turn(signed_angle(135.0f, is_left), IN135_OMEGA_DEG_S, IN135_PRE_MM, IN135_POST_MM);
+    fast_turn(speed_mm_s, signed_angle(135.0f, is_left), IN135_OMEGA_DEG_S, IN135_PRE_MM, IN135_POST_MM);
   } else if (turn == RUN_FAST_TURN_OUT45) {
-    fast_turn(signed_angle(45.0f, is_left), OUT45_OMEGA_DEG_S, OUT45_PRE_MM, OUT45_POST_MM);
+    fast_turn(speed_mm_s, signed_angle(45.0f, is_left), OUT45_OMEGA_DEG_S, OUT45_PRE_MM, OUT45_POST_MM);
   } else if (turn == RUN_FAST_TURN_OUT135) {
-    fast_turn(signed_angle(135.0f, is_left), OUT135_OMEGA_DEG_S, OUT135_PRE_MM, OUT135_POST_MM);
+    fast_turn(speed_mm_s, signed_angle(135.0f, is_left), OUT135_OMEGA_DEG_S, OUT135_PRE_MM, OUT135_POST_MM);
   } else if (turn == RUN_FAST_TURN_V90) {
-    fast_turn(signed_angle(90.0f, is_left), V90_OMEGA_DEG_S, V90_PRE_MM, V90_POST_MM);
+    fast_turn(speed_mm_s, signed_angle(90.0f, is_left), V90_OMEGA_DEG_S, V90_PRE_MM, V90_POST_MM);
   }
 }
 

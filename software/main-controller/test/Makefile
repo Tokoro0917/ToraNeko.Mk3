@@ -2,7 +2,7 @@
 #   make        ビルドしてテストを実行する
 #   make clean  ビルドしたものを消す
 #
-#   test_maze  迷路（App/maze/）と探索走行（App/sys/explore.c）
+#   test_maze  迷路（App/maze/）と探索走行（App/sys/explore.c）、最短走行の大回り・斜め（App/sys/shortest.c）
 #   test_mode  モード選択と操作（App/sys/mode.c、ui.c、goal.c）
 #   test_output  出力と走行ログ（App/sys/output.c、log.c）。./test_output --dump ファイル で実機の出力を確かめる
 #   test_flash  迷路とゴールの位置の保存（App/sys/flash.c）。Flash は仮の配列
@@ -21,7 +21,8 @@ MAZE_SOURCES = \
 	$(APP_DIR)/maze/maze_map.c \
 	$(APP_DIR)/maze/search.c \
 	$(APP_DIR)/maze/path.c \
-	$(APP_DIR)/sys/explore.c
+	$(APP_DIR)/sys/explore.c \
+	$(APP_DIR)/sys/shortest.c
 
 MODE_SOURCES = \
 	$(APP_DIR)/sys/mode.c \

@@ -175,6 +175,18 @@ static void check_turn(const turn_shape_t *turn, float omega_deg_s, float pre_mm
   check(fabsf(trajectory_get_angle_deg() - turn->angle_deg) < 0.01f, "ちょうど決めた角度だけ曲がる");
 }
 
+/* 速さを k 倍、最高角速度を k 倍、角加速度を k² 倍にしても、同じ位置で終わるか（遅く入ったターン。ctrl/run.c の fast_turn()） */
+static void check_slow_turn(const turn_shape_t *turn, float omega_deg_s, float ratio)
+{
+  arc_t normal = simulate_arc(turn->angle_deg, FAST_TURN_SPEED_MM_S, omega_deg_s, FAST_TURN_ALPHA_DEG_S2);
+  arc_t slow = simulate_arc(turn->angle_deg, FAST_TURN_SPEED_MM_S * ratio, omega_deg_s * ratio,
+                            FAST_TURN_ALPHA_DEG_S2 * ratio * ratio);
+  printf("  %-16s 速さ %.1f 倍：左 %6.2f → %6.2f、前 %6.2f → %6.2f mm\n", turn->name, ratio,
+         normal.left_mm, slow.left_mm, normal.forward_mm, slow.forward_mm);
+  check(fabsf(normal.left_mm - slow.left_mm) < 0.3f && fabsf(normal.forward_mm - slow.forward_mm) < 0.3f,
+        "遅く曲がっても、スラロームで進む位置が同じ（±0.3mm）");
+}
+
 int main(int argc, char *argv[])
 {
   if (argc >= 2 && strcmp(argv[1], "--calc") == 0) {
@@ -189,6 +201,11 @@ int main(int argc, char *argv[])
   check_turn(&TURNS[4], OUT45_OMEGA_DEG_S, OUT45_PRE_MM, OUT45_POST_MM);
   check_turn(&TURNS[5], OUT135_OMEGA_DEG_S, OUT135_PRE_MM, OUT135_POST_MM);
   check_turn(&TURNS[6], V90_OMEGA_DEG_S, V90_PRE_MM, V90_POST_MM);
+
+  printf("[2] 遅く入ったターン（速さ k 倍、最高角速度 k 倍、角加速度 k² 倍）\n");
+  check_slow_turn(&TURNS[0], BIG90_OMEGA_DEG_S, 0.5f);
+  check_slow_turn(&TURNS[2], IN45_OMEGA_DEG_S, 0.4f);
+  check_slow_turn(&TURNS[3], IN135_OMEGA_DEG_S, 0.6f);
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

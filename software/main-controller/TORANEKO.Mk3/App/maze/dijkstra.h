@@ -23,6 +23,8 @@ int dijkstra_get_route_y(int index);
 
 /* コストの選び方（dijkstra.c の先頭のコメント）。何も呼ばなければ 3 つの数のコスト */
 void dijkstra_set_time_cost_small_turn(float turn_speed_mm_s, float max_speed_mm_s, float accel_mm_s2);
+void dijkstra_set_time_cost_diagonal(float turn_speed_mm_s, float max_speed_mm_s, float accel_mm_s2,
+                                     float diag_max_speed_mm_s, float diag_accel_mm_s2);
 void dijkstra_set_step_cost(void);
 bool dijkstra_is_time_cost(void);
 int dijkstra_get_orth_step_cost(int step);
