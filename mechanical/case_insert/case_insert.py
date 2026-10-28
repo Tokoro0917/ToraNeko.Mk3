@@ -8,12 +8,12 @@
 スカート枠・スライダーはどこにも触れないので、運ぶあいだに変形しない。
 板の真ん中（スカートの下）は抜いて、材料を減らしてある。
 
-【中子の寸法は仮の値】
-使っているお弁当箱（学研ステイフル 11ぴきのねこ ランチボックス K14503）の中子の寸法は、どこにも公開されていない。
-同じ形と思われる OSK「ランチボックス 中子付 PCR-7」（外寸 140×113×H50mm、360ml、中子 145ml×2 個）から推定した値を使う。
-  - 中子 2 個が本体を左右半分ずつ埋めるので、本体の内側（約 125×105mm と推定）を半分にした大きさを中子の外形とし、
-    壁の厚さ（約 1.2mm）と下すぼまり（3° と仮定）の分を引いて、底の内側を 56×98mm、角の丸み 20mm とした
-  - 深さは、この底の大きさで容量が公表値の 145ml になるように決めた（27mm で約 144ml）
+【中子の寸法は写真からの推定】
+使っているお弁当箱（学研ステイフル 11ぴきのねこ ランチボックス K14503）の中子に機体を入れた写真を、
+基板（40 × 64mm）を物差しにして測った値（誤差 ±3〜5mm）。
+  - 底は約 65 × 82mm の D 字型。機体の左側（前を上にして見たとき）の 2 つの角が大きく丸く（約 R20）、右側の 2 つは小さい（約 R5）
+  - 誤差を見込んで、少し小さめ（64 × 80mm、左の角 R22、右の角 R6）にしてある
+  - 深さは写真では測れないので、前の推定（27mm）のまま
 実物を測ったら、下の「中子の寸法」のパラメータを書き換えて作り直す。
 
 座標は機体の STEP（mechanical/exported/TORANEKO.Mk3_v36.step）と同じ。
@@ -29,10 +29,11 @@ import cadquery as cq
 OUT = Path(__file__).resolve().parent
 
 # ---- 中子の寸法（仮の値。実物を測って変える）-----------------------------
-BOX_BOTTOM_L = 98.0    # 中子の内側の底の長さ（長いほう。機体の前後の向き）
-BOX_BOTTOM_W = 56.0    # 中子の内側の底の幅（短いほう。機体の左右の向き）
-BOX_CORNER_R = 20.0    # 中子の内側の角の丸み（底のところ）
-BOX_DEPTH = 27.0       # 中子の内側の深さ
+BOX_BOTTOM_L = 80.0    # 中子の内側の底の長さ（長いほう。機体の前後の向き）
+BOX_BOTTOM_W = 64.0    # 中子の内側の底の幅（短いほう。機体の左右の向き）
+BOX_CORNER_R_LEFT = 22.0   # 中子の内側の角の丸み（底のところ）。機体の左側（丸い側）の 2 つ
+BOX_CORNER_R_RIGHT = 6.0   # 機体の右側（まっすぐな側）の 2 つ
+BOX_DEPTH = 27.0       # 中子の内側の深さ（写真では測れないので前の推定のまま）
 
 # ---- 調整用パラメータ ------------------------------------------------------
 BOX_GAP = 0.5          # 板と中子の壁のすきま（片側）
@@ -44,7 +45,7 @@ GUIDE_GAP = 0.4        # 基板の端とガイドのすきま
 GUIDE_LEN = 8.0        # ガイドの長さ（角から）
 GUIDE_ABOVE = 0.4      # ガイドの上端を、基板の上面からどれだけ出すか
 WINDOW_HALF_W = 11.0   # 板の真ん中を抜く範囲（左右の半分）。スカート枠（中心から 9.3mm）より外まで
-WINDOW_FRONT_V = -40.0 # 板の真ん中を抜く範囲の前の端（機体の中心から。マイナスが前）
+WINDOW_FRONT_V = -30.0 # 板の真ん中を抜く範囲の前の端（機体の中心から。マイナスが前）。スカート枠の前端（-22.3）より前
 WINDOW_REAR_V = 20.0   # 板の真ん中を抜く範囲の後ろの端
 WINDOW_R = 4.0         # 抜く範囲の角の丸み
 
@@ -81,12 +82,22 @@ def rounded_rect(width, length, radius, z0, z1):
             .edges("|Z").fillet(radius))
 
 
+def d_shape(width, length, r_left, r_right, z0, z1):
+    """左（+X）の 2 つの角を r_left、右（-X）の 2 つを r_right で丸めた長方形（中子の底の D 字型）。"""
+    center = at(0, 0, z0)
+    body = (cq.Workplane("XY").workplane(offset=z0)
+            .center(center[0], center[1])
+            .rect(width, length).extrude(z1 - z0))
+    body = body.edges("|Z").edges(f">X").fillet(r_left)
+    return body.edges("|Z").edges(f"<X").fillet(r_right)
+
+
 def plate():
     """中子の底に合わせた板。真ん中（スカートの下）を抜く。"""
     width = BOX_BOTTOM_W - BOX_GAP * 2
     length = BOX_BOTTOM_L - BOX_GAP * 2
-    radius = BOX_CORNER_R - BOX_GAP
-    body = rounded_rect(width, length, radius, PLATE_BOTTOM_Z, PLATE_TOP_Z)
+    body = d_shape(width, length, BOX_CORNER_R_LEFT - BOX_GAP, BOX_CORNER_R_RIGHT - BOX_GAP,
+                   PLATE_BOTTOM_Z, PLATE_TOP_Z)
     # 真ん中を抜く範囲（機体の座標でまっすぐな角の丸い長方形）
     window_center = at(0, (WINDOW_FRONT_V + WINDOW_REAR_V) / 2, PLATE_BOTTOM_Z - 1)
     window = (cq.Workplane("XY").workplane(offset=PLATE_BOTTOM_Z - 1)
@@ -147,12 +158,13 @@ def print_fit():
     """機体と中子の壁・深さの余裕を表示する（中子の寸法を変えたときに確かめる用）。"""
     side_gap = BOX_BOTTOM_W / 2 - (BOARD_W / 2 + GUIDE_GAP + GUIDE_T)
     end_gap = BOX_BOTTOM_L / 2 - (BOARD_L / 2 + GUIDE_GAP + GUIDE_T)
-    # 角: 中子の角の丸みの中心から、ガイドの角までの距離が、丸みの半径より小さければ入る
-    corner_center_u = BOX_BOTTOM_W / 2 - BOX_CORNER_R
-    corner_center_v = BOX_BOTTOM_L / 2 - BOX_CORNER_R
+    # 角: 中子の角の丸みの中心から、ガイドの角までの距離が、丸みの半径より小さければ入る（丸いほうの角で確かめる）
+    radius = BOX_CORNER_R_LEFT
+    corner_center_u = BOX_BOTTOM_W / 2 - radius
+    corner_center_v = BOX_BOTTOM_L / 2 - radius
     guide_u = BOARD_W / 2 + GUIDE_GAP + GUIDE_T
     guide_v = BOARD_L / 2 + GUIDE_GAP + GUIDE_T
-    corner_gap = BOX_CORNER_R - math.hypot(guide_u - corner_center_u, guide_v - corner_center_v)
+    corner_gap = radius - math.hypot(guide_u - corner_center_u, guide_v - corner_center_v)
     top_gap = BOX_DEPTH - (ROBOT_TOP_Z - PLATE_BOTTOM_Z)
     print(f"左右の余裕（片側）: {side_gap:.1f} mm")
     print(f"前後の余裕（片側）: {end_gap:.1f} mm")
