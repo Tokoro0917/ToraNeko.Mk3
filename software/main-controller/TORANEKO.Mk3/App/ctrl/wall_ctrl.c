@@ -79,6 +79,12 @@ int32_t wall_ctrl_get_front_right(void)
   return wall_get_b_minus_dark(4);
 }
 
+/* 前の壁までの距離 [mm]（左前と右前の平均。区画のまん中で 42mm） */
+float wall_ctrl_get_front_distance_mm(void)
+{
+  return (wall_ctrl_get_front_left_mm() + wall_ctrl_get_front_right_mm()) / 2.0f;
+}
+
 /* 前の壁までの距離 [mm]（左前のセンサから。表は ctrl/wall_dist.c） */
 float wall_ctrl_get_front_left_mm(void)
 {

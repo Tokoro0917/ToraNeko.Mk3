@@ -85,4 +85,9 @@ void run_fast_diag_stop(float distance_mm, float max_speed_mm_s, float accel_mm_
  * 探索の計算が長すぎないかを確かめる（300mm/s では 1ms で 0.3mm 進む）。モード7 No.1 で出す */
 uint32_t run_get_longest_wait_us(void);
 
+/* 探索の前壁補正（run.c の先頭のコメント）を測った回数と、量のいちばん小さい・大きい値 [mm]。モード7 No.1 で出す */
+int run_get_front_correction_count(void);
+float run_get_front_correction_min_mm(void);
+float run_get_front_correction_max_mm(void);
+
 #endif /* CTRL_RUN_H */

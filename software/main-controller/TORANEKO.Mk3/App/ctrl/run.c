@@ -24,6 +24,12 @@
  *   大回り・斜めのターン：前距離 → スラローム → 後距離。値は config/turn_params.h（ターンの速さで曲がる）
  *   止まる     ：決めた距離を進みながら止まり、モーターの出力を 0 にする
  *
+ * ■ 前壁補正（config/run_params.h の FRONT_CORRECTION_*）
+ * 区画の入口で曲がる・止まるとき、その区画に前の壁があれば、前センサで壁までの距離を測る。
+ * 入口の辺なら FRONT_WALL_AT_ENTRY_MM（87mm）のはずなので、ずれた分だけ、前距離と止まる距離を直す。
+ * センサを読んだときには、入口の辺から少し進んでいる（探索の計算のあいだも進む）ので、その分を足して比べる。
+ * かけた量（かけないときは、かけるはずだった量）は数えておき、モード7 No.1 で出す（run_get_front_correction_*）。
+ *
  * ■ 横の壁に沿って走る補正
  * 発進のときに入れる（ctrl/control.c）。直進のあいだだけ効く（スラローム・その場旋回のあいだは効かない）。
  *
@@ -77,6 +83,11 @@ static void measure_wait(void)
   s_waiting = false;
 }
 
+/* 前壁補正の記録（探索を始めるたびに 0 に戻す） */
+static int s_front_correction_count = 0;            /* 測った回数 */
+static float s_front_correction_min_mm = 0.0f;      /* いちばん小さかった量 [mm] */
+static float s_front_correction_max_mm = 0.0f;      /* いちばん大きかった量 [mm] */
+
 /* いちばん長かった待ち時間 [µs] */
 uint32_t run_get_longest_wait_us(void)
 {
@@ -92,6 +103,52 @@ static void wait_until_done(void)
   }
 }
 
+/* 前壁補正の量 [mm] を決めて記録する（+ なら、壁が思ったより遠い＝まだ手前にいるので、そのぶん長く進む）。
+ * 前に壁がないときは 0。FRONT_CORRECTION_ENABLE が 0 なら、記録だけして 0 を返す */
+static float front_correction_mm(void)
+{
+  if (!wall_ctrl_has_wall_front()) {
+    return 0.0f;
+  }
+  /* 今いる位置は、入口の辺から、まだ頼んでいない分（trajectory_get_overrun_mm()）だけ進んだところ */
+  float correction_mm = wall_ctrl_get_front_distance_mm() + trajectory_get_overrun_mm() - FRONT_WALL_AT_ENTRY_MM;
+  if (correction_mm > FRONT_CORRECTION_LIMIT_MM) {
+    correction_mm = FRONT_CORRECTION_LIMIT_MM;
+  }
+  if (correction_mm < -FRONT_CORRECTION_LIMIT_MM) {
+    correction_mm = -FRONT_CORRECTION_LIMIT_MM;
+  }
+
+  if (s_front_correction_count == 0 || correction_mm < s_front_correction_min_mm) {
+    s_front_correction_min_mm = correction_mm;
+  }
+  if (s_front_correction_count == 0 || correction_mm > s_front_correction_max_mm) {
+    s_front_correction_max_mm = correction_mm;
+  }
+  s_front_correction_count = s_front_correction_count + 1;
+
+  if (FRONT_CORRECTION_ENABLE == 0) {
+    return 0.0f;
+  }
+  return correction_mm;
+}
+
+/* 前壁補正を測った回数・いちばん小さかった量・いちばん大きかった量 [mm]（モード7 No.1 で出す） */
+int run_get_front_correction_count(void)
+{
+  return s_front_correction_count;
+}
+
+float run_get_front_correction_min_mm(void)
+{
+  return s_front_correction_min_mm;
+}
+
+float run_get_front_correction_max_mm(void)
+{
+  return s_front_correction_max_mm;
+}
+
 /* distance_mm まっすぐ進んで、探索の速さで戻る。走っているときは速さを変えずに進み、
  * 止まっているところからなら、進みながら探索の速さまで速くする */
 static void go_straight(float distance_mm)
@@ -103,10 +160,15 @@ static void go_straight(float distance_mm)
   wait_until_done();
 }
 
-/* 前距離 → スラローム angle_deg（左が +、右が -）→ 後距離 で、横の区画の入口へ */
+/* 前距離 → スラローム angle_deg（左が +、右が -）→ 後距離 で、横の区画の入口へ。
+ * 前に壁があれば、前距離を前壁補正で直す（前距離は 0 より短くしない） */
 static void slalom(float angle_deg)
 {
-  go_straight(SLALOM_PRE_MM);
+  float pre_mm = SLALOM_PRE_MM + front_correction_mm();
+  if (pre_mm < 0.0f) {
+    pre_mm = 0.0f;
+  }
+  go_straight(pre_mm);
   if (failsafe_is_stopped()) {
     return;
   }
@@ -151,6 +213,7 @@ static void start_control(void)
   imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒。電源を入れたときに手で動かしていてもよいように） */
   s_waiting = false;
   s_longest_wait_us = 0;
+  s_front_correction_count = 0;
   log_start(SEARCH_LOG_INTERVAL_MS);
   control_set_wall_control(true);  /* 横の壁に沿って走る補正を入れる */
   control_start();
@@ -212,7 +275,9 @@ void run_search_stop_at_center(void)
   if (failsafe_is_stopped()) {
     return;
   }
-  trajectory_start_straight(HALF_CELL_MM, SEARCH_SPEED_MM_S, 0.0f, SEARCH_ACCEL_MM_S2);
+  /* 前に壁があれば（行き止まりなど）、止まる距離を前壁補正で直す */
+  float stop_mm = HALF_CELL_MM + front_correction_mm();
+  trajectory_start_straight(stop_mm, SEARCH_SPEED_MM_S, 0.0f, SEARCH_ACCEL_MM_S2);
   wait_until_done();
   if (failsafe_is_stopped()) {
     return;

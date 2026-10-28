@@ -51,6 +51,17 @@
 #define SHORTEST3_MAX_SPEED_MM_S 1000.0f
 #define SHORTEST3_ACCEL_MM_S2    3000.0f
 
+/* ---- 探索の前壁補正（ctrl/run.c。2026-10-28） ----
+ * 区画の入口で、その区画に前の壁があるとき、前センサで測った壁までの距離が FRONT_WALL_AT_ENTRY_MM からずれていれば、
+ * そのぶん、曲がり始め（スラロームの前距離）と、区画のまん中で止まる位置を直す。
+ * 走るうちに前後の位置がずれても、前に壁がある区画で毎回もとに戻る。 */
+
+/* 補正を実際にかけるか（1 かける、0 かけない）。0 でも、かけるはずだった量は測って、モード7 No.1 で出す。
+ * 今の壁までの距離の表（ctrl/wall_dist.c）は仮なので、表を測って入れ、出た量がおかしくないのを確かめてから 1 にする */
+#define FRONT_CORRECTION_ENABLE 0
+#define FRONT_WALL_AT_ENTRY_MM   87.0f  /* 区画の入口の辺にいるときの、前の壁までの距離 [mm]（45 + 42） */
+#define FRONT_CORRECTION_LIMIT_MM 10.0f /* 直す量の上限 [mm]（センサの読み違いで大きく直さないように） */
+
 /* ---- その場旋回 ---- */
 
 #define PIVOT_OMEGA_DEG_S  720.0f   /* 最高の角速度 [deg/s]（KOGUMA は 2000。まずゆっくり） */

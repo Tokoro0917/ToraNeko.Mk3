@@ -254,6 +254,13 @@ float trajectory_get_alpha_deg_s2(void)
 }
 
 /* 旋回・スラロームの、今の動きで回った角度 [deg]（左回りが +。直進のあいだは 0） */
+/* 今の動きが終わってから、まだ次の動きを頼まれていないあいだに進んだ距離 [mm]（次の直進から引く分）。
+ * 前壁補正（ctrl/run.c）が、センサを読んだときの位置を知るのに使う */
+float trajectory_get_overrun_mm(void)
+{
+  return s_overrun_mm;
+}
+
 float trajectory_get_angle_deg(void)
 {
   if (s_kind == TRAJECTORY_STRAIGHT) {

@@ -45,5 +45,6 @@ float wall_ctrl_get_front_left_mm(void);
 float wall_ctrl_get_left_mm(void);
 float wall_ctrl_get_right_mm(void);
 float wall_ctrl_get_front_right_mm(void);
+float wall_ctrl_get_front_distance_mm(void);  /* 左前と右前の平均 */
 
 #endif /* CTRL_WALL_CTRL_H */
