@@ -254,6 +254,20 @@ float trajectory_get_alpha_deg_s2(void)
 }
 
 /* 旋回・スラロームの、今の動きで回った角度 [deg]（左回りが +。直進のあいだは 0） */
+/* 今の直進の進む距離を delta_mm だけ長くする（− なら短くする）。壁切れ（ctrl/run.c）で、位置のずれを直すのに使う。
+ * もう進んだ量より短くはしない。メインの処理から呼ぶ（割り込みは s_goal_amount を読むだけなので、書きかえてよい） */
+void trajectory_add_distance(float delta_mm)
+{
+  if (s_kind != TRAJECTORY_STRAIGHT || !s_running) {
+    return;
+  }
+  float goal = s_goal_amount + delta_mm;
+  if (goal < s_amount + MIN_DISTANCE_MM) {
+    goal = s_amount + MIN_DISTANCE_MM;
+  }
+  s_goal_amount = goal;
+}
+
 /* 今の動きが終わってから、まだ次の動きを頼まれていないあいだに進んだ距離 [mm]（次の直進から引く分）。
  * 前壁補正（ctrl/run.c）が、センサを読んだときの位置を知るのに使う */
 float trajectory_get_overrun_mm(void)

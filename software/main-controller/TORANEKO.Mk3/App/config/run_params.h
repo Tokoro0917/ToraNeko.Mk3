@@ -62,6 +62,19 @@
 #define FRONT_WALL_AT_ENTRY_MM   87.0f  /* 区画の入口の辺にいるときの、前の壁までの距離 [mm]（45 + 42） */
 #define FRONT_CORRECTION_LIMIT_MM 10.0f /* 直す量の上限 [mm]（センサの読み違いで大きく直さないように） */
 
+/* ---- 探索の壁切れ（ctrl/run.c。2026-10-28） ----
+ * 探索で 1 区画まっすぐ進むとき、入口で横に壁があった側のセンサが「壁なし」に変わったら（壁の切れ目＝区画の出口の柱を過ぎた）、
+ * そのときの位置は区画の入口から WALL_EDGE_POSITION_MM のはずなので、ずれた分だけ、この直進の残りの距離を直す。
+ * 前に壁がなくても、横の壁が切れるところで前後の位置が戻る。 */
+
+/* 補正を実際にかけるか（1 かける、0 かけない）。0 でも、切れ目を見つけた位置は測って、モード7 No.1 で出す */
+#define WALL_EDGE_ENABLE 0
+/* 切れ目を見つける位置 [mm]（区画の入口の辺から。横センサは少し前を見るので、出口の辺 90mm より手前で見つかる）。
+ * 今の値は見積もり（仮）。WALL_EDGE_ENABLE を 0 のまま探索し、モード7 No.1 の Search: wall edge … の
+ * average（平均）をここに入れてから、WALL_EDGE_ENABLE を 1 にする */
+#define WALL_EDGE_POSITION_MM 70.0f
+#define WALL_EDGE_WINDOW_MM   20.0f  /* WALL_EDGE_POSITION_MM からこれ以上ずれて見つかったら、読み違いとして使わない [mm] */
+
 /* ---- その場旋回 ---- */
 
 #define PIVOT_OMEGA_DEG_S  720.0f   /* 最高の角速度 [deg/s]（KOGUMA は 2000。まずゆっくり） */
