@@ -12,5 +12,6 @@ void adjust_straight_along_wall(void);
 void adjust_uturn(void);
 void adjust_front_align(void);
 void adjust_print_last_result(void);
+void adjust_suction_on(void);
 
 #endif /* SYS_ADJUST_H */

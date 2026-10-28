@@ -14,7 +14,8 @@
  *
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す）
  *   モード0 No.1〜4  探索（往復・片道・未知壁探索・未知壁探索＋既知区間加速）
- *   モード1 No.1〜3  最短走行（曲がるところは探索と同じ小回り。直進の速さが No.1 → 3 で速くなる）。
+ *   モード1 No.1〜5  最短走行（No.1〜3 は曲がるところが探索と同じ小回りで、直進の速さが No.1 → 3 で速くなる。
+ *                    No.4・5 は大回り・斜めのターンで曲がる）。
  *                    決定したときに道がなければ、「できなかった」を出して選び直す
  *   モード2 No.1     スラローム 90°（探索の速さで左に曲がり、左の区画のまん中で止まる）
  *   モード2 No.2     U ターン（行き止まりで止まり、前壁合わせ、180°、戻って止まる）
@@ -25,6 +26,7 @@
  *   モード5 No.2     センサ値の記録（区画のまん中で 1 秒測り、平均をモード7 No.1 で出す）
  *   モード5 No.3     壁までの距離の表示（センサの値と距離 [mm] を出し続ける。スイッチを押すと終わる）
  *   モード6 No.1     直進（ゆっくり 360mm 走って止まる。タイヤの直径と、制御の係数を合わせる）
+ *   モード6 No.3     吸引 ON（吸引ファンを回し、スイッチを押すまで吸い続ける）
  *   モード6 No.6     エンコーダの歪みを測る
  *   モード6 No.7     壁に沿って直進（横の壁に沿って走る補正を入れて、4 区画走って止まる）（タイヤを浮かせて、左右のモーターを回す）
  *   モード7 No.1     ログ出力（迷路と走行ログを PC へ出す）
@@ -84,7 +86,7 @@ bool mode_has_action(int mode, int number)
     return false;
   }
   if (mode == 1) {
-    if (number >= 1 && number <= 3) {
+    if (number >= 1 && number <= 5) {
       return true;  /* 最短走行 */
     }
     return false;
@@ -125,6 +127,9 @@ bool mode_has_action(int mode, int number)
   if (mode == 6) {
     if (number == 1) {
       return true;  /* 直進 */
+    }
+    if (number == 3) {
+      return true;  /* 吸引 ON */
     }
     if (number == 6) {
       return true;  /* エンコーダの歪みを測る */
@@ -320,6 +325,8 @@ static void run_selected(void)
     sensor_record_run();
   } else if (s_mode == 6 && s_number == 1) {
     adjust_straight();
+  } else if (s_mode == 6 && s_number == 3) {
+    adjust_suction_on();
   } else if (s_mode == 6 && s_number == 6) {
     encoder_cal_run();
   } else if (s_mode == 6 && s_number == 7) {

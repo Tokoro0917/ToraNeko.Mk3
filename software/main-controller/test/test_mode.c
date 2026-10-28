@@ -472,6 +472,13 @@ void sensor_record_print(void)
   s_record_print_output_count = s_output_count;
 }
 
+/* 吸引 ON（モード6 No.3）：回さずに、呼ばれた回数を覚える */
+static int s_suction_count = 0;
+void adjust_suction_on(void)
+{
+  s_suction_count = s_suction_count + 1;
+}
+
 /* 最短走行のターン（モード3）：走らずに、呼ばれた回数と No. を覚える */
 static int s_turn_test_count = 0;
 static int s_turn_test_number = 0;
@@ -694,6 +701,7 @@ static void test_explore_known(void)
 
   check(s_explore_count == 1 && s_explore_type == EXPLORE_UNKNOWN_WALLS_KNOWN, "No.4 は未知壁探索＋既知区間加速");
   check(!mode_has_action(0, 5), "モード0 の No.5 は決定できない");
+  check(mode_has_action(1, 4) && mode_has_action(1, 5) && !mode_has_action(1, 6), "モード1 は No.1〜5 を決定できる");
 }
 
 /* No.0 では決定しない。そのあと No.3 にすると、未知壁探索で走る */
@@ -910,6 +918,17 @@ static void test_turn_test(void)
 
   check(s_turn_test_count == 1 && s_turn_test_number == 7, "モード3 No.7 で、ターンのテストが No.7 で 1 回呼ばれる");
   check(mode_has_action(3, 1) && !mode_has_action(3, 8) && !mode_has_action(3, 0), "モード3 は No.1〜7 だけ決定できる");
+
+  /* 吸引 ON（モード6 No.3）も、スタート待ちのあとに始まる */
+  reset_world();
+  mode_init();
+  s_suction_count = 0;
+  rotate_left_at(100, 6);    /* モード6 */
+  rotate_right_at(100, 3);   /* No.3 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+  check(s_suction_count == 1, "モード6 No.3 で、吸引 ON が 1 回呼ばれる");
 }
 
 /* 壁までの距離の表示（モード5 No.3）も、No.1 と同じくスタート待ちをしない */

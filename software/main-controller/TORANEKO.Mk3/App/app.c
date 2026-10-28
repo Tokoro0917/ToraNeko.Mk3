@@ -13,6 +13,7 @@
 
 #include "ctrl/odometry.h"
 #include "drv/encoder.h"
+#include "drv/fan.h"
 #include "drv/imu.h"
 #include "drv/led.h"
 #include "drv/motor.h"
@@ -51,6 +52,7 @@ void app_init(void)
   encoder_init();
   odometry_init();
   motor_init();
+  fan_init();
   if (imu_init()) {
     printf("IMU OK (LSM6DSR)\r\n");
   } else {

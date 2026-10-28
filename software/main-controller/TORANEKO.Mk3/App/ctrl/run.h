@@ -56,7 +56,7 @@ void run_search_go_from_center(run_turn_t turn);
  *   run_fast_straight(距離, 最高速, 終わりの速さ, 加速度) 直進（止まっているところからでもよい）。横の壁に沿う補正を入れる
  *   run_fast_diag_straight(…)                         斜めの直進（同じ。横の壁に沿う補正は入れない）
  *   run_fast_turn_left()・_right()                     探索の速さ（300mm/s）で、小回りのスラローム 90°
- *   run_fast_turn(ターン, 左なら true)                 ターンの速さ（config/turn_params.h）で、大回り・斜めのターン
+ *   run_fast_turn(ターン, 左なら true, 速さ)           大回り・斜めのターン（ふつうはターンの速さ。遅くても同じ形で曲がる）
  *   run_fast_stop(距離, 最高速, 加速度)                進みながら止まり、モーターの出力を 0 にして、ログを止める
  *   run_fast_diag_stop(…)                             斜めに進みながら止まる（同じ。横の壁に沿う補正は入れない）
  * フェイルセーフで止まったときは、探索と同じく、すぐに戻る */
@@ -77,7 +77,7 @@ void run_fast_straight(float distance_mm, float max_speed_mm_s, float end_speed_
 void run_fast_diag_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2);
 void run_fast_turn_left(void);
 void run_fast_turn_right(void);
-void run_fast_turn(run_fast_turn_t turn, bool is_left);
+void run_fast_turn(run_fast_turn_t turn, bool is_left, float speed_mm_s);
 void run_fast_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
 void run_fast_diag_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
 

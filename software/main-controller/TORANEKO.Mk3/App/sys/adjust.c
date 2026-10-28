@@ -61,7 +61,10 @@
 #include "ctrl/odometry.h"
 #include "ctrl/run.h"
 #include "ctrl/trajectory.h"
+#include "drv/fan.h"
 #include "drv/imu.h"
+#include "drv/led.h"
+#include "drv/timebase.h"
 #include "sys/failsafe.h"
 #include "sys/log.h"
 #include "sys/ui.h"
@@ -350,4 +353,48 @@ void adjust_front_align(void)
   control_stop();
   log_stop();
   signal_end();
+}
+
+/* ---------------------------------------------------------------------------
+ * モード6 No.3 吸引 ON（2026-10-28）
+ * ------------------------------------------------------------------------- */
+
+#define SUCTION_RAMP_STEPS 10   /* 吸引を上げるときの段の数 */
+#define SUCTION_BLINK_MS   500  /* 吸っているあいだ、真ん中の 3 個を点滅させる間隔 [ms] */
+
+/* 吸引ファンを、SUCTION_RAMP_MS かけて SUCTION_VOLTAGE_V まで少しずつ上げる */
+static void ramp_up_suction(void)
+{
+  for (int i = 1; i <= SUCTION_RAMP_STEPS; i++) {
+    fan_set_voltage(SUCTION_VOLTAGE_V * i / SUCTION_RAMP_STEPS);
+    ui_wait_ms(SUCTION_RAMP_MS / SUCTION_RAMP_STEPS);
+  }
+}
+
+/* 真ん中の 3 個（LED3・4・5）を点ける・消す */
+static void show_middle_leds(bool on)
+{
+  led_set(3, on);
+  led_set(4, on);
+  led_set(5, on);
+}
+
+/* モード6 No.3 吸引 ON：吸引ファンを回し、スイッチが押されるまで吸い続ける（機体は動かない）。
+ * 机に置いて吸い付くか、手で持ち上げてどれくらいの力が要るかを見て、SUCTION_VOLTAGE_V を決める */
+void adjust_suction_on(void)
+{
+  ramp_up_suction();
+  bool lit = true;
+  uint32_t next_toggle_ms = timebase_get_ms() + SUCTION_BLINK_MS;
+  while (!ui_switch_pushed()) {
+    if (timebase_get_ms() >= next_toggle_ms) {
+      lit = !lit;
+      next_toggle_ms = next_toggle_ms + SUCTION_BLINK_MS;
+    }
+    show_middle_leds(lit);
+    ui_wait_ms(UI_POLL_MS);
+  }
+  fan_stop();
+  ui_all_off();
+  ui_signal_ok();
 }

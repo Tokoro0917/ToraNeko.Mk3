@@ -72,29 +72,29 @@ void turn_test_run(int number)
 {
   approach();
   if (number == 1) {
-    run_fast_turn(RUN_FAST_TURN_BIG90, true);
+    run_fast_turn(RUN_FAST_TURN_BIG90, true, FAST_TURN_SPEED_MM_S);
     stop_after_cell();
   } else if (number == 2) {
-    run_fast_turn(RUN_FAST_TURN_BIG180, true);
+    run_fast_turn(RUN_FAST_TURN_BIG180, true, FAST_TURN_SPEED_MM_S);
     stop_after_cell();
   } else if (number == 3) {
-    run_fast_turn(RUN_FAST_TURN_IN45, true);
+    run_fast_turn(RUN_FAST_TURN_IN45, true, FAST_TURN_SPEED_MM_S);
     stop_after_diag();
   } else if (number == 4) {
-    run_fast_turn(RUN_FAST_TURN_IN135, true);
+    run_fast_turn(RUN_FAST_TURN_IN135, true, FAST_TURN_SPEED_MM_S);
     stop_after_diag();
   } else if (number == 5) {
-    run_fast_turn(RUN_FAST_TURN_IN45, false);
-    run_fast_turn(RUN_FAST_TURN_OUT45, true);
+    run_fast_turn(RUN_FAST_TURN_IN45, false, FAST_TURN_SPEED_MM_S);
+    run_fast_turn(RUN_FAST_TURN_OUT45, true, FAST_TURN_SPEED_MM_S);
     stop_after_cell();
   } else if (number == 6) {
-    run_fast_turn(RUN_FAST_TURN_IN45, false);
-    run_fast_turn(RUN_FAST_TURN_OUT135, true);
+    run_fast_turn(RUN_FAST_TURN_IN45, false, FAST_TURN_SPEED_MM_S);
+    run_fast_turn(RUN_FAST_TURN_OUT135, true, FAST_TURN_SPEED_MM_S);
     stop_after_cell();
   } else {
-    run_fast_turn(RUN_FAST_TURN_IN45, false);
-    run_fast_turn(RUN_FAST_TURN_V90, true);
-    run_fast_turn(RUN_FAST_TURN_OUT45, false);
+    run_fast_turn(RUN_FAST_TURN_IN45, false, FAST_TURN_SPEED_MM_S);
+    run_fast_turn(RUN_FAST_TURN_V90, true, FAST_TURN_SPEED_MM_S);
+    run_fast_turn(RUN_FAST_TURN_OUT45, false, FAST_TURN_SPEED_MM_S);
     stop_after_cell();
   }
   signal_end();

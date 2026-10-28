@@ -36,7 +36,8 @@
  * （KOGUMA と同じ。ゴールにまっすぐ入る道を少し安くする）。
  *
  * ■ 走行時間のコスト（2026-10-27。KOGUMA の #99「区間のコストを走行時間の表にする」を持ち込んだもの）
- * dijkstra_set_time_cost_small_turn() を呼ぶと、上の 3 つの数のかわりに、本当に走る時間に近いコストを使う。
+ * dijkstra_set_time_cost_small_turn()（小回りだけで走る最短走行）か dijkstra_set_time_cost_diagonal()（大回り・斜めで走る）を
+ * 呼ぶと、上の 3 つの数のかわりに、本当に走る時間に近いコストを使う。
  * 区間の k 歩目のコストを表（s_orth_step_cost・s_diag_step_cost）にしておき、区間のコストは
  *     表[1] + 表[2] + … + 表[k]  ≒  その区間を走る時間
  * にする。長い直線ほど速度が乗って 1 歩あたりが速くなることを表せる（3 つの数では表せない）。
@@ -60,6 +61,7 @@
 #include <stdint.h>
 
 #include "config/run_params.h"
+#include "config/turn_params.h"
 
 /* コスト。KOGUMA の ST_COST, DIAG_COST, CON_COST と同じ値 */
 #define COST_STRAIGHT 5
@@ -678,6 +680,25 @@ void dijkstra_set_time_cost_small_turn(float turn_speed_mm_s, float max_speed_mm
   }
   make_step_table(s_orth_step_cost, CELL_MM, turn_speed_mm_s, max_speed_mm_s, accel_mm_s2);
   make_step_table(s_diag_step_cost, CELL_MM, turn_speed_mm_s, turn_speed_mm_s, accel_mm_s2);
+  s_use_time_cost = true;
+}
+
+/* 走行時間のコストを使う。大回り・斜めのターン（ターンの速さ turn_speed_mm_s）で走る最短走行用。
+ *   縦横の区間：1 歩 90mm を、ターンの速さから max_speed_mm_s まで上げて戻す（加速度 accel_mm_s2）
+ *   斜めの区間：1 歩 DIAG_STEP_MM（63.6mm）を、ターンの速さから diag_max_speed_mm_s まで上げて戻す（diag_accel_mm_s2）
+ * ターンにかかる時間は足さない（ターンのあいだもほぼターンの速さで進むので、同じ距離をまっすぐ走る時間とほとんど同じ。
+ * KOGUMA の docs/dijkstra_cost.md で、ターンの分を足さないほうがよいとわかった） */
+void dijkstra_set_time_cost_diagonal(float turn_speed_mm_s, float max_speed_mm_s, float accel_mm_s2,
+                                     float diag_max_speed_mm_s, float diag_accel_mm_s2)
+{
+  if (max_speed_mm_s < turn_speed_mm_s) {
+    max_speed_mm_s = turn_speed_mm_s;
+  }
+  if (diag_max_speed_mm_s < turn_speed_mm_s) {
+    diag_max_speed_mm_s = turn_speed_mm_s;
+  }
+  make_step_table(s_orth_step_cost, CELL_MM, turn_speed_mm_s, max_speed_mm_s, accel_mm_s2);
+  make_step_table(s_diag_step_cost, DIAG_STEP_MM, turn_speed_mm_s, diag_max_speed_mm_s, diag_accel_mm_s2);
   s_use_time_cost = true;
 }
 

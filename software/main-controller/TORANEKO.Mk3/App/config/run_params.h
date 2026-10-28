@@ -51,6 +51,22 @@
 #define SHORTEST3_MAX_SPEED_MM_S 1000.0f
 #define SHORTEST3_ACCEL_MM_S2    3000.0f
 
+/* ---- 最短走行（モード1）No.4・5：大回り・斜めのターン（config/turn_params.h、今は 500mm/s）で曲がる（仮） ---- */
+
+/* No.4 */
+#define SHORTEST4_MAX_SPEED_MM_S      600.0f   /* 縦横の直進の最高速 [mm/s] */
+#define SHORTEST4_ACCEL_MM_S2         2000.0f  /* 縦横の直進の加速度 [mm/s²] */
+#define SHORTEST4_DIAG_MAX_SPEED_MM_S 500.0f   /* 斜めの直進の最高速 [mm/s] */
+#define SHORTEST4_DIAG_ACCEL_MM_S2    2000.0f  /* 斜めの直進の加速度 [mm/s²] */
+/* No.5 */
+#define SHORTEST5_MAX_SPEED_MM_S      1000.0f
+#define SHORTEST5_ACCEL_MM_S2         3000.0f
+#define SHORTEST5_DIAG_MAX_SPEED_MM_S 700.0f
+#define SHORTEST5_DIAG_ACCEL_MM_S2    3000.0f
+
+/* ゴールにターンで入って終わるときに止まる加速度 [mm/s²]。500mm/s から 42mm で止まる（ゴールの区画の残り 45mm に入る） */
+#define SHORTEST_STOP_ACCEL_MM_S2 3000.0f
+
 /* ---- 探索の前壁補正（ctrl/run.c。2026-10-28） ----
  * 区画の入口で、その区画に前の壁があるとき、前センサで測った壁までの距離が FRONT_WALL_AT_ENTRY_MM からずれていれば、
  * そのぶん、曲がり始め（スラロームの前距離）と、区画のまん中で止まる位置を直す。
@@ -74,6 +90,11 @@
  * average（平均）をここに入れてから、WALL_EDGE_ENABLE を 1 にする */
 #define WALL_EDGE_POSITION_MM 70.0f
 #define WALL_EDGE_WINDOW_MM   20.0f  /* WALL_EDGE_POSITION_MM からこれ以上ずれて見つかったら、読み違いとして使わない [mm] */
+
+/* ---- 吸引（drv/fan.c。2026-10-28） ---- */
+
+#define SUCTION_VOLTAGE_V 2.0f  /* 吸引ファンにかける電圧 [V]（仮。モード6 No.3 で吸い付き方を見て決める。上限は drv/fan.c の FAN_LIMIT_V） */
+#define SUCTION_RAMP_MS   500   /* 0 から SUCTION_VOLTAGE_V まで上げるのにかける時間 [ms]（急に回して電池の電圧が落ちないように） */
 
 /* ---- その場旋回 ---- */
 
