@@ -24,6 +24,18 @@
  *   大回り・斜めのターン：前距離 → スラローム → 後距離。値は config/turn_params.h（ターンの速さで曲がる）
  *   止まる     ：決めた距離を進みながら止まり、モーターの出力を 0 にする
  *
+ * ■ 前壁補正（config/run_params.h の FRONT_CORRECTION_*）
+ * 区画の入口で曲がる・止まるとき、その区画に前の壁があれば、前センサで壁までの距離を測る。
+ * 入口の辺なら FRONT_WALL_AT_ENTRY_MM（87mm）のはずなので、ずれた分だけ、前距離と止まる距離を直す。
+ * センサを読んだときには、入口の辺から少し進んでいる（探索の計算のあいだも進む）ので、その分を足して比べる。
+ * かけた量（かけないときは、かけるはずだった量）は数えておき、モード7 No.1 で出す（run_get_front_correction_*）。
+ *
+ * ■ 壁切れ（config/run_params.h の WALL_EDGE_*）
+ * 探索で 1 区画まっすぐ進むあいだ、横のセンサを見続ける。入口で壁があった側が「壁なし」に変わったら、
+ * そこは壁の切れ目（区画の出口の柱を過ぎたところ）なので、入口から WALL_EDGE_POSITION_MM のところにいるはず。
+ * 思っていた位置とのずれだけ、この直進の残りの距離を直す（trajectory_add_distance()）。
+ * 見つけた位置は数えておき、モード7 No.1 で出す（WALL_EDGE_POSITION_MM を決めるのに使う）。
+ *
  * ■ 横の壁に沿って走る補正
  * 発進のときに入れる（ctrl/control.c）。直進のあいだだけ効く（スラローム・その場旋回のあいだは効かない）。
  *
@@ -77,6 +89,17 @@ static void measure_wait(void)
   s_waiting = false;
 }
 
+/* 前壁補正の記録（探索を始めるたびに 0 に戻す） */
+static int s_front_correction_count = 0;            /* 測った回数 */
+static float s_front_correction_min_mm = 0.0f;      /* いちばん小さかった量 [mm] */
+static float s_front_correction_max_mm = 0.0f;      /* いちばん大きかった量 [mm] */
+
+/* 壁切れの記録（探索を始めるたびに 0 に戻す。位置は区画の入口の辺から [mm]） */
+static int s_wall_edge_count = 0;          /* 切れ目を見つけた回数 */
+static float s_wall_edge_sum_mm = 0.0f;    /* 見つけた位置の合計（平均を出すため） */
+static float s_wall_edge_min_mm = 0.0f;    /* いちばん手前で見つけた位置 */
+static float s_wall_edge_max_mm = 0.0f;    /* いちばん先で見つけた位置 */
+
 /* いちばん長かった待ち時間 [µs] */
 uint32_t run_get_longest_wait_us(void)
 {
@@ -92,6 +115,132 @@ static void wait_until_done(void)
   }
 }
 
+/* 前壁補正の量 [mm] を決めて記録する（+ なら、壁が思ったより遠い＝まだ手前にいるので、そのぶん長く進む）。
+ * 前に壁がないときは 0。FRONT_CORRECTION_ENABLE が 0 なら、記録だけして 0 を返す */
+static float front_correction_mm(void)
+{
+  if (!wall_ctrl_has_wall_front()) {
+    return 0.0f;
+  }
+  /* 今いる位置は、入口の辺から、まだ頼んでいない分（trajectory_get_overrun_mm()）だけ進んだところ */
+  float correction_mm = wall_ctrl_get_front_distance_mm() + trajectory_get_overrun_mm() - FRONT_WALL_AT_ENTRY_MM;
+  if (correction_mm > FRONT_CORRECTION_LIMIT_MM) {
+    correction_mm = FRONT_CORRECTION_LIMIT_MM;
+  }
+  if (correction_mm < -FRONT_CORRECTION_LIMIT_MM) {
+    correction_mm = -FRONT_CORRECTION_LIMIT_MM;
+  }
+
+  if (s_front_correction_count == 0 || correction_mm < s_front_correction_min_mm) {
+    s_front_correction_min_mm = correction_mm;
+  }
+  if (s_front_correction_count == 0 || correction_mm > s_front_correction_max_mm) {
+    s_front_correction_max_mm = correction_mm;
+  }
+  s_front_correction_count = s_front_correction_count + 1;
+
+  if (FRONT_CORRECTION_ENABLE == 0) {
+    return 0.0f;
+  }
+  return correction_mm;
+}
+
+/* 前壁補正を測った回数・いちばん小さかった量・いちばん大きかった量 [mm]（モード7 No.1 で出す） */
+int run_get_front_correction_count(void)
+{
+  return s_front_correction_count;
+}
+
+float run_get_front_correction_min_mm(void)
+{
+  return s_front_correction_min_mm;
+}
+
+float run_get_front_correction_max_mm(void)
+{
+  return s_front_correction_max_mm;
+}
+
+/* 壁切れの位置 position_mm（区画の入口から）を記録する */
+static void record_wall_edge(float position_mm)
+{
+  if (s_wall_edge_count == 0 || position_mm < s_wall_edge_min_mm) {
+    s_wall_edge_min_mm = position_mm;
+  }
+  if (s_wall_edge_count == 0 || position_mm > s_wall_edge_max_mm) {
+    s_wall_edge_max_mm = position_mm;
+  }
+  s_wall_edge_sum_mm = s_wall_edge_sum_mm + position_mm;
+  s_wall_edge_count = s_wall_edge_count + 1;
+}
+
+/* 壁切れを見つけた回数・平均・いちばん手前・いちばん先の位置 [mm]（モード7 No.1 で出す） */
+int run_get_wall_edge_count(void)
+{
+  return s_wall_edge_count;
+}
+
+float run_get_wall_edge_average_mm(void)
+{
+  if (s_wall_edge_count == 0) {
+    return 0.0f;
+  }
+  return s_wall_edge_sum_mm / s_wall_edge_count;
+}
+
+float run_get_wall_edge_min_mm(void)
+{
+  return s_wall_edge_min_mm;
+}
+
+float run_get_wall_edge_max_mm(void)
+{
+  return s_wall_edge_max_mm;
+}
+
+/* 壁の切れ目を見つけたときに呼ぶ。position_mm は、思っている今の位置（区画の入口から）。
+ * 決めた範囲の中なら記録し、WALL_EDGE_ENABLE が 1 なら、ずれた分だけ今の直進の残りを直す */
+static void on_wall_edge(float position_mm)
+{
+  float error_mm = position_mm - WALL_EDGE_POSITION_MM;  /* + なら、思っているより手前にいる */
+  if (error_mm > WALL_EDGE_WINDOW_MM || error_mm < -WALL_EDGE_WINDOW_MM) {
+    return;  /* 離れすぎている：読み違いとして使わない */
+  }
+  record_wall_edge(position_mm);
+  if (WALL_EDGE_ENABLE == 1) {
+    trajectory_add_distance(error_mm);
+  }
+}
+
+/* 探索で 1 区画まっすぐ進む（走っている → 次の区画の入口の辺へ）。進むあいだ、壁切れを探す（先頭のコメント）。
+ * 見つけるのは 1 区画で 1 回だけ（左右どちらか先に見つかったほう） */
+static void go_straight_one_cell(void)
+{
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  /* 区画の入口の辺から、もう進んでしまった分（この直進では引かれる分）。位置は「入口から」で数えるので足す */
+  float start_mm = trajectory_get_overrun_mm();
+  bool left_was_wall = wall_ctrl_has_wall_left();   /* 入口で見た、この区画の横の壁 */
+  bool right_was_wall = wall_ctrl_has_wall_right();
+  bool edge_found = false;
+
+  trajectory_start_straight(CELL_MM, SEARCH_SPEED_MM_S, SEARCH_SPEED_MM_S, SEARCH_ACCEL_MM_S2);
+  while (!trajectory_is_done() && !failsafe_is_stopped()) {
+    if (edge_found) {
+      continue;  /* もう見つけた。あとは着くのを待つ（休まずに待つ理由は wait_until_done() と同じ） */
+    }
+    bool left_is_wall = wall_ctrl_has_wall_left();
+    bool right_is_wall = wall_ctrl_has_wall_right();
+    if ((left_was_wall && !left_is_wall) || (right_was_wall && !right_is_wall)) {
+      on_wall_edge(start_mm + trajectory_get_distance_mm());
+      edge_found = true;
+    }
+    left_was_wall = left_is_wall;
+    right_was_wall = right_is_wall;
+  }
+}
+
 /* distance_mm まっすぐ進んで、探索の速さで戻る。走っているときは速さを変えずに進み、
  * 止まっているところからなら、進みながら探索の速さまで速くする */
 static void go_straight(float distance_mm)
@@ -103,10 +252,15 @@ static void go_straight(float distance_mm)
   wait_until_done();
 }
 
-/* 前距離 → スラローム angle_deg（左が +、右が -）→ 後距離 で、横の区画の入口へ */
+/* 前距離 → スラローム angle_deg（左が +、右が -）→ 後距離 で、横の区画の入口へ。
+ * 前に壁があれば、前距離を前壁補正で直す（前距離は 0 より短くしない） */
 static void slalom(float angle_deg)
 {
-  go_straight(SLALOM_PRE_MM);
+  float pre_mm = SLALOM_PRE_MM + front_correction_mm();
+  if (pre_mm < 0.0f) {
+    pre_mm = 0.0f;
+  }
+  go_straight(pre_mm);
   if (failsafe_is_stopped()) {
     return;
   }
@@ -151,6 +305,9 @@ static void start_control(void)
   imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒。電源を入れたときに手で動かしていてもよいように） */
   s_waiting = false;
   s_longest_wait_us = 0;
+  s_front_correction_count = 0;
+  s_wall_edge_count = 0;
+  s_wall_edge_sum_mm = 0.0f;
   log_start(SEARCH_LOG_INTERVAL_MS);
   control_set_wall_control(true);  /* 横の壁に沿って走る補正を入れる */
   control_start();
@@ -168,11 +325,11 @@ void run_search_start(void)
   mark_return();
 }
 
-/* 走っている → 1 区画まっすぐ進み、次の区画の入口の辺へ */
+/* 走っている → 1 区画まっすぐ進み、次の区画の入口の辺へ（壁切れで前後の位置を直す） */
 void run_search_straight(void)
 {
   measure_wait();
-  go_straight(CELL_MM);
+  go_straight_one_cell();
   mark_return();
 }
 
@@ -212,7 +369,9 @@ void run_search_stop_at_center(void)
   if (failsafe_is_stopped()) {
     return;
   }
-  trajectory_start_straight(HALF_CELL_MM, SEARCH_SPEED_MM_S, 0.0f, SEARCH_ACCEL_MM_S2);
+  /* 前に壁があれば（行き止まりなど）、止まる距離を前壁補正で直す */
+  float stop_mm = HALF_CELL_MM + front_correction_mm();
+  trajectory_start_straight(stop_mm, SEARCH_SPEED_MM_S, 0.0f, SEARCH_ACCEL_MM_S2);
   wait_until_done();
   if (failsafe_is_stopped()) {
     return;

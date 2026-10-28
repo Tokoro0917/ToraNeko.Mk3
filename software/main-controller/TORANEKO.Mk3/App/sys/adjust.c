@@ -151,12 +151,22 @@ static void save_straight_result(float start_distance_mm, float start_angle_deg)
   s_result.failsafe = failsafe_is_stopped();
 }
 
-/* 探索で、区画の入口に着いてから次の動きを頼まれるまでの、いちばん長かった時間を出す（探索を走らせていれば） */
+/* 探索で、区画の入口に着いてから次の動きを頼まれるまでの、いちばん長かった時間と、前壁補正の量・壁切れの位置を出す（探索を走らせていれば） */
 static void print_search_wait(void)
 {
   uint32_t wait_us = run_get_longest_wait_us();
   if (wait_us > 0) {
     printf("Search: longest wait between moves %lu us\r\n", wait_us);
+  }
+  if (run_get_front_correction_count() > 0) {
+    printf("Search: front correction %d times, min %.1f mm, max %.1f mm (applied=%d)\r\n",
+           run_get_front_correction_count(), run_get_front_correction_min_mm(),
+           run_get_front_correction_max_mm(), FRONT_CORRECTION_ENABLE);
+  }
+  if (run_get_wall_edge_count() > 0) {
+    printf("Search: wall edge %d times, average %.1f mm, min %.1f mm, max %.1f mm from cell entry (applied=%d)\r\n",
+           run_get_wall_edge_count(), run_get_wall_edge_average_mm(), run_get_wall_edge_min_mm(),
+           run_get_wall_edge_max_mm(), WALL_EDGE_ENABLE);
   }
 }
 
@@ -182,12 +192,13 @@ static void print_move_result(void)
   }
 }
 
-/* 最後に走らせた動きの結果と、探索の待ち時間をシリアルに出す。モード7 No.1（ログ出力）でも呼ぶ。
+/* 最後に走らせた動きの結果と、探索の待ち時間・前壁補正の量をシリアルに出す。モード7 No.1（ログ出力）でも呼ぶ。
  * ビューア（tools/viewer.html）が 1 つのデータとして受け取って保存できるように、
  * #BEGIN RESULT と #END RESULT ではさむ。出すものがなければ何も出さない。電源を切ると消える（走行ログと同じ） */
 void adjust_print_last_result(void)
 {
-  if (s_result.kind == RESULT_NONE && run_get_longest_wait_us() == 0) {
+  if (s_result.kind == RESULT_NONE && run_get_longest_wait_us() == 0 && run_get_front_correction_count() == 0
+      && run_get_wall_edge_count() == 0) {
     return;
   }
   printf("\r\n#BEGIN RESULT\r\n");

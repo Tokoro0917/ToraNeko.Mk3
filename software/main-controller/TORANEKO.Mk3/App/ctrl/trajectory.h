@@ -33,5 +33,7 @@ float trajectory_get_distance_mm(void);
 float trajectory_get_omega_deg_s(void);
 float trajectory_get_alpha_deg_s2(void);
 float trajectory_get_angle_deg(void);
+float trajectory_get_overrun_mm(void);
+void trajectory_add_distance(float delta_mm);
 
 #endif /* CTRL_TRAJECTORY_H */

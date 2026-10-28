@@ -13,6 +13,7 @@
  *   5. 旋回のあとの直進は、止まったところから始まる
  *   7. 動きと動きのあいだ（探索の計算のあいだ）に進んだ分は、次の直進から引く
  *   6. スラローム：前に進む速さは一定のまま、角速度を台形にして 90° 曲がる。曲がったあとの直進は、その速さから始まる
+ *   8. 直進の途中で距離を足し引きする（壁切れ）：足した分だけ長く・短く進み、終わりの速さで終わる
  */
 #include <math.h>
 #include <stdbool.h>
@@ -253,6 +254,42 @@ static void test_gap_between_moves(void)
   check(fabsf(trajectory_get_distance_mm() - 45.0f) < 0.001f, "止まったあとの直進は、引かずにそのまま 45mm 進む");
 }
 
+/* 8. 直進の途中で距離を直す（壁切れで使う trajectory_add_distance()） */
+static void test_add_distance(void)
+{
+  printf("[8] 直進の途中で距離を直す（壁切れ）\n");
+  trajectory_reset();
+  trajectory_start_straight(90.0f, 300.0f, 300.0f, 1000.0f);
+  run_until_done();  /* 止まったところから 300mm/s にしておく（90mm で届く） */
+
+  trajectory_start_straight(90.0f, 300.0f, 300.0f, 1000.0f);
+  for (int i = 0; i < 200; i++) {  /* 0.1 秒 = 30mm 進める */
+    trajectory_update();
+  }
+  trajectory_add_distance(5.0f);
+  run_until_done();
+  check(fabsf(trajectory_get_distance_mm() - 95.0f) < 0.001f, "途中で 5mm 足すと、95mm 進んで終わる");
+  check(fabsf(trajectory_get_speed_mm_s() - 300.0f) < 0.001f, "終わりの速さ（300mm/s）で終わる");
+
+  trajectory_start_straight(90.0f, 300.0f, 300.0f, 1000.0f);
+  for (int i = 0; i < 200; i++) {
+    trajectory_update();
+  }
+  trajectory_add_distance(-8.0f);
+  run_until_done();
+  check(fabsf(trajectory_get_distance_mm() - 82.0f) < 0.001f, "途中で 8mm 引くと、82mm 進んで終わる");
+
+  trajectory_start_straight(90.0f, 300.0f, 300.0f, 1000.0f);
+  for (int i = 0; i < 200; i++) {
+    trajectory_update();
+  }
+  float moved_mm = trajectory_get_distance_mm();
+  trajectory_add_distance(-100.0f);
+  trajectory_update();
+  check(trajectory_is_done() && trajectory_get_distance_mm() >= moved_mm,
+        "もう進んだ量より短くはならない（すぐに終わる）");
+}
+
 int main(void)
 {
   test_trapezoid();
@@ -262,6 +299,7 @@ int main(void)
   test_straight_after_pivot();
   test_slalom();
   test_gap_between_moves();
+  test_add_distance();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");
