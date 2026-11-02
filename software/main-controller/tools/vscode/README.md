@@ -26,6 +26,18 @@ F5 は「書き込み ＋ デバッグ」なので、書き込んだあともデ
 
 | 出たメッセージ | どうする |
 |---|---|
-| `STM32_Programmer_CLI` が見つからない（`認識されません`・`not found`） | STM32CubeCLT（STM32Cube 拡張と一緒に入れたもの）の `STM32CubeProgrammer\bin` を PATH に足して、VS Code を開き直す。わからなければ、出たメッセージを Claude に貼る |
+| `STM32_Programmer_CLI` が見つからない（`認識されません`・`not found`） | 下の「書き込みソフトの場所」を見る。わからなければ、出たメッセージを Claude に貼る |
 | `ST-LINK` に接続できない（`No STM32 target found`・`in use` など） | F5 のデバッグが続いていないか見る（画面の上にボタンの帯が出ていたら ■ で止める）。ケーブルと電源も確かめる |
 | ビルドで止まる | 1 回だけ F5（またはコマンド `cmake --preset Debug`）でビルドの準備をしてから、もう一度 Ctrl+Shift+B |
+
+### 書き込みソフトの場所（STM32_Programmer_CLI が見つからないとき）
+
+STM32CubeIDE しか入っていない PC（作者の Linux のノート PC がそう）では、書き込みソフトが IDE のフォルダの奥にあって、
+そのままでは見つからない。1 回だけ、次のようにしてどこからでも使えるようにする（2026-11-02 にこれで書き込めた）。
+
+1. 場所を探す：`find /opt/st -name STM32_Programmer_CLI`
+   （例：`/opt/st/stm32cubeide_1.14.0/plugins/com.st.stm32cube.ide.mcu.externaltools.cubeprogrammer.linux64_2.1.100.202311100844/tools/bin/STM32_Programmer_CLI`）
+2. よく使う場所に目印（シンボリックリンク）を置く：`sudo ln -s <1 で出た行> /usr/local/bin/STM32_Programmer_CLI`
+3. 確かめる：`STM32_Programmer_CLI --version` で `STM32CubeProgrammer version: 2.15.0` などと出れば成功
+
+CubeIDE を新しい版に入れ替えると、1 の場所が変わって目印が切れる。そのときは `sudo rm /usr/local/bin/STM32_Programmer_CLI` で消してから、1〜3 をやり直す。
