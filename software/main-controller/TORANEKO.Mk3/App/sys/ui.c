@@ -29,6 +29,7 @@
 #define SIGNAL_ERROR_TIMES 5     /* 「できなかった」の点滅の回数 */
 #define START_DELAY_MS     1000  /* 手を離してから走り出すまで [ms] */
 #define HAND_STABLE_COUNT  3     /* 手をかざした／離したとみなすまでに、同じ値が続く回数（UI_POLL_MS ごと） */
+#define SWITCH_START_MS    1000  /* スタート待ちで、スイッチをこれ以上押し続けたら、手のかわりにスタートする [ms] */
 #define FAILSAFE_BLINK_MS  500   /* フェイルセーフで止まったときに、全部を点滅させる間隔 [ms] */
 #define LOADING_STEP_MS    150   /* 「ロード中」で、LED を 1 個ずつ点けていく間隔 [ms]（7 個で約 1 秒） */
 
@@ -265,21 +266,46 @@ static void wait_hand(bool want_hand)
   }
 }
 
+/* スイッチが離されるまで待つ（離されたかは ui_switch_pushed() が覚えている s_switch_state で見る） */
+static void wait_switch_released(void)
+{
+  while (s_switch_state) {
+    ui_switch_pushed();  /* 読むと、押されているか（s_switch_state）が新しくなる */
+    ui_wait_ms(UI_POLL_MS);
+  }
+}
+
 /* スタート待ち（MODES.md の 2 の 3〜5）。走り出してよくなったら true、選び直すなら false。
- *   1. 選んだモードと No. を点滅させて、前センサに手がかざされるのを待つ。スイッチが押されたら false（選び直し）
- *   2. 手がかざされたら 7 個全部を点けて、手が離れるのを待つ
- *   3. 手が離れたら全部消して、1 秒待ってから true（このあいだにジャイロの 0 点を測る。ステップ4で足す） */
+ *   1. 選んだモードと No. を点滅させて、前センサに手がかざされるのを待つ。
+ *      スイッチを短く押して離したら false（選び直し）。SWITCH_START_MS 以上押し続けたら、手のかわりにスタートする
+ *      （区画のまん中で前に壁があると、前センサは壁を見ていて、手をかざして離したのがわからない。2026-11-02 に足した）
+ *   2. 手がかざされたら（スイッチを押し続けたら）7 個全部を点けて、手が離れる（スイッチが離される）のを待つ
+ *   3. 全部消して、1 秒待ってから true（このあいだに、走り出す処理がジャイロの 0 点を測り直す） */
 bool ui_wait_start(int mode, int number)
 {
   bool lit = true;
   uint32_t next_toggle_ms = timebase_get_ms() + WAIT_BLINK_MS;
   int hand_count = 0;
+  bool switch_held = false;      /* スイッチが押されているあいだ true */
+  uint32_t switch_pushed_ms = 0; /* スイッチが押された時刻 [ms] */
 
   /* 1. 手がかざされるのを待つ */
   while (hand_count < HAND_STABLE_COUNT) {
     if (ui_switch_pushed()) {
+      switch_held = true;
+      switch_pushed_ms = timebase_get_ms();
+    }
+    if (switch_held && !s_switch_state) {
       ui_all_off();
-      return false;
+      return false;  /* 短く押して離した：選び直し */
+    }
+    if (switch_held && timebase_get_ms() - switch_pushed_ms >= SWITCH_START_MS) {
+      /* 押し続けた：スタートする。全部点けて、スイッチが離されるのを待つ */
+      ui_all_on();
+      wait_switch_released();
+      ui_all_off();
+      ui_wait_ms(START_DELAY_MS);
+      return true;
     }
     if (wall_ctrl_is_hand_front()) {
       hand_count = hand_count + 1;
