@@ -61,6 +61,7 @@
 #include "ctrl/odometry.h"
 #include "ctrl/run.h"
 #include "ctrl/trajectory.h"
+#include "ctrl/wall_ctrl.h"
 #include "drv/fan.h"
 #include "drv/imu.h"
 #include "drv/led.h"
@@ -166,6 +167,10 @@ static void print_search_wait(void)
            run_get_front_correction_count(), run_get_front_correction_min_mm(),
            run_get_front_correction_max_mm(), FRONT_CORRECTION_ENABLE);
   }
+  if (wall_ctrl_get_too_close_count() > 0) {
+    printf("Search: side wall too close %d times, nearest %.1f mm (aligned=%d)\r\n",
+           wall_ctrl_get_too_close_count(), wall_ctrl_get_too_close_min_mm(), SIDE_ALIGN_ENABLE);
+  }
   if (run_get_wall_edge_count() > 0) {
     printf("Search: wall edge %d times, average %.1f mm, min %.1f mm, max %.1f mm from cell entry (applied=%d)\r\n",
            run_get_wall_edge_count(), run_get_wall_edge_average_mm(), run_get_wall_edge_min_mm(),
@@ -201,7 +206,7 @@ static void print_move_result(void)
 void adjust_print_last_result(void)
 {
   if (s_result.kind == RESULT_NONE && run_get_longest_wait_us() == 0 && run_get_front_correction_count() == 0
-      && run_get_wall_edge_count() == 0) {
+      && run_get_wall_edge_count() == 0 && wall_ctrl_get_too_close_count() == 0) {
     return;
   }
   printf("\r\n#BEGIN RESULT\r\n");

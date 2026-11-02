@@ -47,4 +47,11 @@ float wall_ctrl_get_right_mm(void);
 float wall_ctrl_get_front_right_mm(void);
 float wall_ctrl_get_front_distance_mm(void);  /* 左前と右前の平均 */
 
+/* 横の壁が近すぎるか（探索の横壁合わせ。config/run_params.h の SIDE_*）と、その記録 */
+bool wall_ctrl_is_left_too_close(void);
+bool wall_ctrl_is_right_too_close(void);
+void wall_ctrl_clear_too_close(void);
+int wall_ctrl_get_too_close_count(void);
+float wall_ctrl_get_too_close_min_mm(void);
+
 #endif /* CTRL_WALL_CTRL_H */

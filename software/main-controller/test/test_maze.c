@@ -1735,6 +1735,9 @@ static int s_sim_error_count = 0;      /* おかしな使い方をされた回�
 static int s_sim_stop_count = 0;       /* 止まった回数（U ターンと、未知壁探索で計算するときなど） */
 static int s_sim_known_count = 0;      /* 既知区間加速（run_search_known_straight）で走った回数 */
 static int s_sim_known_cells = 0;      /* 既知区間加速で走った区画の数の合計 */
+static int s_sim_too_close_every = 0;  /* 横の壁が近すぎると答える間隔（壁のある側を見た回数で数える。0 なら答えない） */
+static int s_sim_too_close_wait = 0;   /* 次に「近すぎる」と答えるまでの回数 */
+static int s_sim_side_align_count = 0; /* 横壁合わせ（run_search_align_to_side）をした回数 */
 static int s_sim_save_count = 0;       /* Flash に保存した回数 */
 static int s_sim_after_failsafe_count = 0;  /* フェイルセーフで止まったあとに、動きを頼まれた回数（run.h の約束では 0 のはず） */
 static bool s_sim_uturn_only = false;  /* true なら、止まったあとの発進は U ターンだけのはず（往復・片道は、U ターンと最後のほかで止まらない） */
@@ -1806,6 +1809,8 @@ static void sim_place_at_start(int failsafe_at)
   s_sim_stop_count = 0;
   s_sim_known_count = 0;
   s_sim_known_cells = 0;
+  s_sim_too_close_wait = s_sim_too_close_every;
+  s_sim_side_align_count = 0;
   s_sim_save_count = 0;
   s_sim_after_failsafe_count = 0;
   s_sim_before_record_count = 0;
@@ -1984,6 +1989,52 @@ bool wall_ctrl_has_wall_right(void)
   return s_true_wall[s_sim_x][s_sim_y][maze_turn_right(s_sim_dir)];
 }
 
+/* 横の壁が近すぎるか（仮）：その側に壁があるとき、s_sim_too_close_every 回に 1 回だけ「近すぎる」と答える */
+static bool sim_too_close(bool has_wall)
+{
+  if (s_sim_too_close_every == 0 || !has_wall) {
+    return false;
+  }
+  if (s_sim_stopped) {
+    sim_error("止まっているのに、横の壁が近すぎるかを見た");
+  }
+  s_sim_too_close_wait = s_sim_too_close_wait - 1;
+  if (s_sim_too_close_wait > 0) {
+    return false;
+  }
+  s_sim_too_close_wait = s_sim_too_close_every;
+  return true;
+}
+
+bool wall_ctrl_is_left_too_close(void)
+{
+  return sim_too_close(wall_ctrl_has_wall_left());
+}
+
+bool wall_ctrl_is_right_too_close(void)
+{
+  return sim_too_close(wall_ctrl_has_wall_right());
+}
+
+/* 横壁合わせ：止まっているときだけ頼んでよい。その側に壁がなければおかしい。位置と向きは変わらない */
+void run_search_align_to_side(bool is_left)
+{
+  if (!sim_begin_motion()) {
+    return;
+  }
+  if (!s_sim_stopped) {
+    sim_error("走っているのに、横壁合わせをした");
+  }
+  direction_t side = maze_turn_right(s_sim_dir);
+  if (is_left) {
+    side = maze_turn_left(s_sim_dir);
+  }
+  if (!s_true_wall[s_sim_x][s_sim_y][side]) {
+    sim_error("壁のない側で、横壁合わせをした");
+  }
+  s_sim_side_align_count = s_sim_side_align_count + 1;
+}
+
 /* フェイルセーフで止まっているか */
 bool failsafe_is_stopped(void)
 {
@@ -2115,6 +2166,37 @@ static void test_explore_types(const char *file_path, int unknown_walls_stop_cou
   check(explore_and_check(EXPLORE_UNKNOWN_WALLS_KNOWN, true), "未知壁探索＋既知区間加速：No.3 と同じく、スタートに戻り、最短経路が同じ");
   check(s_sim_stop_count == unknown_walls_stop_count, "既知区間加速でも、止まる回数は No.3 と同じ（同じ道を通る）");
   check(s_sim_known_count > 0 && s_sim_motion_count < motions_without_known, "既知区間加速を使い、動きの回数が No.3 より少ない");
+}
+
+/* 横壁合わせ：ときどき「横の壁が近すぎる」と答えても、どの走り方も正しく終わり、未知壁探索の最短経路が変わらないか */
+static void test_explore_side_align(const char *file_path)
+{
+  printf("[9] 探索走行：横の壁が近すぎたら、まん中で止まって横壁合わせ: %s\n", file_path);
+  if (!load_maze_file(file_path)) {
+    check(false, "迷路ファイルが読めない");
+    return;
+  }
+  s_sim_too_close_every = 7;
+  int best_cost = best_route_cost();
+  explore_type_t types[4] = {EXPLORE_ROUND_TRIP, EXPLORE_ONE_WAY, EXPLORE_UNKNOWN_WALLS, EXPLORE_UNKNOWN_WALLS_KNOWN};
+  bool ok = true;
+  int align_total = 0;
+  for (int i = 0; i < 4; i++) {
+    maze_map_init();
+    sim_place_at_start(-1);
+    explore_result_t result = explore_run(types[i], s_goal_x, s_goal_y, s_goal_width, s_goal_height);
+    align_total = align_total + s_sim_side_align_count;
+    if (result != EXPLORE_RESULT_DONE || s_sim_error_count != 0 || count_wrong_walls() != 0 || !s_sim_stopped) {
+      ok = false;
+    }
+    if (is_unknown_walls_type(types[i]) && recorded_route_cost() != best_cost) {
+      ok = false;
+    }
+  }
+  s_sim_too_close_every = 0;
+  printf("  横壁合わせをした回数（4 つの走り方の合計）%d 回\n", align_total);
+  check(ok, "横壁合わせをしても、4 つの走り方が正しく終わり、未知壁探索の最短経路は同じ");
+  check(align_total > 0, "横壁合わせを、ちゃんと使った");
 }
 
 /* 走り方 type で、failsafe_at 回目の動きでフェイルセーフを起こす。
@@ -2567,6 +2649,8 @@ int main(void)
   test_explore_no_route();
   test_explore_forgets_previous_records();
   test_explore_random(300);
+  test_explore_side_align("mazes/maze32_center2x2.txt");
+  test_explore_side_align("mazes/maze32_offset3x3.txt");
   test_shortest_diagonal(300);
 
   if (s_fail_count == 0) {

@@ -36,6 +36,11 @@
  * 思っていた位置とのずれだけ、この直進の残りの距離を直す（trajectory_add_distance()）。
  * 見つけた位置は数えておき、モード7 No.1 で出す（WALL_EDGE_POSITION_MM を決めるのに使う）。
  *
+ * ■ 横壁合わせ（run_search_align_to_side()。2026-11-02）
+ * 止まっている区画のまん中で、横の壁のほうへ 90° 回り、その壁で前壁合わせをして、元の向きに戻る。
+ * 前壁合わせで、その壁までの距離（＝左右の位置）と、壁に対する向きが直る。戻るときは、直した向きから 90° 回るので、
+ * 元の向きもまっすぐになる。いつ使うかは sys/explore.c が決める（横の壁が近すぎたとき）。
+ *
  * ■ 横の壁に沿って走る補正
  * 発進のときに入れる（ctrl/control.c）。直進のあいだだけ効く（スラローム・その場旋回のあいだは効かない）。
  *
@@ -306,6 +311,7 @@ static void start_control(void)
   s_waiting = false;
   s_longest_wait_us = 0;
   s_front_correction_count = 0;
+  wall_ctrl_clear_too_close();
   s_wall_edge_count = 0;
   s_wall_edge_sum_mm = 0.0f;
   log_start(SEARCH_LOG_INTERVAL_MS);
@@ -378,6 +384,28 @@ void run_search_stop_at_center(void)
   }
   timebase_wait_ms(STOP_SETTLE_MS);  /* 目標の速さ 0 のまま制御を続けて、ぴたりと止める */
   control_stop();                    /* 制御をやめて、モーターを止める */
+}
+
+/* 止まっている → 横の壁（is_left が true なら左）のほうへ 90° 回って前壁合わせをし、元の向きに戻る（先頭のコメント）。
+ * 終わったら、モーターの出力を 0 にして止まっている（run.h の約束 2） */
+void run_search_align_to_side(bool is_left)
+{
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  float angle_deg = -90.0f;
+  if (is_left) {
+    angle_deg = 90.0f;
+  }
+  control_start();  /* 止まっているので、制御を始め直す */
+  pivot(angle_deg);
+  align_if_front_wall();
+  pivot(-angle_deg);
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  timebase_wait_ms(STOP_SETTLE_MS);  /* 目標の速さ 0 のまま制御を続けて、ぴたりと止める */
+  control_stop();
 }
 
 /* 止まっている → 前に壁があれば前壁合わせをして、その場で向きを変えて（turn）、

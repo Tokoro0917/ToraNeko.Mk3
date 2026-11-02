@@ -17,6 +17,8 @@
  *   run_search_turn_left()        走っている → スラロームで左 90°（区画の中で曲がり、左の区画の入口の辺へ）
  *   run_search_turn_right()       走っている → スラロームで右 90°
  *   run_search_stop_at_center()   走っている → 今入った区画の真ん中で止まる
+ *   run_search_align_to_side(左)  止まっている → 横の壁のほうへ 90° 回って前壁合わせをし、元の向きに戻って止まる
+ *                                 （横壁合わせ。横の壁が近すぎたときに sys/explore.c が使う）
  *   run_search_go_from_center()   止まっている → 前に壁があれば前壁合わせをし、その場で向きを変えて発進し、
  *                                 次の区画の入口の辺へ（U ターンは「止まる」と「後ろを向いて発進」でできている）
  *
@@ -50,6 +52,7 @@ void run_search_turn_left(void);
 void run_search_turn_right(void);
 void run_search_stop_at_center(void);
 void run_search_go_from_center(run_turn_t turn);
+void run_search_align_to_side(bool is_left);
 
 /* 最短走行（モード1 は sys/shortest.c、モード3 のターンの調整は sys/turn_test.c）の動き。
  *   run_fast_start()                                  制御とログを始める（動かない）
