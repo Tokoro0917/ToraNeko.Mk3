@@ -102,7 +102,7 @@
 
 /* ---- 吸引（drv/fan.c。2026-10-28） ---- */
 
-#define SUCTION_VOLTAGE_V 2.0f  /* 吸引ファンにかける電圧 [V]（仮。モード6 No.3 で吸い付き方を見て決める。上限は drv/fan.c の FAN_LIMIT_V） */
+#define SUCTION_VOLTAGE_V 5.0f  /* 吸引ファンにかける電圧 [V]（2026-11-02 に 2.0 → 5.0。モード6 No.3 で吸い付き方を見て決める。上限は drv/fan.c の FAN_LIMIT_V（5.0V）） */
 #define SUCTION_RAMP_MS   500   /* 0 から SUCTION_VOLTAGE_V まで上げるのにかける時間 [ms]（急に回して電池の電圧が落ちないように） */
 
 /* ---- その場旋回 ---- */
