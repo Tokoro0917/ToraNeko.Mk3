@@ -18,4 +18,15 @@ bool control_is_running(void);
 float control_get_position_error_mm(void);
 float control_get_angle_error_deg(void);
 
+/* フェイルセーフで止めたわけ（最後に止めたもの。control_start() で「なし」に戻る） */
+typedef enum {
+  CONTROL_FAILSAFE_NONE,      /* まだ止めていない */
+  CONTROL_FAILSAFE_POSITION,  /* 位置のずれが大きすぎた */
+  CONTROL_FAILSAFE_ANGLE,     /* 角度のずれが大きすぎた */
+  CONTROL_FAILSAFE_SLOW,      /* 目標の速さより、ずっと遅かった（ぶつかった。F2） */
+  CONTROL_FAILSAFE_STALL,     /* 走っているはずなのに、ほとんど進んでいなかった（壁を押し続けた。F3） */
+} control_failsafe_reason_t;
+
+control_failsafe_reason_t control_get_failsafe_reason(void);
+
 #endif /* CTRL_CONTROL_H */

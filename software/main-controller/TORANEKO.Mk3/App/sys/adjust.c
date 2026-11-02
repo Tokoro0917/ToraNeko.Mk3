@@ -200,18 +200,35 @@ static void print_move_result(void)
   }
 }
 
+/* 最後にフェイルセーフで止めたわけを出す（止めていなければ何も出さない） */
+static void print_failsafe_reason(void)
+{
+  control_failsafe_reason_t reason = control_get_failsafe_reason();
+  if (reason == CONTROL_FAILSAFE_POSITION) {
+    printf("Failsafe: position error too large\r\n");
+  } else if (reason == CONTROL_FAILSAFE_ANGLE) {
+    printf("Failsafe: angle error too large\r\n");
+  } else if (reason == CONTROL_FAILSAFE_SLOW) {
+    printf("Failsafe: much slower than target (hit something)\r\n");
+  } else if (reason == CONTROL_FAILSAFE_STALL) {
+    printf("Failsafe: not moving while running (pushing a wall)\r\n");
+  }
+}
+
 /* 最後に走らせた動きの結果と、探索の待ち時間・前壁補正の量をシリアルに出す。モード7 No.1（ログ出力）でも呼ぶ。
  * ビューア（tools/viewer.html）が 1 つのデータとして受け取って保存できるように、
  * #BEGIN RESULT と #END RESULT ではさむ。出すものがなければ何も出さない。電源を切ると消える（走行ログと同じ） */
 void adjust_print_last_result(void)
 {
   if (s_result.kind == RESULT_NONE && run_get_longest_wait_us() == 0 && run_get_front_correction_count() == 0
-      && run_get_wall_edge_count() == 0 && wall_ctrl_get_too_close_count() == 0) {
+      && run_get_wall_edge_count() == 0 && wall_ctrl_get_too_close_count() == 0
+      && control_get_failsafe_reason() == CONTROL_FAILSAFE_NONE) {
     return;
   }
   printf("\r\n#BEGIN RESULT\r\n");
   print_move_result();
   print_search_wait();
+  print_failsafe_reason();
   printf("#END RESULT\r\n");
 }
 
