@@ -21,6 +21,11 @@
  * path_make_known と同じ考え方）。曲がるところは、ふだんどおり 1 区画ずつ小回りで走る。
  * まっすぐ進む区画を数えるだけにして、経路（path_t。約 4KB）は作らない（RAM が残り少ないため）。
  *
+ * ■ 横壁合わせ（2026-11-02 に追加）
+ * 走っているとき、今入った区画で横の壁が近すぎたら（wall_ctrl_is_left_too_close() など。config/run_params.h の SIDE_*）、
+ * 動く前に、その区画のまん中で止まり、近すぎた側の壁で位置と向きを直す（run_search_align_to_side()）。
+ * 直したあとは止まっているので、次の動きは、まん中からの発進になる（行き先の決め方は変わらない）。
+ *
  * ■ Flash への保存（MODES.md の 5）
  *   - スタートに戻ったとき、片道でゴールに止まったとき
  *   - フェイルセーフで止まったとき（最後に壁を記録した 5 区画ぶんを、記録する前の状態に戻してから）
@@ -187,6 +192,28 @@ static bool try_known_straight(void)
   return true;
 }
 
+/* 横壁合わせ（先頭のコメント）：走っていて、今入った区画で横の壁が近すぎるなら、まん中で止まって、その壁で位置を直す。
+ * 止まって直したら true（このあとは止まっている） */
+static bool align_if_too_close(void)
+{
+  if (s_stopped) {
+    return false;
+  }
+  bool left_too_close = wall_ctrl_is_left_too_close();
+  bool right_too_close = false;
+  if (!left_too_close) {
+    right_too_close = wall_ctrl_is_right_too_close();
+  }
+  if (!left_too_close && !right_too_close) {
+    return false;
+  }
+  stop_here();
+  if (!failsafe_is_stopped()) {
+    run_search_align_to_side(left_too_close);
+  }
+  return true;
+}
+
 /* ---------------------------------------------------------------------------
  * 区間ごとの走り方
  * ------------------------------------------------------------------------- */
@@ -201,6 +228,9 @@ static explore_result_t run_to_target(void)
       return EXPLORE_RESULT_DONE;
     }
 
+    if (align_if_too_close() && failsafe_is_stopped()) {
+      return EXPLORE_RESULT_FAILSAFE;
+    }
     search_update_step_map();
     if (try_known_straight()) {
       if (failsafe_is_stopped()) {
@@ -304,6 +334,9 @@ static explore_result_t scan_unknown_walls(int goal_x, int goal_y, int goal_widt
       continue;
     }
 
+    if (align_if_too_close() && failsafe_is_stopped()) {
+      return EXPLORE_RESULT_FAILSAFE;
+    }
     move(action);
     if (failsafe_is_stopped()) {
       return EXPLORE_RESULT_FAILSAFE;

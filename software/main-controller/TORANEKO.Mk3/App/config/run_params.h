@@ -91,6 +91,15 @@
 #define WALL_EDGE_POSITION_MM 70.0f
 #define WALL_EDGE_WINDOW_MM   20.0f  /* WALL_EDGE_POSITION_MM からこれ以上ずれて見つかったら、読み違いとして使わない [mm] */
 
+/* ---- 探索の横壁合わせ（sys/explore.c・ctrl/run.c。2026-11-02） ----
+ * 走っていて、区画の入口で横の壁が SIDE_TOO_CLOSE_MM より近いとわかったら、その区画のまん中で止まり、
+ * 近すぎた側の壁のほうへ 90° 回って前壁合わせをし、元の向きに戻ってから探索を続ける（左右のずれと向きを直す）。 */
+
+/* 横壁合わせをするか（1 する、0 しない）。0 でも、近すぎた回数と、いちばん近かった距離は測って、モード7 No.1 で出す。
+ * 壁までの距離の表（ctrl/wall_dist.c）がまだ仮なので、表を測って入れ、出た値がおかしくないのを確かめてから 1 にする */
+#define SIDE_ALIGN_ENABLE 0
+#define SIDE_TOO_CLOSE_MM 32.0f  /* 横の壁がこれより近ければ「近すぎる」[mm]（区画のまん中で 42mm。10mm 寄っている） */
+
 /* ---- 吸引（drv/fan.c。2026-10-28） ---- */
 
 #define SUCTION_VOLTAGE_V 2.0f  /* 吸引ファンにかける電圧 [V]（仮。モード6 No.3 で吸い付き方を見て決める。上限は drv/fan.c の FAN_LIMIT_V） */

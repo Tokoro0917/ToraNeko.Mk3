@@ -26,6 +26,7 @@
  */
 #include "ctrl/wall_ctrl.h"
 
+#include "config/run_params.h"
 #include "ctrl/wall_dist.h"
 #include "drv/wall.h"
 
@@ -77,6 +78,57 @@ int32_t wall_ctrl_get_right(void)
 int32_t wall_ctrl_get_front_right(void)
 {
   return wall_get_b_minus_dark(4);
+}
+
+/* 横の壁が近すぎた記録（探索の横壁合わせ。探索を始めるたびに 0 に戻す） */
+static int s_too_close_count = 0;        /* 近すぎた回数 */
+static float s_too_close_min_mm = 0.0f;  /* いちばん近かった距離 [mm] */
+
+/* 横の壁があって、その距離 distance_mm が SIDE_TOO_CLOSE_MM より近いか。近ければ記録する。
+ * SIDE_ALIGN_ENABLE が 0 なら、記録だけして false を返す（探索は止まらない） */
+static bool check_too_close(bool has_wall, float distance_mm)
+{
+  if (!has_wall || distance_mm >= SIDE_TOO_CLOSE_MM) {
+    return false;
+  }
+  if (s_too_close_count == 0 || distance_mm < s_too_close_min_mm) {
+    s_too_close_min_mm = distance_mm;
+  }
+  s_too_close_count = s_too_close_count + 1;
+  if (SIDE_ALIGN_ENABLE == 0) {
+    return false;
+  }
+  return true;
+}
+
+/* 左の壁が近すぎるか（区画の入口で呼ぶ。探索の横壁合わせ） */
+bool wall_ctrl_is_left_too_close(void)
+{
+  return check_too_close(wall_ctrl_has_wall_left(), wall_ctrl_get_left_mm());
+}
+
+/* 右の壁が近すぎるか */
+bool wall_ctrl_is_right_too_close(void)
+{
+  return check_too_close(wall_ctrl_has_wall_right(), wall_ctrl_get_right_mm());
+}
+
+/* 横の壁が近すぎた記録を 0 に戻す（探索を始めるときに呼ぶ） */
+void wall_ctrl_clear_too_close(void)
+{
+  s_too_close_count = 0;
+  s_too_close_min_mm = 0.0f;
+}
+
+/* 横の壁が近すぎた回数と、いちばん近かった距離 [mm]（モード7 No.1 で出す） */
+int wall_ctrl_get_too_close_count(void)
+{
+  return s_too_close_count;
+}
+
+float wall_ctrl_get_too_close_min_mm(void)
+{
+  return s_too_close_min_mm;
 }
 
 /* 前の壁までの距離 [mm]（左前と右前の平均。区画のまん中で 42mm） */
