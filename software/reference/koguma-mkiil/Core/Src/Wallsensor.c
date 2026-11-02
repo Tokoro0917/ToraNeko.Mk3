@@ -42,6 +42,17 @@ float Kd_FW = 0.0;
 float Kp_FW_dire = 0.1;
 float Kd_FW_dire = 0.0;
 
+/* 止まったときの前壁合わせを距離で行う(2026-10-20)。0 にすると今までどおり前センサの生の値で合わせる。
+ * 生の値では、前後は左右の平均が FlontWall_Distance(636)、向きは左右の差が0になるように合わせていたが、
+ * 左右のセンサの感度の差(表で区画中心が左645・右627、会場の倍率 WallDist_Scale)がそのまま向きと位置のずれになっていた。
+ * 距離では、感度合わせした左右の距離(WallDist_mm)で、前後は平均が Align_Front_mm、向きは左右の差が0になるように合わせる。
+ * ゲインは、区画中心の近くで生の値と同じ効きになるように換算した(表で84mm付近は1mmで約18) */
+int Align_Use_mm = 1;
+float Align_Front_mm = WALLDIST_CENTER_MM;	//前壁までの目標[mm](区画中心)
+float Kp_FW_mm = 1.8f;		//前後[PWM/mm](= Kp_FW × 18)
+float Kp_FW_dire_mm = 1.8f;	//向き[PWM/mm](= Kp_FW_dire × 18)
+float Align_Err_Max_mm = 20;	//前後の誤差をこれで頭打ちにする[mm]
+
 float KP, KD;
 
 /* 区画中心(壁まで84mm)での横センサの値。2026-10-06の実測の表(WallDistance.c)から
@@ -122,6 +133,21 @@ int Sensor_Start() {
 	}
 	Buzzer_Start();
 
+}
+
+/* 前壁を左右の平均でも見る(2026-10-19、docs/search_stability_research.md)。迷路には左右とも閾値を超えたときだけ前壁を書くが、
+ * 同じ判断位置で前距離を決める front_wall(motor.c の Motor_Sula_before)は左右の平均で見ている。
+ * 左右とも超えたとき、または左右の平均が閾値の平均を超え、低いほうも閾値の Front_Wall_Min_Ratio 倍を超えたときに1
+ * (片方だけが柱などを強く見ているときは除く)。motor.c の Front_Wall_Map が 2 のときだけ迷路に使う */
+float Front_Wall_Min_Ratio = 0.33f;
+int Wall_Front_For_Map(void) {
+	float fl = g_sensor_av10[0], fr = g_sensor_av10[3];
+	if (fl > Wall_threshold[0] && fr > Wall_threshold[3]) {
+		return 1;
+	}
+	float th = (Wall_threshold[0] + Wall_threshold[3]) * 0.5f;
+	float lo = (fl < fr) ? fl : fr;
+	return ((fl + fr) * 0.5f > th && lo > th * Front_Wall_Min_Ratio);
 }
 
 float Wall_Flont_Av() {
@@ -266,9 +292,18 @@ float Edge_Lag_S = 0.0012f;	//中央値(約1ms)とLPF(約0.2ms)の遅れ[s]。�
 float Edge_Max_W = 150;		//角速度がこれを超えたら(ターン中など)履歴を空にする[deg/s]
 /* 端の位置から境目までの距離[mm]。[0: 右 / 1: 左][EDGE_KIND_WALL / EDGE_KIND_PILLAR]。
  * センサが区画中心で柱の真ん中を見る向きなので、下がる端は境目の約84mm手前で見える(PCのモデルで約84)。
- * モード3 No.6〜9 の c-border が0になるように実測で直す */
-float Edge_Off[2][2] = { { 84, 84 }, { 84, 84 } };
-float Edge_Tan = 1.07f;		//横のずれ1mmで、見える位置が何mm変わるか(90/84。横にずらして置いて実測で直す)
+ * モード3 No.6〜9 の c-border が0になるように実測で直す。
+ * 2026-10-18 の実測(1000・2000・2400 を2回ずつ、logs/20261018-16*_edge_*.txt)から、速度0に戻した値。
+ * 84 のままだと、境目を 1000mm/s で約6〜20mm、2000mm/s で約12〜28mm 手前に推定していた */
+float Edge_Off[2][2] = { { 99.0f, 94.5f }, { 87.0f, 96.0f } };
+/* 速度の補正[mm/(mm/s)]。速いほど境目を手前に推定していた(1000mm/s 速くなるごとに約6mm。
+ * 左右・種類どれも同じ傾き。原因は分かっていない)ので、c にこの値 × 速度 を足す。
+ * 1000〜2400 で、補正したあとの残りのばらつきは約1mm(標準偏差) */
+float Edge_V_K = 0.0060f;
+/* 横のずれ1mmで、見える位置が何mm変わるか。CAD(2026-10-18、docs/pillar_cut_design.md の 2.)では、
+ * 横センサは反対側に付いて交差し、真横から前へ30°の向きなので tan30° = 0.58(以前は 90/84 = 1.07 と仮定していた)。
+ * 横にずらして置いて実測で確かめる */
+float Edge_Tan = 0.58f;
 float Edge_Pair_Tol = 15;	//左右の推定がこれ以内なら平均する[mm]
 
 #define EDGE_Q 4	//左右それぞれ、最後の何個の推定を残すか
@@ -296,6 +331,7 @@ static int Edge_Log_Th = 0;	//閾値の判定(従来・中央値)も残すか
 static float Edge_Log_X0 = 0;
 static float Edge_Log_Border = -1;	//区画の境目(Edge_Log_Border + 180k)。-1 は最短走行のログ
 static float Edge_Log_Speed = -1;	//テストの速度。-1 は最短走行のログ
+static int Edge_Log_Pillar = 0;	//ログを始めたときの G_WallCut_Pillar(出力するときには0に戻っているため)
 static int Edge_Th_Arm[2][2];
 /* 壁切れのテスト(モード3 No.6〜9)のときだけ、横センサの値(3回の中央値)を1mmごとに残す。
  * ビューアで「センサ値と距離」のグラフにし、柱のところで値がどう下がるかを見る */
@@ -338,7 +374,7 @@ void Wall_Edge_Sample() {
 					&& d_other <= 120) {
 				r.d_eff = 2 * WALLDIST_CENTER_MM - d_other;
 			}
-			r.c = r.ev.x + Edge_Off[s][r.ev.kind];
+			r.c = r.ev.x + Edge_Off[s][r.ev.kind] + Edge_V_K * v_robot;
 			if (r.d_eff >= 0) {
 				r.c += (r.d_eff - WALLDIST_CENTER_MM) * Edge_Tan;
 			}
@@ -372,11 +408,12 @@ void Wall_Edge_Sample() {
 	}
 }
 
-int Edge_Cut_Find(float lo, float hi, float *c, int *src) {
+int Edge_Cut_Find(float lo, float hi, int sides, float *c, int *src) {
 	int have[2] = { 0, 0 };
 	float cs[2] = { 0, 0 }, hs[2] = { 0, 0 };
 	float mask_x = Edge_Mask_X;
 	for (int s = 0; s < 2; s++) {
+		if (!(sides & (s == 0 ? EDGE_SRC_R : EDGE_SRC_L))) continue;
 		/* 割り込み(Wall_Edge_Sample)が書き足すあいだに読んだら、読み直す(割り込みは止めない) */
 		unsigned n;
 		do {
@@ -400,11 +437,48 @@ int Edge_Cut_Find(float lo, float hi, float *c, int *src) {
 	return sr != 0;
 }
 
+int Edge_Last(int sides, float *since, float *c, int *kind) {
+	float mask_x = Edge_Mask_X;
+	int side = 0;
+	float bx = 0, bc = 0;
+	int bk = 0;
+	for (int s = 0; s < 2; s++) {
+		if (!(sides & (s == 0 ? EDGE_SRC_R : EDGE_SRC_L))) continue;
+		/* 割り込み(Wall_Edge_Sample)が書き足すあいだに読んだら、読み直す(割り込みは止めない) */
+		unsigned n;
+		float x = 0, cc = 0;
+		int k = 0;
+		do {
+			n = Edge_Count[s];
+			if (n == 0) break;
+			const volatile EdgeRec *r = &Edge_Rec[s][(n - 1) % EDGE_Q];
+			x = r->ev.x;
+			cc = r->c;
+			k = r->ev.kind;
+		} while (n != Edge_Count[s]);
+		/* ターンをはさんだ端は、まっすぐ進んだ距離にならないので返さない */
+		if (n == 0 || x < mask_x) continue;
+		if (!side || x > bx) {
+			side = (s == 0) ? EDGE_SRC_R : EDGE_SRC_L;
+			bx = x;
+			bc = cc;
+			bk = k;
+		}
+	}
+	if (side) {
+		if (since) *since = G_Odo_X - bx;
+		if (c) *c = bc;
+		if (kind) *kind = bk;
+	}
+	return side;
+}
+
 /* with_thresholds: 閾値の判定と1mmごとのセンサ値も残す(テスト)。border / speed: テストの区画の境目と速度(最短走行は -1) */
 void Edge_Log_Start(int with_thresholds, float border, float speed) {
 	Edge_Log_On = 0;
 	Edge_Log_Border = border;
 	Edge_Log_Speed = speed;
+	Edge_Log_Pillar = G_WallCut_Pillar;
 	Edge_Log_Count = 0;
 	Edge_Log_X0 = G_Odo_X;
 	Edge_Log_Th = with_thresholds;
@@ -451,9 +525,9 @@ void Edge_Log_Print() {
 	static const char *side_name[2] = { "R", "L" };
 	static const char *kind_name[2] = { "wall", "pillar" };
 	/* tools/viewer.html で読む。border は区画の境目(first_border + 180k)、v はテストの速度(-1 は最短走行のログ) */
-	printf("\r\n#BEGIN EDGE border=%.0f v=%.0f off_r_wall=%.1f off_r_pillar=%.1f off_l_wall=%.1f off_l_pillar=%.1f tan=%.2f min_high=%.0f high_len=%.0f pillar=%d fast=%d cut_l=%.0f cut_r=%.0f\r\n",
-			first_border, speed, Edge_Off[0][0], Edge_Off[0][1], Edge_Off[1][0], Edge_Off[1][1], Edge_Tan,
-			Edge_Min_High, Edge_High_Len, G_WallCut_Pillar, G_WallCut_Fast, Cut_L, Cut_R);
+	printf("\r\n#BEGIN EDGE border=%.0f v=%.0f off_r_wall=%.1f off_r_pillar=%.1f off_l_wall=%.1f off_l_pillar=%.1f tan=%.2f vk=%.4f min_high=%.0f high_len=%.0f pillar=%d fast=%d cut_l=%.0f cut_r=%.0f\r\n",
+			first_border, speed, Edge_Off[0][0], Edge_Off[0][1], Edge_Off[1][0], Edge_Off[1][1], Edge_Tan, Edge_V_K,
+			Edge_Min_High, Edge_High_Len, Edge_Log_Pillar, G_WallCut_Fast, Cut_L, Cut_R);
 	for (int n = 0; n < Edge_Log_Count; n++) {
 		const EdgeLogRec *r = &Edge_Log[n];
 		float x = r->x - Edge_Log_X0;
@@ -475,7 +549,8 @@ void Edge_Log_Print() {
 			}
 			break;
 		case EDGE_LOG_ST:
-			printf("st,%s,%.1f,%.0f", side_name[r->info ? 1 : 0], x, r->a);
+			/* info は曲がる向き(0 左、1 右)。2026-10-18 まではここが逆(左ターンを R)と出ていた */
+			printf("st,%s,%.1f,%.0f", r->info ? "R" : "L", x, r->a);
 			break;
 		case EDGE_LOG_ST_CUT:
 			printf("st_cut,%d,%.1f,%.1f", r->info, x, (r->info & 0x13) ? r->a - Edge_Log_X0 : -1.0f);
@@ -663,6 +738,14 @@ float calWallConrol_NANAME() {
 float calWallConrol_Flontwall_ST() {
 	float PID_Wall = 0;
 
+	if (Align_Use_mm) {
+		float fl = WallDist_mm(WALLDIST_FL, g_sensor[0][0]);
+		float fr = WallDist_mm(WALLDIST_FR, g_sensor[3][0]);
+		float e = (fl + fr) * 0.5f - Align_Front_mm;	//正なら遠い(前へ)
+		if (e > Align_Err_Max_mm) e = Align_Err_Max_mm;
+		if (e < -Align_Err_Max_mm) e = -Align_Err_Max_mm;
+		return Kp_FW_mm * e;
+	}
 	if (Wall_Flont_Av() > 1000) {
 		Wall_error_FW = FlontWall_Distance - 1000;
 	} else {
@@ -679,6 +762,11 @@ float calWallConrol_Flontwall_ST() {
 float calWallConrol_Flontwall_Turn() {
 	float PID_Wall = 0;
 
+	if (Align_Use_mm) {
+		float fl = WallDist_mm(WALLDIST_FL, g_sensor[0][0]);
+		float fr = WallDist_mm(WALLDIST_FR, g_sensor[3][0]);
+		return Kp_FW_dire_mm * (fr - fl);	//正なら左が近い(左へ回る。生の値の 左 - 右 と同じ向き)
+	}
 	Wall_error_FW = (g_sensor[0][0]) - (g_sensor[3][0]);
 
 	Wall_Delta_error_FW = Wall_error_FW - Wall_old_error_FW;

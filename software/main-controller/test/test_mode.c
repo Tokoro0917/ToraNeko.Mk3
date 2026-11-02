@@ -130,6 +130,13 @@ static void press_switch_at(uint32_t time_ms)
   add_event(time_ms + 100, INPUT_SWITCH, 0);
 }
 
+/* time_ms にスイッチを押し、duration_ms のあいだ押し続けてから離す */
+static void hold_switch_at(uint32_t time_ms, uint32_t duration_ms)
+{
+  add_event(time_ms, INPUT_SWITCH, 1);
+  add_event(time_ms + duration_ms, INPUT_SWITCH, 0);
+}
+
 static void hand_at(uint32_t time_ms, uint32_t duration_ms)
 {
   add_event(time_ms, INPUT_HAND, 1);
@@ -704,6 +711,23 @@ static void test_explore_known(void)
   check(mode_has_action(1, 4) && mode_has_action(1, 5) && !mode_has_action(1, 6), "モード1 は No.1〜5 を決定できる");
 }
 
+/* スタート待ちでスイッチを 1 秒以上押し続けると、手をかざさなくても始まる（前に壁があって、手が使えないとき） */
+static void test_long_press_start(void)
+{
+  printf("[5] スタート待ちでスイッチを押し続けると、手をかざさなくても始まる\n");
+  reset_world();
+  mode_init();
+
+  rotate_right_at(100, 2);     /* No.2（片道） */
+  press_switch_at(500);        /* 決定 */
+  hold_switch_at(1500, 1500);  /* スタート待ちで 1.5 秒押し続けて、3000ms に離す */
+  mode_run_once();
+
+  check(s_explore_count == 1 && s_explore_type == EXPLORE_ONE_WAY, "押し続けると、選んだモードで走る");
+  check(s_explore_time_ms >= 3000 + 1000, "スイッチを離してから 1 秒たってから走り出す");
+  check_leds_at(2700, "1111111", "押し続けて 1 秒たったら、離すまで全部点ける");
+}
+
 /* No.0 では決定しない。そのあと No.3 にすると、未知壁探索で走る */
 static void test_number_zero(void)
 {
@@ -1186,6 +1210,7 @@ int main(void)
   test_explore_known();
   test_wrap();
   test_reselect();
+  test_long_press_start();
   test_hand_debounce();
   test_failsafe();
   test_no_route();

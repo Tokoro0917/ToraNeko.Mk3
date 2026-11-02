@@ -24,7 +24,7 @@
 #define MAX_STEP (MAZE_SIZE * MAZE_SIZE)
 
 
-#define TIREDIAMETER 23.1 //23.5mm
+#define TIREDIAMETER 23.42 //2026-10-21 モード4 No.1(吸引35)で実測。1080mm 指示でエンコーダ 1065.1mm、実際 1080mm。前は 23.1(10-09、吸引70、指示の距離で割っていた)
 #define TIREBETWEEN 55
 #define PI 3.1415
 #define LIMITBATT 15.6
@@ -56,11 +56,19 @@
 #define DIAG_COST 3
 #define CON_COST 2
 
-/* ダイクストラの「未到達(=無限大)」センチネル。最短路はノードを再訪しないので、
- * 実際のコストは「ノード総数 × 最大辺コスト」を超えない。それより確実に大きい値にする。
- * 999固定だと32x32で実コストがこれを超えて「無限大のまま更新されない」バグになるため
- * MAZE_SIZEに追従させる (16x16なら2890、32x32なら10890) */
-#define DIJK_MAXCOST (ST_COST * 2 * (MAZE_SIZE + 1) * (MAZE_SIZE + 1))
+/* ダイクストラのコストを最短走行の時間にしたとき(G_Dijk_Time_Cost)の単位: 1秒あたり(2000 なら 0.5ms) */
+#define DIJK_COST_PER_S 2000
+
+/* ダイクストラの「未到達(=無限大)」センチネル。これより大きくなる経路は「行けない」扱い。
+ * 以前は ST_COST * 2 * (MAZE_SIZE+1)^2 (16x16なら2890)だったが、走行時間の表(0.5ms単位)では
+ * 16x16の普通の経路でも 6000 前後になるので、コスト(uint16_t)の上限近くにした(32.5秒)。
+ * 16x16では、1区画あたり多くても約210(1歩の区間の縦横)なので、256区画を通っても約54000で届かない。
+ * 32x32(PCの検証用)は経路が長く届くことがあるので、コストを uint32_t にする(Maze.c) */
+#if MAZE_SIZE > 16
+#define DIJK_MAXCOST 2000000000
+#else
+#define DIJK_MAXCOST 65000
+#endif
 #define DIJK_WALLCOST (DIJK_MAXCOST + 1)
 
 #endif /* INC_DEFINE_H_ */

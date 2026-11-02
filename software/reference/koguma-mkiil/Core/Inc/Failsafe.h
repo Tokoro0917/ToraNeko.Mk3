@@ -12,4 +12,5 @@ int Failsafe_Flag();
 void Failsafe_Motordiff();
 void Failsafe_interrupt();
 void Failsafe_MotorTagetdiff();
+void Failsafe_Wait_Reset();
 #endif /* INC_FAILSAFE_H_ */

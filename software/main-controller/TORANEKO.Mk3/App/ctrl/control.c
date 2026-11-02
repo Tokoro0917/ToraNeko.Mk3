@@ -16,7 +16,10 @@
  *   4. 左 = 前に進む分 − 向きの分、右 = 前に進む分 + 向きの分 をモーターにかける
  *      （左回りが + なので、左に向けたいときは右を速く、左を遅くする）
  *   5. 走行ログに 1 行渡す（sys/log.c が、決めた間隔ごとに残す）
- *   6. 位置か角度のずれが大きすぎたら、フェイルセーフで止める
+ *   6. 次のどれかなら、フェイルセーフで止める（止めたわけは control_get_failsafe_reason()）
+ *      - 位置か角度のずれが大きすぎる（すぐに止める）
+ *      - 目標の速さより、ずっと遅い（ぶつかった）、または、走っているはずなのにほとんど進んでいない（壁を押している）。
+ *        この 2 つは、FAILSAFE_HOLD_MS 続いたら止める（KOGUMA_PORTING.md の F2〜F4）
  * 係数は config/ctrl_gains.h にある。
  *
  * ■ 前壁合わせ（control_set_front_align(true) のあいだ）
@@ -70,6 +73,12 @@ static volatile float s_wall_error = 0.0f;          /* 横の壁からのずれ�
 static volatile float s_wall_error_rate = 0.0f;     /* ずれの変わる速さ [1/s] */
 static volatile float s_wall_omega_deg_s = 0.0f;    /* 補正で曲げた角速度（ログ用） */
 static volatile int s_wall_used = 0;                /* 使った壁（ログ用） */
+static volatile int s_slow_ticks = 0;               /* 「目標よりずっと遅い」が続いた制御周期の数 */
+static volatile int s_stall_ticks = 0;              /* 「ほとんど進んでいない」が続いた制御周期の数 */
+static volatile control_failsafe_reason_t s_failsafe_reason = CONTROL_FAILSAFE_NONE;  /* 最後に止めたわけ */
+
+/* FAILSAFE_HOLD_MS を、制御周期の数にしたもの */
+#define FAILSAFE_HOLD_TICKS (FAILSAFE_HOLD_MS * CTRL_FREQ_HZ / 1000)
 
 #define WALL_FILTER_RATIO 0.05f  /* ずれのゆれを減らす割合（1 周期で新しい値に 5% 近づける。約 10ms で落ち着く） */
 
@@ -81,6 +90,9 @@ void control_start(void)
   s_position_error_mm = 0.0f;
   s_angle_error_deg = 0.0f;
   s_start_angle_deg = imu_get_angle_deg();
+  s_slow_ticks = 0;
+  s_stall_ticks = 0;
+  s_failsafe_reason = CONTROL_FAILSAFE_NONE;
   s_running = true;   /* 最後に、動いているにする */
 }
 
@@ -303,16 +315,71 @@ static void record_log(void)
   log_record(values);
 }
 
-/* 位置か角度のずれが大きすぎたら true（ぶつかった、モーターの向きが逆、など） */
-static bool error_too_large(void)
+/* condition が続いた制御周期の数を数える（当てはまらなければ 0 に戻す）。FAILSAFE_HOLD_TICKS に届いたら true */
+static bool held_long_enough(bool condition, volatile int *ticks)
 {
-  if (s_position_error_mm > POSITION_ERROR_LIMIT_MM || s_position_error_mm < -POSITION_ERROR_LIMIT_MM) {
-    return true;
+  /* ticks は「数を入れておく変数の場所」。2 つの異常で、同じ数え方を使い回すため */
+  if (!condition) {
+    *ticks = 0;
+    return false;
   }
-  if (s_angle_error_deg > ANGLE_ERROR_LIMIT_DEG || s_angle_error_deg < -ANGLE_ERROR_LIMIT_DEG) {
+  *ticks = *ticks + 1;
+  if (*ticks >= FAILSAFE_HOLD_TICKS) {
     return true;
   }
   return false;
+}
+
+/* 目標の速さより、測った速さがずっと遅いか（F2。ぶつかった） */
+static bool is_much_slower(void)
+{
+  float drop_mm_s = target_speed_mm_s() - odometry_get_speed_mm_s();
+  if (drop_mm_s > SPEED_DROP_LIMIT_MM_S) {
+    return true;
+  }
+  return false;
+}
+
+/* 加速も減速もせずに走っているはずなのに、ほとんど進んでいないか（F3。壁を押し続けている） */
+static bool is_stalled(void)
+{
+  if (target_accel_mm_s2() != 0.0f) {
+    return false;  /* 速くしている・遅くしているところは、遅れて当たり前なので見ない */
+  }
+  if (target_speed_mm_s() < STALL_TARGET_MIN_MM_S) {
+    return false;
+  }
+  if (odometry_get_speed_mm_s() < STALL_SPEED_MAX_MM_S) {
+    return true;
+  }
+  return false;
+}
+
+/* 止めるわけがあれば、そのわけを返す（なければ CONTROL_FAILSAFE_NONE）。制御周期ごとに 1 回呼ぶ */
+static control_failsafe_reason_t find_failsafe_reason(void)
+{
+  if (s_position_error_mm > POSITION_ERROR_LIMIT_MM || s_position_error_mm < -POSITION_ERROR_LIMIT_MM) {
+    return CONTROL_FAILSAFE_POSITION;
+  }
+  if (s_angle_error_deg > ANGLE_ERROR_LIMIT_DEG || s_angle_error_deg < -ANGLE_ERROR_LIMIT_DEG) {
+    return CONTROL_FAILSAFE_ANGLE;
+  }
+  /* 2 つとも毎回数える（片方が当てはまっても、もう片方の数を続けて数えるため） */
+  bool slow = held_long_enough(is_much_slower(), &s_slow_ticks);
+  bool stalled = held_long_enough(is_stalled(), &s_stall_ticks);
+  if (slow) {
+    return CONTROL_FAILSAFE_SLOW;
+  }
+  if (stalled) {
+    return CONTROL_FAILSAFE_STALL;
+  }
+  return CONTROL_FAILSAFE_NONE;
+}
+
+/* 最後にフェイルセーフで止めたわけ（モード7 No.1 で出す） */
+control_failsafe_reason_t control_get_failsafe_reason(void)
+{
+  return s_failsafe_reason;
 }
 
 /* 制御周期ごとに呼ぶ（流れは先頭のコメント）。制御の途中でなければ何もしない */
@@ -338,7 +405,9 @@ void control_update(void)
   motor_set_voltage(s_left_voltage_v, s_right_voltage_v);
   record_log();
 
-  if (error_too_large()) {
+  control_failsafe_reason_t reason = find_failsafe_reason();
+  if (reason != CONTROL_FAILSAFE_NONE) {
+    s_failsafe_reason = reason;
     s_running = false;
     failsafe_stop();  /* モーターを止めて、フェイルセーフで止まった状態にする */
   }

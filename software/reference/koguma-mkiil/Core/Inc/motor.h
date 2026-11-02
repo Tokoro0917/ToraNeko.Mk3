@@ -83,4 +83,11 @@ void Motor_Wallcut_END_NANAME_Accel(float Vst, float Vmax, float Ac, float X, in
 
 void Motor_trapezoid_Turn(float, float, float);
 
+/* 探索の1区画の直進で、柱の端から次の境目を推定して残りの距離を直す(motor.c) */
+extern int Search_WallCut;
+void Motor_Search_Straight(float V, float X);
+void Search_Cut_Reset(void);
+int Search_Cut_Has_Data(void);
+void Search_Cut_Print(void);
+
 #endif /* INC_MOTOR_H_ */

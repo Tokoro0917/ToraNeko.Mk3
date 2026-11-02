@@ -20,9 +20,10 @@
 #include "PL_sensor.h"
 #include "Wallsensor.h"
 
-#define LOG_MAX 2000
+/* 2026-10-27 に 2000 → 1600(ダイクストラの状態を3倍にしたぶんの RAM、約14KB をここから空けた) */
+#define LOG_MAX 1600
 
-/* 何回に1回残すか(1: 1msおき・2秒、4: 4msおき・8秒)。LOG_get_start の前に決める */
+/* 何回に1回残すか(1: 1msおき・1.6秒、4: 4msおき・6.4秒)。LOG_get_start の前に決める */
 int G_Log_Div = 1;
 
 /* 列ごとの単位(int16 に入れる前に掛ける値) */

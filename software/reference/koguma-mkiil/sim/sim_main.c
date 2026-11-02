@@ -218,7 +218,8 @@ static void run_to_cell(const char *scenario, const char *phase, int dest_x,
 static int run_until_wall_known(const char *scenario, const char *phase) {
 	G_Just_UTurned = 0;
 	int sub_steps = 0;
-	while ((Maze_Unknown_Wall_Still_Unknown() == 1) && (sub_steps < MAX_STEP)) {
+	while ((Maze_Unknown_Wall_Still_Unknown() == 1) && (sub_steps < MAX_STEP)
+			&& (G_Unknown_Target_Lost == 0)) {
 		sim_step();
 		G_MAZE_Explored[G_Robot_MAZE_X][G_Robot_MAZE_Y] = 1;
 		emit_trace(scenario, phase);
@@ -231,7 +232,8 @@ static int run_until_wall_known(const char *scenario, const char *phase) {
 			&& Maze_Unknown_Wall_Is_Wall()) {
 		return 1;	/* 壁があって経路がふさがれた: main.cと同じく計算し直す */
 	}
-	return (G_Just_UTurned == 1) || (sub_steps >= MAX_STEP);
+	/* 見に行く途中で目標の区画に行けなくなった(2026-10-27): main.c と同じく計算し直す */
+	return (G_Just_UTurned == 1) || (sub_steps >= MAX_STEP) || G_Unknown_Target_Lost;
 }
 
 /* ---- シナリオA: エセ全面探索 (main.c モード0 No.2 相当) ---- */
@@ -284,6 +286,7 @@ static void run_scenario_b(void) {
 	run_to_cell("B", "outbound", SIM_GOAL_X, SIM_GOAL_Y);
 
 	int need_recompute = 1;
+	int cur_set = 0;	/* 今見に行っている経路の、最短走行の値の組(main.c の s_unknown_set) */
 	long guard = 0;
 	for (;;) {
 		if (guard++ > MAX_STEP) {
@@ -291,14 +294,33 @@ static void run_scenario_b(void) {
 			exit(1);
 		}
 
+		int found = 0;
 		if (need_recompute == 1) {
+			/* main.c の Maze_Unknown_Walls_Plan と同じ: 組ごとに経路を求め、未確認の壁が残っている最初の組を見に行く */
 			G_Gool_X = SIM_GOAL_X;
 			G_Gool_Y = SIM_GOAL_Y;
-			Maze_Dijkstra_Calculation();
+			for (int k = 0; k < SHORT_RUN_SET_NUM && !found; k++) {
+				Maze_Dijkstra_Set_Run(&G_Short_Run_Set[k]);
+				Maze_Dijkstra_Calculation();
+				if (Maze_Unknown_Wall_Scan() == 1) {
+					found = 1;
+					cur_set = k;
+				}
+			}
 			need_recompute = 0;
+		} else {
+			found = Maze_Unknown_Wall_Scan();
+			if (found == 2) {
+				/* 経路の壁のどれかが「壁あり」とわかった: main.c と同じく計算し直す(2026-10-27) */
+				need_recompute = 1;
+				continue;
+			}
+			if (found == 0 && cur_set < SHORT_RUN_SET_NUM - 1) {
+				/* この組の経路は全部見た。うしろの組は求め直す(main.c では止まって計算する) */
+				need_recompute = 1;
+				continue;
+			}
 		}
-
-		int found = Maze_Unknown_Wall_Scan();
 		if (found == 0) {
 			break;
 		}

@@ -21,11 +21,11 @@ jobs:
       - name: 行き止まり潰しの検証 (16x16)
         run: |
           gcc -std=c11 -Wall -I Core/Inc -o test_deadend \
-            test/test_deadend.c Core/Src/Maze.c
+            test/test_deadend.c Core/Src/Maze.c Core/Src/ShortParam.c -lm
           ./test_deadend
 
       - name: 行き止まり潰しの検証 (32x32)
         run: |
           gcc -std=c11 -Wall -DMAZE_SIZE=32 -I Core/Inc -o test_deadend32 \
-            test/test_deadend.c Core/Src/Maze.c
+            test/test_deadend.c Core/Src/Maze.c Core/Src/ShortParam.c -lm
           ./test_deadend32

@@ -224,12 +224,12 @@ void TIM6_DAC_IRQHandler(void)
 		Failsafe_interrupt();
 		if (Failsafe_Flag() == 1) {
 			LED_ALL_ON();
-			Motor_Free();
-			if (Sensor_Enter() == 1) {
-				Failsafe_Flag_OFF();
-
-			}
 		}
+	}
+	/* フェイルセーフで止まったら、解除されるまでモーターと吸引を止め続ける(2026-10-27、ToraNeko.Mk3 と同じ)。
+	 * 解除はここではせず、走りを抜けたあとに main の Failsafe_Wait_Reset() で、スイッチを押したとき */
+	if (Failsafe_Flag() == 1) {
+		Motor_Free();
 	}
 
 	pl_timer_count();

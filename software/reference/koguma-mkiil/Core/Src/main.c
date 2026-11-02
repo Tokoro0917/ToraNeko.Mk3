@@ -59,6 +59,9 @@
 #define SEARCH_KNOWN		0x08	//既知区間加速(探索済みの区間はまとめて速く走る)
 #define SEARCH_DIJKSTRA		0x10	//ゴール後にダイクストラ経路上の未確認の壁を見に行く
 #define SEARCH_SHORTEST		0x20	//スタートに戻ったあと最短走行(モード1 No.5と同じ)
+#define SEARCH_REPEAT		0x40	//最短走行を SEARCH_REPEAT_N 回(SEARCH_SHORTEST と一緒に。2回目からは、前の最短のゴールからスタートへ帰ってから走る)
+#define SEARCH_REPEAT_N		4
+#define SEARCH_KNOWN_NANAME	0x80	//既知区間を斜めで走る(SEARCH_KNOWN と一緒に。Move.c の G_Known_Naname、G_Turn1000)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -71,8 +74,9 @@
 /* USER CODE BEGIN PV */
 /* 1 にすると、最短走行(モード1、モード0 No.8〜10 の探索後の最短)の壁切れを柱で見る
  * (区画の境目の柱の端から境目の位置を求め、前距離を直す。motor.c の G_WallCut_Pillar、
- * 設計は docs/pillar_cut_design.md)。0 なら従来どおり。探索中と斜めの壁切れはいつも従来どおり */
-static int Short_WallCut_Pillar = 0;
+ * 設計は docs/pillar_cut_design.md)。0 なら従来どおり。探索中と斜めの壁切れはいつも従来どおり。
+ * 2026-10-18 から 1(柱で前距離を合わせる。前距離の X の読み替えは motor.c の Pillar_X_Scale / Pillar_X_Ofs) */
+static int Short_WallCut_Pillar = 1;
 
 /* USER CODE END PV */
 
@@ -131,6 +135,7 @@ int main(void) {
 	//HAL_TIM_Base_Start_IT(&htim6);
 	pl_timer_init();
 	lsm6dsr_init();
+	Switch_Init();	//スイッチ(PB3)。フェイルセーフの解除に使う
 	Maze_Initialization();
 	if (g_V_batt < LIMITBATT) {
 		while (1) {
@@ -157,13 +162,16 @@ int main(void) {
 
 		/* USER CODE BEGIN 3 */
 
+		if (Failsafe_Flag() == 1) {	//走りの途中でフェイルセーフで止まった: スイッチを押すまで待ち、モード0・No.0 に戻る
+			Failsafe_Wait_Reset();
+		}
 		LED_program_number(Encorder_number_out());
 		LED_program_mode(Encorder_mode_out());
 		Maze_Unkown_ALL_ModeOFF();
 		Motor_Setup_Voltage();
 		if (Encorder_mode_out() == 0) {		//大会用
 			/* 探索の組み合わせは Maze_Search() の引数で指定する(下の SEARCH_*)。
-			 * No.0 と No.11〜15 は何もしない */
+			 * No.0 と No.13〜15 は何もしない */
 			int n = Encorder_number_out();
 			int flags = -1;
 			if (n == 1) {			//スラローム探索 往復
@@ -187,15 +195,23 @@ int main(void) {
 			} else if (n == 10) {	//ダイクストラ誘導+既知区間加速 → 最短
 				flags = SEARCH_SUCTION | SEARCH_DIJKSTRA | SEARCH_KNOWN
 						| SEARCH_SHORTEST;
+			} else if (n == 11) {	//No.10 の最短を4回(最短のあとはゴールから、帰りもダイクストラ誘導で探索しながらスタートへ帰る)
+				flags = SEARCH_SUCTION | SEARCH_DIJKSTRA | SEARCH_KNOWN
+						| SEARCH_SHORTEST | SEARCH_REPEAT;
+			} else if (n == 12) {	//No.10 の既知区間を斜めで走る(お遊び。G_Turn1000、2026-10-21)
+				flags = SEARCH_SUCTION | SEARCH_DIJKSTRA | SEARCH_KNOWN
+						| SEARCH_KNOWN_NANAME | SEARCH_SHORTEST;
 			}
 			if ((flags >= 0) && (Sensor_Enter() == 1)) {
 				Maze_Search(flags);
 			}
 		} else if (Encorder_mode_out() == 1) {		//�?短
-			/* 最短走行。No.0 と No.12〜15 は何もしない */
+			/* 最短走行。No.0 と No.14〜15 は何もしない。
+			 * No.12・No.13 は No.8・No.5 と同じ走りを、壁切れだけ従来(Short_WallCut_Pillar = 0)で走る(柱と比べる用) */
 			int n = Encorder_number_out();
 			void (*run)(int, int) = NULL;
 			int ac = 0;
+			int conv = 0;	//1 なら壁切れを従来にする
 			int ac_nn = 0;	//斜めの直線の加速度(0 なら既定: ac-5000)
 			if (n == 1) {			//BFS コーナー2000 直線6000 加速15000
 				run = Short_NANAME_Move2000;
@@ -241,11 +257,26 @@ int main(void) {
 				run = Short_Dijkstra_MoveTurnV;
 				ac = 20000;
 				ac_nn = 15000;
+			} else if (n == 12) {	//No.8 と同じ(ダイクストラ 2400)、壁切れは従来
+				run = Short_Dijkstra_Move2400;
+				ac = 20000;
+				ac_nn = 15000;
+				conv = 1;
+			} else if (n == 13) {	//No.5 と同じ(ダイクストラ 2000)、壁切れは従来
+				run = Short_Dijkstra_Move2000;
+				ac = 20000;
+				ac_nn = 15000;
+				conv = 1;
 			}
 			if ((run != NULL) && (Sensor_Enter() == 1)) {
+				int pillar_prev = Short_WallCut_Pillar;
+				if (conv) {
+					Short_WallCut_Pillar = 0;
+				}
 				G_Short_AC_NANAME = ac_nn;
 				Maze_Shortest_Run(run, 6000, ac);
 				G_Short_AC_NANAME = 0;
+				Short_WallCut_Pillar = pillar_prev;
 			}
 		} else if (Encorder_mode_out() == 2) {		//サーキ�?�?
 
@@ -329,8 +360,8 @@ int main(void) {
 					Encorder_count_reset();
 				}
 			} else if (Encorder_number_out() == 10) {	//吸引のときのセンサのノイズ
-				/* 止まったまま(モーターは使わない)、吸引(0/35/50/70)とセンサの読み方(LEDを点けてから読むまでの待ち、
-				 * ADCの取り込み時間)を変えて、点灯時・消灯時の生の値のばらつきを測る。30秒ほど。
+				/* 止まったまま(モーターは使わない)、吸引(0/35/50/70)とセンサの読み方(吸引のPWMに合わせて読むか)を
+				 * 変えて、点灯時・消灯時の生の値のばらつきを測る。15秒ほど。
 				 * USBをつないだまま走らせると、測ったそばから出す(tools/viewer.html でグラフになる)。
 				 * つながずに走らせたときは、出力(モード4 No.7)でばらつきの表だけ出る。docs/sensor_noise.md */
 				if (Sensor_Enter() == 1) {
@@ -367,11 +398,13 @@ int main(void) {
 					Buzzer_Enter();
 					Sensor_Start();
 					///
-					/* タイヤ径の測定用(2026-10-09): 本番と同じ吸引で、滑らないようにゆっくり 180mm×8 = 1440mm 走る。
-					 * 実際に進んだ距離を測り、Define.h の TIREDIAMETER = 今の値 × 実際の距離 / 1440 にする。
-					 * 吸引は 2400 などと同じ 70(2000 の 50 で測るときは 50 に変える) */
+					/* タイヤ径の測定用(2026-10-09): 本番と同じ吸引で、滑らないようにゆっくり 180mm×6 = 1080mm 走る。
+					 * 実際に進んだ距離を測り、Define.h の TIREDIAMETER = 今の値 × 実際の距離 / エンコーダの距離 にする。
+					 * エンコーダの距離は走行ログ(モード4 No.7)の最後の x。1080 ではない: 減速は時間で進めるので、
+					 * 速度が目標に遅れた分だけ手前で止まる(2026-10-21 は 1065.1) 
+					 * 吸引は探索(モード0の吸引探索)と同じ 35(2026-10-21。それまでは 2400 などと同じ 70) */
 					Motor_Setup();
-					Suction_Start(70);
+					Suction_Start(35);
 					LOG_get_start();
 					//					Motor_trapezoid_PID(0, 2000, 2000, 60000, 24);
 					//					Motor_trapezoid_PID(2000, 2000, 0, 35000, 90);
@@ -379,7 +412,7 @@ int main(void) {
 					//Motor_trapezoid_PID(0, 3000, 0, 20000, 180 * 9);
 					//Motor_trapezoid_Asymmetric_PID(0, 4000, 0, 23000, 180 * 9);
 					//Motor_trapezoid_PID(0, 3000, 0, 10000, 180*8);	//2026-10-09 まで(吸引35)
-					Motor_trapezoid_PID(0, 1000, 0, 5000, 180 * 8);
+					Motor_trapezoid_PID(0, 1000, 0, 5000, 180 * 6);
 					Motor_Stop();
 					Motor_Stop();
 					Motor_Stop();
@@ -441,7 +474,7 @@ int main(void) {
 					Buzzer_Enter();
 					Sensor_Start();
 					__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 90);
-					__HAL_TIM_SET_AUTORELOAD(&htim2, 100);
+					__HAL_TIM_SET_AUTORELOAD(&htim2, 99);
 					HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 					while (1) {
 						if (Sensor_Enter() == 1) {
@@ -472,16 +505,17 @@ int main(void) {
 				}
 			} else if (Encorder_number_out() == 8) {		//直進(横壁制御をセンサ値版で)
 				/* No.1と同じ直進を、この走行のあいだだけ G_WallCtrl_Use_mm = 0
-				 * (従来のセンサ値版、ゲインは Kp / Kd)で走る。標準(距離版)との比較・切り戻し用 */
+				 * (従来のセンサ値版、ゲインは Kp / Kd)で走る。標準(距離版)との比較・切り戻し用。
+				 * 比べられるように、速度・加速度・吸引・距離はNo.1と同じにする(2026-10-18 まではNo.1と違い 3000・吸引35だった) */
 				if (Sensor_Enter() == 1) {
 					Buzzer_Enter();
 					Sensor_Start();
 					Motor_Setup();
-					Suction_Start(35);
+					Suction_Start(70);
 					LOG_get_start();
 					int use_mm_prev = G_WallCtrl_Use_mm;
 					G_WallCtrl_Use_mm = 0;
-					Motor_trapezoid_PID(0, 3000, 0, 10000, 180*8);
+					Motor_trapezoid_PID(0, 1000, 0, 5000, 180 * 8);
 					Motor_Stop();
 					G_WallCtrl_Use_mm = use_mm_prev;
 					Suction_Stop();
@@ -548,8 +582,12 @@ int main(void) {
 					Encorder_count_reset();
 
 				}
-			} else if (Encorder_number_out() == 1) {		//90
+			} else if ((Encorder_number_out() >= 1)
+					&& (Encorder_number_out() <= 7)) {	//1000のターン単体(G_Turn1000、左旋回)
+				/* No.1 大回り90、2 大回り180、3 斜め入り45、4 斜め入り135、5 斜め出45、6 斜め出135、7 V90。
+				 * 値は Move.c の G_Turn1000(吸引探索の既知区間の斜め、モード0 No.12 と共通、2026-10-21)。吸引は探索と同じ35 */
 				if (Sensor_Enter() == 1) {
+					int n = Encorder_number_out();
 					Buzzer_Enter();
 					Sensor_Start();
 
@@ -558,155 +596,10 @@ int main(void) {
 
 					HAL_Delay(1000);
 					LOG_get_start();
-					Motor_trapezoid_PID(0, 1000, 1000, 15000, 90 + 90);
-					Motor_trapezoid_PID(1000, 1000, 1000, 15000, 50);
-					//Motor_Wallcut_ST(1000, 48, 0);
-					Motor_Sula_COS(1000, 90, 750, 20000);
-					Motor_trapezoid(1000, 1000, 1000, 15000, 85);
-					Motor_trapezoid(1000, 1000, 0, 15000, 180);
+					Turn1000_Test(n - 1);
 
 					Motor_Stop();
 
-					HAL_Delay(500);
-					Suction_Stop();
-					LOG_get_end();
-
-					Encorder_count_reset();
-
-				}
-			} else if (Encorder_number_out() == 2) {		//180
-				if (Sensor_Enter() == 1) {
-					Buzzer_Enter();
-					Sensor_Start();
-
-					Motor_Setup();
-					Suction_Start(35);
-
-					HAL_Delay(1000);
-					LOG_get_start();
-					Motor_trapezoid_PID(0, 1000, 1000, 15000, 90 + 90);
-					Motor_trapezoid_PID(1000, 1000, 1000, 15000, 40);
-					//Motor_Wallcut_ST(1000, 60, 0);
-					Motor_Sula_COS(1000, 180, 680, 13000);
-					Motor_trapezoid(1000, 1000, 1000, 15000, 70);
-					Motor_trapezoid(1000, 1000, 0, 15000, 180);
-
-					Motor_Stop();
-					HAL_Delay(500);
-					Suction_Stop();
-					LOG_get_end();
-
-					Encorder_count_reset();
-				}
-			} else if (Encorder_number_out() == 3) {		//in45
-				if (Sensor_Enter() == 1) {
-					Buzzer_Enter();
-					Sensor_Start();
-
-					Motor_Setup();
-					Suction_Start(15);
-
-					HAL_Delay(1000);
-					LOG_get_start();
-					Motor_trapezoid_PID(0, 1000, 1000, 15000, 90 + 90);
-					Motor_trapezoid_PID(1000, 1000, 1000, 15000, 15);
-					Motor_Sula_COS(1000, 44, 750, 10000);
-					Motor_trapezoid(1000, 1000, 1000, 15000, 42);
-					Motor_trapezoid(1000, 1000, 0, 15000, 127.3);
-
-					Motor_Stop();
-					HAL_Delay(500);
-					Suction_Stop();
-					LOG_get_end();
-
-					Encorder_count_reset();
-				}
-			} else if (Encorder_number_out() == 4) {		//in135
-				if (Sensor_Enter() == 1) {
-					Buzzer_Enter();
-					Sensor_Start();
-
-					Motor_Setup();
-					Suction_Start(15);
-
-					HAL_Delay(1000);
-					LOG_get_start();
-					Motor_trapezoid_PID(0, 1000, 1000, 15000, 90 + 90);
-					Motor_trapezoid_PID(1000, 1000, 1000, 15000, 38);
-					Motor_Sula_COS(1000, 134, 800, 10000);
-					Motor_trapezoid(1000, 1000, 1000, 15000, 8);
-					Motor_trapezoid(1000, 1000, 0, 15000, 127.3);
-
-					Motor_Stop();
-					HAL_Delay(500);
-					Suction_Stop();
-					LOG_get_end();
-
-					Encorder_count_reset();
-				}
-			} else if (Encorder_number_out() == 5) {		//out45
-				if (Sensor_Enter() == 1) {
-					Buzzer_Enter();
-					Sensor_Start();
-
-					Motor_Setup();
-					Suction_Start(15);
-
-					HAL_Delay(1000);
-					LOG_get_start();
-					Motor_trapezoid(0, 1000, 1000, 10000, 127.3);
-					Motor_trapezoid(1000, 1000, 1000, 5000, 73);
-					Motor_Sula_COS(1000, 41.5, 700, 20000);
-					Motor_trapezoid(1000, 1000, 1000, 5000, 30);
-					Motor_trapezoid(1000, 1000, 0, 10000, 180);
-
-					Motor_Stop();
-					HAL_Delay(500);
-					Suction_Stop();
-					LOG_get_end();
-
-					Encorder_count_reset();
-				}
-			} else if (Encorder_number_out() == 6) {		//out135
-				if (Sensor_Enter() == 1) {
-					Buzzer_Enter();
-					Sensor_Start();
-
-					Motor_Setup();
-					Suction_Start(15);
-
-					HAL_Delay(1000);
-					LOG_get_start();
-					Motor_trapezoid(0, 1000, 1000, 10000, 127.3);
-					Motor_trapezoid(1000, 1000, 1000, 5000, 25);
-					Motor_Sula_COS(1000, 132, 700, 14000);
-					Motor_trapezoid(1000, 1000, 1000, 5000, 25);
-					Motor_trapezoid(1000, 1000, 0, 10000, 180);
-
-					Motor_Stop();
-					HAL_Delay(500);
-					Suction_Stop();
-					LOG_get_end();
-
-					Encorder_count_reset();
-				}
-			} else if (Encorder_number_out() == 7) {		//V90
-				if (Sensor_Enter() == 1) {
-					Buzzer_Enter();
-					Sensor_Start();
-
-					Motor_Setup();
-					Suction_Start(15);
-
-					HAL_Delay(1000);
-					LOG_get_start();
-					Motor_trapezoid(0, 1000, 1000, 10000, 127.3);
-					Motor_trapezoid(1000, 1000, 1000, 5000, 37);
-					Motor_Sula_COS(1000, 88.5, 800, 20000);
-					Motor_trapezoid(1000, 1000, 1000, 5000, 27);
-					Motor_trapezoid(1000, 1000, 0, 10000, 127.3);
-
-					Motor_Stop();
 					HAL_Delay(500);
 					Suction_Stop();
 					LOG_get_end();
@@ -767,8 +660,12 @@ int main(void) {
 					Sensor_Start();
 
 				}
-			} else if (Encorder_number_out() == 1) {		//90
+			} else if ((Encorder_number_out() >= 1)
+					&& (Encorder_number_out() <= 7)) {	//2400のターン単体(G_Turn2400、左旋回)
+				/* No.1 大回り90、2 大回り180、3 斜め入り45、4 斜め入り135、5 斜め出45、6 斜め出135、7 V90。
+				 * 値は Move.c の G_Turn2400(Short_NANAME_Move2400 と共通、2026-10-21)。1つずつ単体で走る(Turn2400_Test) */
 				if (Sensor_Enter() == 1) {
+					int n = Encorder_number_out();
 					Buzzer_Enter();
 					Sensor_Start();
 
@@ -777,190 +674,7 @@ int main(void) {
 
 					HAL_Delay(1000);
 					LOG_get_start();
-					Motor_trapezoid_PID(0, 2400, 2400, 30000, 90 + 90 + 180);
-					Motor_trapezoid_PID(2400, 2400, 2400, 15000, 25);
-					//Motor_Wallcut_ST(1000, 60, 0);
-					Motor_Sula_COS(2400, 90, 1600, 80000);
-					Motor_trapezoid(2400, 2400, 2400, 15000, 100);
-					Motor_trapezoid(2400, 2400, 0, 25000, 180);
-
-					Motor_Stop();
-
-					HAL_Delay(500);
-					Suction_Stop();
-					LOG_get_end();
-
-					Encorder_count_reset();
-				}
-			} else if (Encorder_number_out() == 2) {		//180
-				if (Sensor_Enter() == 1) {
-					Buzzer_Enter();
-					Sensor_Start();
-
-					Motor_Setup();
-					Suction_Start(70);
-
-					HAL_Delay(1000);
-					LOG_get_start();
-					Motor_trapezoid_PID(0, 2400, 2400, 30000, 90 + 90 + 180);
-					Motor_trapezoid_PID(2400, 2400, 2400, 15000, 15);
-					//Motor_Wallcut_ST(1000, 60, 0);
-					Motor_Sula_COS(2400, 180, 1500, 70000);
-					Motor_trapezoid(2400, 2400, 2400, 15000, 88);
-					Motor_trapezoid(2400, 2400, 0, 30000, 180);
-
-					Motor_Stop();
-
-					HAL_Delay(500);
-					Suction_Stop();
-					LOG_get_end();
-
-					Encorder_count_reset();
-				}
-			} else if (Encorder_number_out() == 3) {		//in45
-				if (Sensor_Enter() == 1) {
-					Buzzer_Enter();
-					Sensor_Start();
-
-					Motor_Setup();
-					Suction_Start(70);
-
-					HAL_Delay(1000);
-					LOG_get_start();
-					Motor_trapezoid_PID(0, 2400, 2400, 25000, 90 + 90 + 180);
-					Motor_trapezoid_PID(2400, 2400, 2400, 15000, 3);//8
-					Motor_Sula_COS(2400, 45, 2500, 160000);
-					Motor_trapezoid(2400, 2400, 2400, 15000, 113);
-					Motor_trapezoid(2400, 2400, 0, 30000, 127.3 * 2);
-
-					Motor_Stop();
-
-					HAL_Delay(500);
-					Suction_Stop();
-					LOG_get_end();
-
-					Encorder_count_reset();
-				}
-			} else if (Encorder_number_out() == 4) {		//in135
-				if (Sensor_Enter() == 1) {
-					Buzzer_Enter();
-					Sensor_Start();
-
-					Motor_Setup();
-					Suction_Start(70);
-
-					HAL_Delay(1000);
-					LOG_get_start();
-					Motor_trapezoid_PID(0, 2400, 2400, 25000, 90 + 90 + 180);
-					Motor_trapezoid_PID(2400, 2400, 2400, 15000, 15);
-					Motor_Sula_COS(2400, 135, 2000, 55000);
-					Motor_trapezoid(2400, 2400, 2400, 15000, 85);
-					Motor_trapezoid(2400, 2400, 0, 25000, 127.3 * 2);
-
-					Motor_Stop();
-
-					HAL_Delay(500);
-					Suction_Stop();
-					LOG_get_end();
-
-					Encorder_count_reset();
-				}
-			} else if (Encorder_number_out() == 5) {		//out45
-				if (Sensor_Enter() == 1) {
-					Buzzer_Enter();
-					Sensor_Start();
-
-					Motor_Setup();
-					Suction_Start(70);
-
-					HAL_Delay(1000);
-					LOG_get_start();
-
-					//					Motor_trapezoid(0, 2400, 2400, 25000, 127.3);
-					//					Motor_trapezoid(2400, 2400, 2400, 15000, 31);
-					//					Motor_Sula_COS(2400, 41, 1550, 60000);
-					//					Motor_trapezoid(2400, 2400, 2400, 15000, 18);
-					//					Motor_trapezoid(2400, 2400, 0, 25000, 180);
-
-					Motor_trapezoid_PID(0, 2400, 2400, 25000, 90 + 90 + 180);
-					Motor_trapezoid_PID(2400, 2400, 2400, 15000, 8);
-					Motor_Sula_COS(2400, 45, 2500, 160000);
-					Motor_trapezoid(2400, 2400, 2400, 15000, 113);
-
-					Motor_trapezoid(2400, 2400, 2400, 15000, 8);
-					Motor_Sula_COS(2400, -45, 1550, 70000);
-					Motor_trapezoid(2400, 2400, 2400, 15000, 40);
-					Motor_trapezoid(2400, 2400, 0, 35000, 180);
-
-					Motor_Stop();
-
-					HAL_Delay(500);
-					Suction_Stop();
-					LOG_get_end();
-
-					Encorder_count_reset();
-				}
-			} else if (Encorder_number_out() == 6) {		//out135
-				if (Sensor_Enter() == 1) {
-					Buzzer_Enter();
-					Sensor_Start();
-
-					Motor_Setup();
-					Suction_Start(70);
-
-					//					HAL_Delay(1000);
-					//					LOG_get_start();
-					//					Motor_NANAME_PID(0, 2400, 2400, 30000, 127.3);
-					//					Motor_NANAME_PID(2400, 2400, 2400, 15000, 20);
-					//					Motor_Sula_COS(2400, 123, 2300, 70000);
-					//					Motor_trapezoid(2400, 2400, 2400, 15000, 80);
-					//					Motor_trapezoid(2400, 2400, 0, 30000, 180);
-
-					Motor_trapezoid_PID(0, 2400, 2400, 25000, 90 + 90 + 180);
-					Motor_trapezoid_PID(2400, 2400, 2400, 15000, 8);
-					Motor_Sula_COS(2400, 45, 2500, 160000);
-					Motor_trapezoid(2400, 2400, 2400, 15000, 113);
-					Motor_NANAME_PID(2400, 2400, 2400, 30000, 127.3);
-
-					Motor_NANAME_PID(2400, 2400, 2400, 15000, 17);
-					Motor_Sula_COS(2400, 134, 2100, 80000);
-					Motor_trapezoid(2400, 2400, 2400, 15000, 123);
-					Motor_trapezoid(2400, 2400, 0, 30000, 180);
-
-					Motor_Stop();
-
-					HAL_Delay(500);
-					Suction_Stop();
-					LOG_get_end();
-
-					Encorder_count_reset();
-				}
-			} else if (Encorder_number_out() == 7) {		//v90
-				if (Sensor_Enter() == 1) {
-					Buzzer_Enter();
-					Sensor_Start();
-
-					Motor_Setup();
-					Suction_Start(70);
-
-					HAL_Delay(1000);
-					LOG_get_start();
-					//					Motor_trapezoid(0, 2400, 2400, 40000, 127.3);
-					//					Motor_trapezoid(2400, 2400, 2400, 15000, 19);
-					//					Motor_Sula_COS(2400, 83, 2500, 100000);
-					//					Motor_trapezoid(2400, 2400, 2400, 15000, 29);
-					//					Motor_trapezoid(2400, 2400, 0, 25000, 127.3);
-
-					Motor_trapezoid_PID(0, 2400, 2400, 25000, 90 + 90 + 180);
-					Motor_trapezoid_PID(2400, 2400, 2400, 15000, 8);
-					Motor_Sula_COS(2400, 45, 2500, 160000);
-					Motor_trapezoid(2400, 2400, 2400, 15000, 113);
-					Motor_NANAME_PID(2400, 2400, 2400, 30000, 127.3);
-
-					Motor_trapezoid(2400, 2400, 2400, 15000, 5);
-					Motor_Sula_COS(2400, 87, 2600, 150000);
-					Motor_trapezoid(2400, 2400, 2400, 15000, 90);
-					Motor_trapezoid(2400, 2400, 0, 25000, 127.3 * 2);
+					Turn2400_Test(n - 1);
 
 					Motor_Stop();
 
@@ -1250,6 +964,30 @@ int main(void) {
 
 				Encorder_count_reset();
 			}
+		} else if (Encorder_mode_out() == 11) {		//2200のターンの停止位置テスト(Turn-Sim_KOGUMA)
+			/* No.1〜7: Move.c の G_Turn2200 の値で、ターンを1つ(左)。後ろの直線(斜めに出るなら 254.6mm、まっすぐ出るなら 180mm)で止まる(壁制御なし)。
+			 * 1=大回り90, 2=大回り180, 3=斜め入り45, 4=斜め入り135, 5=斜め出45, 6=斜め出135, 7=V90。
+			 * 止まった位置を、理想の停止位置からのずれ(前後・横)として測り、シミュレーターに入れる */
+			int n = Encorder_number_out();
+			if ((n >= 1) && (n <= 7) && (Sensor_Enter() == 1)) {
+				Buzzer_Enter();
+				Sensor_Start();
+
+				Motor_Setup();
+				Suction_Start(70);
+
+				HAL_Delay(1000);
+				LOG_get_start();
+				Turn2200_Test(n);
+
+				Motor_Stop();
+
+				HAL_Delay(500);
+				Suction_Stop();
+				LOG_get_end();
+
+				Encorder_count_reset();
+			}
 		}
 	}
 	/* USER CODE END 3 */
@@ -1309,7 +1047,9 @@ void SystemClock_Config(void) {
 /* 1区画ぶんの探索動作。flags で走り方を選ぶ */
 static void Maze_Search_Action(int flags) {
 	if (flags & SEARCH_KNOWN) {
+		G_Known_Naname = (flags & SEARCH_KNOWN_NANAME) ? 1 : 0;
 		Robot_Maze_Pass_Action();
+		G_Known_Naname = 0;
 	} else if (flags & SEARCH_SUCTION) {
 		Robot_Maze_Suction_Action();
 	} else {
@@ -1330,15 +1070,28 @@ static void Maze_Search_Until_Goal(int flags) {
 
 /* ダイクストラ誘導の未知壁探索で、経路上の未確認の壁がなくなったら1 */
 static int s_unknown_done = 0;
+/* 今見に行っている経路の、最短走行の値の組(G_Short_Run_Set の番号) */
+static int s_unknown_set = 0;
 
 /* 止まっているあいだに呼ぶ計算(G_Stop_Hook)。スタート→ゴールのダイクストラ経路を
  * 作り直し、経路上でまだ見ていない最初の壁の手前の区画を目標にした歩数マップを作る。
- * 見る壁がなければ、スタートへ帰る歩数マップにする */
+ * 見る壁がなければ、スタートへ帰る歩数マップにする。
+ * 経路は、よく使う最短走行の値の組(G_Short_Run_Set)ごとに、それぞれの時間で一番速いもの(2026-10-27)。
+ * 前の組から順に求めて、未確認の壁が残っている最初の組の経路を見に行く。
+ * 経路の壁を全部見た組は、そのあとほかの壁がわかっても一番速いままなので、もう一度見なくてよい */
 static void Maze_Unknown_Walls_Plan(void) {
 	G_Gool_X = MAZE_GOOL_X;
 	G_Gool_Y = MAZE_GOOL_Y;
-	Maze_Dijkstra_Calculation();
-	if (Maze_Unknown_Wall_Scan() == 1) {
+	int found = 0;
+	for (int k = 0; (k < SHORT_RUN_SET_NUM) && !found; k++) {
+		Maze_Dijkstra_Set_Run(&G_Short_Run_Set[k]);
+		Maze_Dijkstra_Calculation();
+		if (Maze_Unknown_Wall_Scan() == 1) {
+			found = 1;
+			s_unknown_set = k;
+		}
+	}
+	if (found) {
 		Maze_Unknown_Target_ModeSet(G_Unknown_Target_X, G_Unknown_Target_Y);
 		s_unknown_done = 0;
 	} else {
@@ -1367,21 +1120,32 @@ static void Maze_Unknown_Walls_Plan(void) {
  * 壁がなかった(通れた)ときは、止まらずに同じ経路データのまま次の未確認の壁を探す
  * (Maze_Unknown_Wall_Scan()は壁の確認状況をその都度ライブ判定する。
  *  ダイクストラは計算し直さず、歩数マップだけ走りながら作り直す) */
-static void Maze_Search_Unknown_Walls(int flags) {
+static void Maze_Search_Unknown_Walls(int flags, int from_stop) {
 	int suction = (flags & SEARCH_SUCTION) ? 1 : 0;
 
 	if (Failsafe_Flag() == 1) {
 		return;
 	}
 	s_unknown_done = 0;
+	s_unknown_set = 0;
+	G_Unknown_Target_Lost = 0;
 	G_Stop_Hook = Maze_Unknown_Walls_Plan;
-	Robot_Maze_Stop_And_Go(suction);
+	if (from_stop) {
+		/* 止まっている(最短走行のあと、ゴールの区画の中心。Maze_Return_From_Goal)。ここで計算してから、
+		 * 前(来た区画)へまっすぐ出る。止まった区画のほかの壁は見ていないことがあるので、ほかの向きへは出ない */
+		Maze_Unknown_Walls_Plan();
+		Motor_trapezoid_PID(0, suction ? 1000 : 500, suction ? 1000 : 500,
+				suction ? 10000 : 5000, 90);
+	} else {
+		Robot_Maze_Stop_And_Go(suction);
+	}
 	G_MAZE_Explored[G_Robot_MAZE_X][G_Robot_MAZE_Y] = 1;
 
 	while ((Failsafe_Flag() == 0) && (s_unknown_done == 0)) {
 		int sub_steps = 0;
 		while ((Maze_Unknown_Wall_Still_Unknown() == 1)
-				&& (sub_steps < MAX_STEP) && (s_unknown_done == 0)) {
+				&& (sub_steps < MAX_STEP) && (s_unknown_done == 0)
+				&& (G_Unknown_Target_Lost == 0)) {
 			if (Failsafe_Flag() == 1) {
 				break;
 			}
@@ -1394,18 +1158,27 @@ static void Maze_Search_Unknown_Walls(int flags) {
 		}
 		Maze_Save();
 
-		if (sub_steps >= MAX_STEP) {
-			//目標に辿り着けなかった: 止まってダイクストラから計算し直す
+		if ((sub_steps >= MAX_STEP) || G_Unknown_Target_Lost) {
+			//目標に辿り着けなかった・行けなくなった(見に行く途中でほかの壁が見つかった。2026-10-27):
+			//止まってダイクストラから計算し直す
 			Robot_Maze_Stop_And_Go(suction);
 			G_MAZE_Explored[G_Robot_MAZE_X][G_Robot_MAZE_Y] = 1;
-		} else if (Maze_Unknown_Wall_Is_Wall()) {
-			//壁があって経路がふさがれた: 止まって(壁合わせをして)ダイクストラから計算し直す
+			continue;
+		}
+		int scan = Maze_Unknown_Wall_Scan();
+		if (Maze_Unknown_Wall_Is_Wall() || (scan == 2)) {
+			//壁があって経路がふさがれた(見に行った壁、または途中で見つかったほかの経路の壁):
+			//止まって(壁合わせをして)ダイクストラから計算し直す
 			Robot_Maze_Stop_And_Go(suction);
 			G_MAZE_Explored[G_Robot_MAZE_X][G_Robot_MAZE_Y] = 1;
-		} else if (Maze_Unknown_Wall_Scan() == 1) {
+		} else if (scan == 1) {
 			//壁がなかった(通れた): 同じ経路で次の未確認の壁へ
 			Maze_Unknown_Target_ModeSet(G_Unknown_Target_X, G_Unknown_Target_Y);
 			Maze_Step_Calculate();
+		} else if (s_unknown_set < SHORT_RUN_SET_NUM - 1) {
+			//この組の経路の壁は全部見た。うしろの組の経路は求め直さないとわからないので、止まって計算する(2026-10-27)
+			Robot_Maze_Stop_And_Go(suction);
+			G_MAZE_Explored[G_Robot_MAZE_X][G_Robot_MAZE_Y] = 1;
 		} else {
 			//経路上の未確認の壁がなくなった
 			Maze_Unkown_ALL_ModeOFF();
@@ -1419,10 +1192,62 @@ static void Maze_Search_Unknown_Walls(int flags) {
 	}
 }
 
+/* 最短走行のあと、ゴールで止まったところからスタートへ帰る(2026-10-20、モード0 No.11)。
+ * 止まった区画と向きは、最短走行が走る前に命令列から求めた値(Move.c の G_Short_End_*、Maze.c の Short_Pass_End_Cell。
+ * ゴールに入った区画の1つ奥の区画の中心)。命令列は走っているあいだに書き換わるので、走ったあとに求めてはいけない。
+ * 最短走行の最後の Robot_adjustment で180°向きを変えているので、来た区画のほうを向いている。
+ * 帰りもダイクストラ誘導の未知壁探索(経路上に見ていない壁があれば見に行き、なければそのまま帰る)。
+ * 戻り値: 1 スタートに帰った、0 帰れなかった(最短がゴールまで走れなかった、フェイルセーフなど) */
+static int Maze_Return_From_Goal(int flags) {
+	if (!G_Short_Reached || !G_Short_End_OK || (Failsafe_Flag() == 1)) {
+		return 0;
+	}
+	int x = G_Short_End_X, y = G_Short_End_Y, dir = G_Short_End_Dir;
+	Maze_Road();	//最短走行が見ていない壁を壁で埋めた(Maze_Wall_fill)ので、保存した迷路に戻す
+	G_Robot_MAZE_X = x;
+	G_Robot_MAZE_Y = y;
+	G_Robot_Direction = (dir + 2) % 4;
+	G_Robot_Lastaction = 5;
+	G_MAZE_Explored[x][y] = 1;
+
+	Motor_Setup();	//吸引を回す前にジャイロのゼロ点を測る
+	Motor_Stop();
+	/* 前(来た区画)はいつも開いているはず。前センサが壁を見ていたら、向きか位置が思っているのと違うので帰らない
+	 * (区画の中心で前壁があれば約530。Move.c の ALIGN_FRONT_MIN と同じ200で見る) */
+	if (Wall_Flont_Av() > 200) {
+		LED_Path_Error();
+		return 0;
+	}
+	if (flags & SEARCH_SUCTION) {
+		Suction_Start(35);
+	}
+	Maze_Search_Unknown_Walls(flags, 1);
+	if (Failsafe_Flag() == 0) {
+		G_Gool_X = 0;
+		G_Gool_Y = 0;
+		G_MAZE_Explored[G_Gool_X][G_Gool_Y] = 0;
+		Maze_Step_Calculate();
+		Maze_Search_Until_Goal(flags);
+	}
+	Motor_Stop();
+	if (flags & SEARCH_SUCTION) {
+		Suction_Stop();
+	}
+	if (Failsafe_Flag() == 1) {
+		/* 最後に壁を書いた5区画を戻して保存する(解除は main の Failsafe_Wait_Reset) */
+		Maze_Undo_Recent_Cells();
+		Maze_Save();
+		return 0;
+	}
+	Maze_Save();
+	return 1;
+}
+
 /* モード0の探索。往路(スタート→ゴール)のあと、flags に応じて
  * 片道ならゴールで止まり、そうでなければ(全面探索・未知壁探索をしながら)
  * スタートへ戻る。区間の終わりごとに Maze_Save() する。
- * SEARCH_SHORTEST なら、スタートに戻ったあと2秒待って最短走行する */
+ * SEARCH_SHORTEST なら、スタートに戻ったあと2秒待って最短走行する
+ * (SEARCH_REPEAT なら SEARCH_REPEAT_N 回。2回目からは前の最短のゴールから帰ってから。Maze_Return_From_Goal) */
 static void Maze_Search(int flags) {
 	int v = (flags & (SEARCH_SUCTION | SEARCH_KNOWN)) ? 1000 : 500;
 
@@ -1431,6 +1256,8 @@ static void Maze_Search(int flags) {
 
 	Motor_Setup();
 	Motor_Stop();
+	Maze_Undo_Clear();	//フェイルセーフのときに戻すのは、この探索で書いた壁だけ
+	Search_Cut_Reset();	//探索の直進の壁切れのログ(出力はモード4 No.7)
 	if (flags & SEARCH_SUCTION) {
 		Suction_Start(35);
 	}
@@ -1461,7 +1288,7 @@ static void Maze_Search(int flags) {
 		}
 	} else {
 		if (flags & SEARCH_DIJKSTRA) {
-			Maze_Search_Unknown_Walls(flags);
+			Maze_Search_Unknown_Walls(flags, 0);
 		}
 		if (flags & SEARCH_ALL) {
 			Maze_Unkown_ALL_ModeSet();
@@ -1484,24 +1311,43 @@ static void Maze_Search(int flags) {
 	if (Failsafe_Flag() == 0) {
 		Maze_Save();
 		if ((flags & SEARCH_SHORTEST) && !(flags & SEARCH_ONEWAY)) {
-			//最短走行(モード1 No.5と同じ: ダイクストラ、コーナー2000、直線6000mm/s、加速20000)
-			HAL_Delay(2000);
-			Motor_Setup();
-			Motor_Stop();
-			G_WallCut_Pillar = Short_WallCut_Pillar;
-			Edge_Log_Start(0, -1, -1);
-			G_Log_Div = 4;		//走行ログは4msおき(8秒)
-			LOG_get_start();
-			Short_Dijkstra_Move2000(6000, 20000);
-			LOG_get_end();
-			G_Log_Div = 1;
-			Edge_Log_Stop();
-			G_WallCut_Pillar = 0;
-			LED_Reset();
-			HAL_Delay(500);
+			/* 最短走行(モード1 No.5と同じ: ダイクストラ、コーナー2000、直線6000mm/s、加速20000)。
+			 * SEARCH_REPEAT なら SEARCH_REPEAT_N 回。2回目からは、前の最短のゴールからスタートへ帰ってから走る。
+			 * 走行ログ・壁切れのログは、最後に走った最短のものが残る */
+			int runs = (flags & SEARCH_REPEAT) ? SEARCH_REPEAT_N : 1;
+			int done = 0;
+			for (int k = 0; k < runs; k++) {
+				if ((k > 0) && !Maze_Return_From_Goal(flags)) {
+					break;
+				}
+				done++;
+				HAL_Delay(2000);
+				Motor_Setup();
+				Motor_Stop();
+				G_WallCut_Pillar = Short_WallCut_Pillar;
+				Edge_Log_Start(0, -1, -1);
+				G_Log_Div = 4;		//走行ログは4msおき(6.4秒)
+				LOG_get_start();
+				Short_Dijkstra_Move2000(6000, 20000);
+				LOG_get_end();
+				G_Log_Div = 1;
+				Edge_Log_Stop();
+				G_WallCut_Pillar = 0;
+				LED_Reset();
+				HAL_Delay(500);
+			}
+			/* SEARCH_REPEAT: 最後の最短のあともスタートへ帰り(自律賞は、全部の走行を終えて最後にスタートへ戻るまで
+			 * ノータッチが条件。NTF の評価基準)、帰れたら曲を流す */
+			if ((flags & SEARCH_REPEAT) && (done == runs) && Maze_Return_From_Goal(flags)) {
+				Buzzer_Finish();
+			}
 		}
 	} else {
-		Failsafe_Flag_OFF();
+		/* フェイルセーフで止まった(2026-10-27、ToraNeko.Mk3 と同じ): ぶつかる直前はずれた位置・向きで壁を読んだかもしれないので、
+		 * 最後に壁を書いた5区画を書く前の状態に戻してから保存する。電源を切らずに探索をやり直したり最短を走ったりしても、
+		 * その壁は使わない。解除は main の Failsafe_Wait_Reset(スイッチを押す) */
+		Maze_Undo_Recent_Cells();
+		Maze_Save();
 	}
 	G_Log_Next_UTurn = 0;
 	Motor_Free();
@@ -1522,6 +1368,9 @@ static void Output_All(void) {
 	if (SensorNoise_Has_Data()) {
 		SensorNoise_Print();
 	}
+	if (Search_Cut_Has_Data()) {
+		Search_Cut_Print();
+	}
 	printf("\r\n#DONE\r\n");
 }
 
@@ -1534,7 +1383,7 @@ static void Maze_Shortest_Run(void (*run)(int, int), int max, int ac) {
 	Motor_Stop();
 	G_WallCut_Pillar = Short_WallCut_Pillar;
 	Edge_Log_Start(0, -1, -1);	//壁切れのログ(出力はモード4 No.7)
-	G_Log_Div = 4;		//走行ログは4msおき(8秒)
+	G_Log_Div = 4;		//走行ログは4msおき(6.4秒)
 	LOG_get_start();
 	run(max, ac);
 	LOG_get_end();

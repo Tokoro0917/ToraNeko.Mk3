@@ -53,7 +53,10 @@ typedef struct {
   int16_t half_count;  /* 直進・斜めの直進の長さ。それ以外では 0（メモリを節約するため 2 バイトの整数） */
 } path_step_t;
 
-#define PATH_STEP_MAX (MAZE_SIZE * MAZE_SIZE)  /* 経路に入れられる動きの数 */
+/* 経路に入れられる動きの数。区画の数（1024）の半分にした（2026-11-02。RAM を 10KB ほど空けるため。経路は 5 つある）。
+ * ランダムな 32×32 の迷路 3000 個で、いちばん長い経路は動き 89 個（通る区画 114 個）だったので、十分に足りる。
+ * 入りきらないときは、経路を作る関数が false を返す（配列の外には書かない） */
+#define PATH_STEP_MAX (MAZE_SIZE * MAZE_SIZE / 2)
 
 /* 経路 */
 typedef struct {
@@ -68,5 +71,6 @@ typedef struct {
 void path_make_known(int x, int y, direction_t dir, path_t *path);
 bool path_make_shortest(int goal_x, int goal_y, int goal_width, int goal_height, path_t *path);
 bool path_make_shortest_small_turn(int goal_x, int goal_y, int goal_width, int goal_height, path_t *path);
+bool path_make_shortest_from_route(path_t *path);
 
 #endif /* MAZE_PATH_H */

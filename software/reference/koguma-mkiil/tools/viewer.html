@@ -302,11 +302,16 @@ function summary(b) {
     return (+p.border >= 0 ? `テスト ${p.v} mm/s` : "最短走行") + ` 柱の端 ${nf}`;
   }
   if (b.type === "MAZE") return `${p.size}×${p.size}`;
+  if (b.type === "SCUT") {
+    const r = parseScut(b), m = p.mode != null ? +p.mode : (+p.on ? 2 : 1);
+    return m === 2 ? `直進 ${r.length}(直した ${r.filter((x) => x.corr).length})` : `直進 ${r.length}(端あり ${r.filter((x) => x.src).length}、記録だけ)`;
+  }
+  if (b.type === "FWALL") return +b.params.n ? `分かれた ${b.params.n} 回` : "分かれたことはなかった";
   if (b.type === "NOISE") { const n = b.lines.filter((l) => l.startsWith("batt,")).length; return `${n} 組${+p.trace > 0 ? "(生の値あり)" : "(表だけ)"}`; }
   if (STREAM_TYPES.has(b.type) && b.updates > 1) return `測定中 ${b.updates} 回(最後 ${timeStr(b.lastTime)})`;
   return `${b.lines.length} 行`;
 }
-const typeName = { LOG: "走行ログ", EDGE: "壁切れ", MAZE: "迷路", CENTER: "感度合わせ", NOISE: "センサのノイズ" };
+const typeName = { LOG: "走行ログ", EDGE: "壁切れ", MAZE: "迷路", CENTER: "感度合わせ", NOISE: "センサのノイズ", SCUT: "探索の直進の壁切れ", FWALL: "前壁の読み分かれ" };
 
 let bulk = false;	//ファイルを読み込むあいだは、データ1つごとに描き直さない(終わってから1回だけ)
 /* 測っているあいだ出し続ける種類(感度合わせ)。続けて届いたら一覧に増やさず、いちばん新しい値に置き換える。
@@ -329,12 +334,21 @@ function addBlock(b, source) {
   blocks.push(b);
   if (source === "serial" && !STREAM_TYPES.has(b.type)) autoSave(b);
   if (bulk) return;
-  /* 出力(迷路 → 壁切れ → 走行ログ)は続けて届くので、少し待って最後のものだけ描く */
+  /* 出力(迷路 → 壁切れ → 走行ログ)は続けて届くので、届き終わってから最後のものだけ描く
+   * (届いているあいだに描くと、そのあいだ受け取りが止まる)。ただし3秒より長くは待たない。
+   * 出し続ける種類(感度合わせ)は、届いているあいだずっと待つことになるので、今までどおりすぐ描く */
   clearTimeout(selectTimer);
-  selectTimer = setTimeout(() => select(b), 60);
+  const t0 = performance.now(), quick = STREAM_TYPES.has(b.type);
+  const later = () => {
+    selectTimer = setTimeout(() => {
+      const now = performance.now();
+      if (!quick && now - lastRx < 300 && now - t0 < 3000) later(); else select(b);
+    }, quick ? 60 : 100);
+  };
+  later();
   renderList();
 }
-let selectTimer = 0;
+let selectTimer = 0, lastRx = 0;
 function renderList() {
   $("count").textContent = blocks.length;
   const list = $("list");
@@ -371,7 +385,15 @@ function select(b) {
 
 /* ================= シリアル(Web Serial) ================= */
 let port = null, reader = null;
-const serialParser = new Parser((l) => { addLine(l); liveLine(l); }, (b) => addBlock(b, "serial"));
+/* 出力(モード4 No.7)はいつも迷路から始まり #DONE で終わる。迷路が届かなかったら知らせる */
+let outGot = new Set();
+const serialParser = new Parser((l) => {
+  addLine(l); liveLine(l);
+  if (l.trim() === "#DONE") {
+    if (!outGot.has("MAZE")) addLine("[迷路が届きませんでした(届く途中で抜けた)。もう一度、出力(モード4 No.7)してください]");
+    outGot = new Set();
+  }
+}, (b) => { outGot.add(b.type); addBlock(b, "serial"); });
 function setStatus(text, on) { const s = $("status"); s.textContent = text; s.classList.toggle("on", !!on); }
 async function connect() {
   if (!("serial" in navigator)) {
@@ -381,7 +403,10 @@ async function connect() {
   }
   try {
     port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 115200 });
+    /* 受け取りの入れ物は既定だと255バイト(115200bpsで約22ms分)しかなく、グラフを描いているあいだに
+     * あふれて、まとまって抜ける(2026-10-18、走行ログの100ms分や迷路がまるごと消えた)。1MB(約90秒分)にする */
+    try { await port.open({ baudRate: 115200, bufferSize: 1 << 20 }); }
+    catch (e) { if (e.name === "InvalidStateError") throw e; await port.open({ baudRate: 115200 }); }
   } catch (e) {
     port = null;
     if (e.name !== "NotFoundError") alert("接続できませんでした: " + e.message + "\nTera Term などで同じ COM ポートを開いていたら閉じてください。");
@@ -402,6 +427,7 @@ async function readLoop() {
         const { value, done } = await reader.read();
         if (done) break;
         const text = dec.decode(value, { stream: true });
+        lastRx = performance.now();
         addSession(text);
         serialParser.feed(text);
       }
@@ -741,6 +767,8 @@ function renderLog(view, b) {
   const xb = B ? (useX && B.data.x ? B.data.x : B.data.t) : null;
   const card = el("div", { class: "card" });
   card.append(el("h2", { text: `走行ログ ${timeStr(b.time)}(${A.n} 行、${b.params.div || 1} msおき)` + (B ? ` と ${timeStr(compare.time)}(破線)` : "") }));
+  if (+b.params.n > 0 && A.n !== +b.params.n)
+    card.append(el("div", { class: "note warn", text: `行の数が合わない(ロボットは ${b.params.n} 行出したが、読めたのは ${A.n} 行)。届く途中で抜けたか、2回分がつながっている。時刻が飛んでいるところは、そのあいだのデータがない。` }));
   /* 横軸の切り替え */
   const sel = el("select");
   sel.append(el("option", { value: "t", text: "横軸: 時間[s]" }), el("option", { value: "x", text: "横軸: 走った距離[mm]" }));
@@ -1121,7 +1149,7 @@ function parseNoise(b) {
   for (const l of b.lines) {
     const f = l.split(",");
     if (f[0] === "stat" && f.length >= 11) {
-      const r = { c: +f[1], settle: +f[2], cyc: +f[3], duty: +f[4], ch: f[5], kind: f[6], mean: +f[7], sd: +f[8], min: +f[9], max: +f[10] };
+      const r = { c: +f[1], settle: +f[2], cyc: +f[3], duty: +f[4], ch: f[5], kind: f[6], mean: +f[7], sd: +f[8], min: +f[9], max: +f[10], sync: f.length > 11 ? +f[11] : null };
       N.stat.push(r); N.conds.set(r.c, r); N.duties.add(r.duty);
     } else if (f[0] === "batt" && f.length >= 9) {
       N.batt.push({ c: +f[1], duty: +f[4], mean: +f[5], sd: +f[6], min: +f[7], max: +f[8] });
@@ -1136,7 +1164,14 @@ function parseNoise(b) {
   N.get = (c, duty, ch, kind) => N.stat.find((r) => r.c === c && r.duty === duty && r.ch === ch && r.kind === kind);
   return N;
 }
-const condName = (r) => `待ち ${r.settle}us・取り込み ${r.cyc}サイクル${r.settle === 0 && r.cyc === 3 ? "(今のまま)" : ""}`;
+/* 読み方の名前。sync(PWMに合わせて読むか)がない古いログは、待ちと取り込み時間だけ */
+const condName = (r) => {
+  const parts = [];
+  if (r.sync != null) parts.push(r.sync ? "PWMに合わせて読む" : "PWMに合わせない(10-18まで)");
+  if (r.settle || r.sync == null) parts.push(`待ち ${r.settle}us`);
+  if (r.cyc !== 3 || r.sync == null) parts.push(`取り込み ${r.cyc}サイクル`);
+  return parts.join("・") + (r.sync == null && r.settle === 0 && r.cyc === 3 ? "(10-18までの読み方)" : "");
+};
 /* 吸引でばらつきがどれだけ増えたか(いちばん強い吸引 / 吸引なし)。小さい値は0.5で頭打ちにして割る */
 const growth = (s0, s1) => (s0 && s1) ? s1.sd / Math.max(0.5, s0.sd) : null;
 function noiseJudge(N, c, ch) {
@@ -1200,7 +1235,7 @@ function renderNoise(view, b) {
       });
     }
     card.append(t,
-      el("div", { class: "note", text: "緑はいちばん強い吸引で、今の読み方の半分以下になったところ。待ちを入れると減る → LED を点けた直後(受光の立ち上がりの途中)を読んでいた。取り込み時間を伸ばすと減る → 取り込みが短すぎた。取り込みを伸ばすと読むのも遅くなるので、待ちの効果も少し混ざる。差の平均が読み方で変わったら、閾値と距離の表(Wallsensor.c / WallDistance.c)を測り直す。" }));
+      el("div", { class: "note", text: "緑はいちばん強い吸引で、1行目の読み方の半分以下になったところ。PWMに合わせて読むと減る → PWMの電流の揺れを拾っていた(点灯時と消灯時が同じだけずれるので差で消える)。待ちを入れると減る → LED を点けた直後(受光の立ち上がりの途中)を読んでいた。取り込み時間を伸ばすと減る → 取り込みが短すぎた。取り込みを伸ばすと読むのも遅くなるので、待ちの効果も少し混ざる。差の平均が読み方で変わったら、閾値と距離の表(Wallsensor.c / WallDistance.c)を測り直す。" }));
   }
   view.append(card);
 
@@ -1301,14 +1336,54 @@ function noiseScatter(parent, groups) {
 }
 
 /* ================= 迷路 ================= */
+/* 最短経路の命令列(BFS_PASS / DIJK_PASS: の行)を、通る区画の並びにする。
+ * 先頭の -1 はスタートから北へ1区画、-2 は左に曲がって1区画、-3 は右に曲がって1区画、正の数 n は n/2 区画まっすぐ。
+ * 読めない・空のときは null */
+function passCells(lines, tag) {
+  const l = lines.find((s) => s.startsWith(tag + ":"));
+  if (!l) return null;
+  const tok = l.slice(tag.length + 1).trim().split(/\s+/).filter(Boolean).map(Number);
+  if (!tok.length || tok[0] !== -1) return null;
+  const dx = [0, 1, 0, -1], dy = [1, 0, -1, 0];
+  let x = 0, y = 0, d = 0;
+  const cells = [[0, 0]];
+  const step = () => { x += dx[d]; y += dy[d]; cells.push([x, y]); };
+  step();
+  for (const t of tok.slice(1)) {
+    if (t === -2) { d = (d + 3) % 4; step(); }
+    else if (t === -3) { d = (d + 1) % 4; step(); }
+    else if (t > 0 && t % 2 === 0) for (let k = 0; k < t / 2; k++) step();
+    else return null;
+  }
+  return cells;
+}
+/* 走る線の折れ点: スタートの区画の中心 → 区画の境目の真ん中を順に → ゴールに入った区画の中心。
+ * 斜めは境目の真ん中を結んだ線(斜め1区間 = 127.3mm)、大回りは角を丸めると近い形になる */
+function runPoints(cells) {
+  const pts = [[cells[0][0] + 0.5, cells[0][1] + 0.5]];
+  for (let i = 1; i < cells.length; i++) pts.push([(cells[i - 1][0] + cells[i][0]) / 2 + 0.5, (cells[i - 1][1] + cells[i][1]) / 2 + 0.5]);
+  const last = cells[cells.length - 1];
+  pts.push([last[0] + 0.5, last[1] + 0.5]);
+  return pts;
+}
+
 function renderMaze(view, b) {
   const N = +b.params.size || 16;
   const get = (tag) => { const a = new Array(N + 1).fill(0); for (const l of b.lines) { const f = l.split(/\s+/); if (f[0] === tag) a[+f[1]] = parseInt(f[2], 16) >>> 0; } return a; };
   const row = get("ROW"), col = get("COL"), lrow = get("LROW"), lcol = get("LCOL");
   const gx = +(b.params.goal_x ?? (N / 2 - 1)), gy = +(b.params.goal_y ?? (N / 2 - 1));
+  const dijk = passCells(b.lines, "DIJK_PASS"), bfs = passCells(b.lines, "BFS_PASS");
+  const same = dijk && bfs && dijk.length === bfs.length && dijk.every((c, i) => c[0] === bfs[i][0] && c[1] === bfs[i][1]);
   const card = el("div", { class: "card" });
+  const pathNote = dijk ? (bfs && !same ? "青の線: ダイクストラの最短経路(モード1 No.4〜9、探索のあとの最短)、オレンジの破線: BFS の最短経路(モード1 No.1〜3)。"
+    : `青の線: 最短経路(${dijk.length - 1}区画。ダイクストラと BFS で同じ)。`) + "線は区画の境目の真ん中を結んで角を丸めたもの(斜めは斜めに、大回りは丸く出る。ターンの細かい形は実際と少し違う)。"
+    : "最短経路はない(見ていない壁を壁とみなすと、ゴールへ行けない)。";
   card.append(el("h2", { text: `迷路 ${N}×${N}(${timeStr(b.time)})` }),
-    el("div", { class: "note", text: "太線: 壁あり、点線: まだ見ていない壁。S: スタート、G: ゴール。" }));
+    el("div", { class: "note", text: "太線: 壁あり、点線: まだ見ていない壁。S: スタート、G: ゴール。" + pathNote + "見ていない壁は壁とみなして計算している(最短走行と同じ)。" }));
+  let runStyle = true;	//true: 斜め・大回りで走る線、false: 区画の中心を結ぶ線
+  const styleBtn = el("button", { text: "区画の中心で結ぶ" });
+  styleBtn.addEventListener("click", () => { runStyle = !runStyle; styleBtn.textContent = runStyle ? "区画の中心で結ぶ" : "走る線(斜め・大回り)にする"; draw(); });
+  if (dijk) card.append(el("div", { class: "row" }, styleBtn));
   const canvas = el("canvas");
   card.append(el("div", { class: "maze-wrap" }, canvas));
   view.append(card);
@@ -1322,6 +1397,32 @@ function renderMaze(view, b) {
     g.fillRect(X(gx), Y(gy + 2), cell * 2, cell * 2);
     g.fillStyle = css("--ink-2"); g.font = `${Math.round(cell * 0.45)}px ` + css("--sans"); g.textAlign = "center"; g.textBaseline = "middle";
     g.fillText("S", X(0.5), Y(0.5)); g.fillText("G", X(gx + 1), Y(gy + 1));
+    const path = (cells, color, width, dash) => {
+      if (!cells) return;
+      g.beginPath();
+      if (runStyle) {
+        /* 境目の真ん中を結び、折れる所を丸める(半径は区画の0.35まで、両側の線の半分まで) */
+        const P = runPoints(cells).map(([x, y]) => [X(x), Y(y)]);
+        g.moveTo(P[0][0], P[0][1]);
+        for (let i = 1; i < P.length - 1; i++) {
+          const [px, py] = P[i - 1], [vx, vy] = P[i], [nx, ny] = P[i + 1];
+          const a1 = Math.atan2(vy - py, vx - px), a2 = Math.atan2(ny - vy, nx - vx);
+          if (Math.abs(Math.sin(a2 - a1)) < 1e-6 && Math.cos(a2 - a1) > 0) { g.lineTo(vx, vy); continue; }
+          const l1 = Math.hypot(vx - px, vy - py), l2 = Math.hypot(nx - vx, ny - vy);
+          const r = Math.min(cell * 0.35, l1 / 2, l2 / 2);
+          g.lineTo(vx + (px - vx) * r / l1, vy + (py - vy) * r / l1);
+          g.quadraticCurveTo(vx, vy, vx + (nx - vx) * r / l2, vy + (ny - vy) * r / l2);
+        }
+        g.lineTo(P[P.length - 1][0], P[P.length - 1][1]);
+      } else {
+        cells.forEach(([x, y], i) => (i ? g.lineTo : g.moveTo).call(g, X(x + 0.5), Y(y + 0.5)));
+      }
+      g.strokeStyle = color; g.lineWidth = width; g.lineJoin = g.lineCap = "round"; g.setLineDash(dash);
+      g.stroke();
+      g.setLineDash([]);
+    };
+    if (bfs && !same) path(bfs, css("--s2"), Math.max(2, cell * 0.08), [cell * 0.2, cell * 0.15]);
+    path(dijk, css("--s1"), Math.max(2.5, cell * 0.12), []);
     const line = (x0, y0, x1, y1, seen, wall) => {
       if (seen && !wall) return;
       g.beginPath(); g.moveTo(X(x0), Y(y0)); g.lineTo(X(x1), Y(y1));
@@ -1349,7 +1450,8 @@ const LIVE = { type: "LIVE" };
 const LIVE_KEEP_S = 60;	//覚えておく長さ[s]
 const LIVE_SHOW_S = 10;	//グラフに出す長さ[s]
 const live = { kind: null, t: [], cols: {}, t0: 0, rate: 0, count: 0, rateT: 0, paused: false };
-const RE_SENSOR = /FL\s*=\s*(-?\d+)\s*\/\/\s*L\s*=\s*(-?\d+)\s*\/\/\s*R\s*=\s*(-?\d+)\s*\/\/\s*FR\s*=\s*(-?\d+)\s*\/\/\s*BATT\s*=\s*(-?[\d.]+)\s*\/\/\s*GyroZ\s*=\s*(-?[\d.]+)/;
+/* FL・L・R・FR があれば読む。BATT・GyroZ は数字が出ていなくても(printf が小数に対応していないなど)読み飛ばす */
+const RE_SENSOR = /FL\s*=\s*(-?\d+)\s*\/\/\s*L\s*=\s*(-?\d+)\s*\/\/\s*R\s*=\s*(-?\d+)\s*\/\/\s*FR\s*=\s*(-?\d+)(?:\s*\/\/\s*BATT\s*=\s*(-?[\d.]*))?(?:\s*\/\/\s*GyroZ\s*=\s*(-?[\d.]*))?/;
 const LIVE_COLS = {
   sensor: ["FL", "L", "R", "FR", "BATT", "GyroZ"],
   cal: ["FL", "L", "R", "FR", "FL_mm", "L_mm", "R_mm", "FR_mm"],
@@ -1357,7 +1459,7 @@ const LIVE_COLS = {
 function liveLine(line) {
   let kind = null, vals = null;
   const m = line.match(RE_SENSOR);
-  if (m) { kind = "sensor"; vals = m.slice(1).map(Number); }
+  if (m) { kind = "sensor"; vals = m.slice(1).map((v) => (v ? Number(v) : NaN)); }
   else if (/^CAL,-?\d/.test(line)) { const f = line.split(",").slice(1).map(Number); if (f.length >= 8 && f.every(isFinite)) { kind = "cal"; vals = f.slice(0, 8); } }
   if (!kind || live.paused) return;
   /* USBシリアルは数行まとめて届くので、同じときに届いた行は、前に届いた時刻から今までのあいだに等間隔に並べる */
@@ -1383,11 +1485,13 @@ function livePush(kind, vals, tAt, now) {
   if (cut > 500) { live.t.splice(0, cut); for (const c in live.cols) live.cols[c].splice(0, cut); }
   live.count++;
   if (now - live.rateT >= 1) { live.rate = Math.round(live.count / (now - live.rateT || 1)); live.count = 0; live.rateT = now; liveListDirty = true; }
-  if (first) liveListDirty = true;
+  if (first) { liveListDirty = true; if (!selected) liveAutoSelect = true; }
   liveDirty = true;
 }
 let liveDirty = false, liveListDirty = false, liveView = null;
+let liveAutoSelect = false;	//何も選んでいないときに値が届き始めたら、センサの値のグラフを開く
 setInterval(() => {
+  if (liveAutoSelect) { liveAutoSelect = false; if (!selected) { select(LIVE); return; } }
   if (liveListDirty) { liveListDirty = false; renderList(); }
   if (liveDirty && selected === LIVE && liveView) { liveDirty = false; liveView.update(); }
 }, 150);
@@ -1428,7 +1532,7 @@ function renderLive(view) {
         chart.full = [t0, Math.max(t1, t0 + 0.001)];
         chart.draw();
       }
-      for (const [c, v] of tileEls) { const a = live.cols[c]; if (a && a.length) v.textContent = String(a[a.length - 1]); }
+      for (const [c, v] of tileEls) { const a = live.cols[c]; if (a && a.length) { const x = a[a.length - 1]; v.textContent = Number.isFinite(x) ? String(x) : "-"; } }
     },
   };
   liveView.update();
@@ -1451,6 +1555,113 @@ function renderCenter(view, b) {
   view.append(card);
   rawCard(view, b);
 }
+/* ================= 探索の直進の壁切れ(SCUT) ================= */
+/* 列は見出しの行で決める(2026-10-18 作り直し: act,prev,x,y,dir,b,dc,corr,src。最初の版は b,dc,corr,src)。
+ * dc = 推定 - 距離から予想した境目、corr = 直した量、src: 0 見つからず、1 右、2 左、3 両方、+8 左右が合わず片方 */
+function parseScut(b) {
+  const hi = b.lines.findIndex((l) => /^[a-z]/.test(l) && l.includes("dc"));
+  if (hi < 0) return [];
+  const cols = b.lines[hi].split(",");
+  return b.lines.slice(hi + 1).filter((l) => /^-?[\d.]+,/.test(l)).map((l) => {
+    const f = l.split(",").map(Number), r = {};
+    cols.forEach((c, j) => { r[c] = f[j]; });
+    return r;
+  });
+}
+function median(a) { if (!a.length) return NaN; const v = [...a].sort((x, y) => x - y), m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; }
+const SCUT_PREV = { 0: "直進のあと", 1: "右ターンのあと", 2: "Uターンのあと", 3: "左ターンのあと", 5: "走り出しのあと" };
+function renderScut(view, b) {
+  const R = parseScut(b);
+  const P = b.params, mode = P.mode != null ? +P.mode : (+P.on ? 2 : 1), ref = +P.ref || 0;
+  const found = R.filter((r) => r.src);
+  const good = found.filter((r) => !(r.src & 8));
+  const side = (src) => ["", "右", "左", "左右の平均"][src & 3] + (src & 8 ? "(左右が合わず片方)" : "");
+  const card = el("div", { class: "card" });
+  const modeText = ["使っていない", "記録だけ(走りは今までどおり)", "直している"][mode] || "";
+  card.append(el("h2", { text: `探索の直進の壁切れ(${timeStr(b.time)}、${modeText})` }),
+    el("div", { class: "note", text: `探索で1区画まっすぐ進むたびに、次の境目の柱の端から境目を推定した記録。dc = 推定 − 距離から予想した位置(正なら境目が予想より先)。` +
+      (mode === 2 ? `基準のずれ ${fmt(ref, 1)}mm との差を ±${P.max}mm まで直した(予想 + 基準 ± ${P.win}mm の推定だけ)。` : `記録だけ(予想 ± ${P.rec_win || P.win}mm の推定を残す)。`) +
+      "両側とも壁が続くところは端がないので何もしない。" }));
+  if (P.gyro_ofs != null) card.append(el("div", { class: "note", text: +P.gyro_sd >= 0
+    ? `ジャイロのゼロ点 ${fmt(+P.gyro_ofs, 3)} dps(測ったときのばらつき ${fmt(+P.gyro_sd, 3)} dps、測ったが使わなかった ${P.gyro_rej || 0} 回)。`
+    : `ジャイロのゼロ点はまだ測れていない(測ったが使わなかった ${P.gyro_rej || 0} 回。不感帯 0.5 dps のまま)。` }));
+  if (P.align_n != null) card.append(el("div", { class: "note", text: `止まったときの前壁合わせ ${P.align_n} 回、平均 ${P.align_ms} ms(上限 0.5 秒まで続いたのは ${P.align_to} 回)` +
+    (P.align_err != null ? `、${+P.align_mm ? "距離" : "生の値"}で合わせた。終わったときのずれの平均: 前後 ${P.align_err} mm、左右の距離の差 ${P.align_diff} mm(向き)` : "") + "。" }));
+  if (P.gyro_try) {
+    /* 2026-10-20: 測るたびの「ばらつき:平均」(使わなかったものも)と、読み直した回数 */
+    const tries = P.gyro_try.split(",").filter(Boolean).map((t) => t.split(":").map(Number));
+    card.append(el("div", { class: "note", text: `ジャイロを測った値(古い順、ばらつき 1.5 dps 以下・平均 5 dps 以下なら使う): ` +
+      tries.map(([sd, m]) => `ばらつき ${fmt(sd, 2)}・平均 ${fmt(m, 3)}${sd <= 1.5 && Math.abs(m) <= 5 ? "" : "(使わず)"}`).join("、") +
+      (P.gyro_torn != null ? `。上位と下位がずれかけて読み直した回数 ${P.gyro_torn}(電源を入れてから)` : "") + "。" }));
+  }
+  const t = el("table");
+  t.append(el("tr", null, ...["", "直進", "端あり", "dc の中央値", "ばらつき", "最小〜最大"].map((h, i) => el("th", { class: i ? "" : "l", text: h }))));
+  const line = (name, rows) => {
+    const f = rows.filter((r) => r.src && !(r.src & 8)), d = f.map((r) => r.dc), st = stats(d);
+    t.append(el("tr", null, el("td", { class: "l", text: name }), el("td", { text: rows.length }), el("td", { text: f.length }),
+      el("td", { text: f.length ? fmt(median(d), 1) : "-" }), el("td", { text: f.length > 1 ? fmt(st.sd, 1) : "-" }),
+      el("td", { text: f.length ? `${fmt(st.min, 1)} 〜 ${fmt(st.max, 1)}` : "-" })));
+  };
+  line("全部", R);
+  if (R.length && R[0].prev != null) for (const k of [5, 0, 1, 3, 2]) { const rows = R.filter((r) => r.prev === k); if (rows.length) line(SCUT_PREV[k], rows); }
+  card.append(t);
+  if (good.length) {
+    const m = median(good.map((r) => r.dc));
+    const suggest = mode === 2 ? ref + median(good.map((r) => r.dc - ref)) : m;
+    card.append(el("h3", { text: "motor.c に書き写す基準のずれ(dc の中央値)" }),
+      el("div", { class: "note", text: mode === 2 ? "直しているときの記録なので、今の基準に、残ったずれの中央値を足した値。" : "記録だけのときの dc の中央値。これを Search_Edge_Ref に入れて Search_WallCut = 2 にすると、ずれの平均は今のまま、ばらつきだけ直す。" }),
+      copyLine(`float Search_Edge_Ref = ${fmt(suggest, 1)};`));
+  }
+  if (R.length) {
+    const x = Float64Array.from(R, (_, i) => i + 1);
+    const where = (r) => r.x != null ? `区画(${r.x},${r.y})${"北東南西"[r.dir] || ""}向き、${SCUT_PREV[r.prev] || ""}、` : "";
+    const points = R.map((r, i) => r.src ? { x: i + 1, y: r.dc, color: r.src & 8 ? css("--s2") : css("--s1"), label: `${i + 1}本目: ${where(r)}dc ${fmt(r.dc, 1)} mm、直した ${fmt(r.corr, 1)} mm(${side(r.src)})` }
+      : { x: i + 1, y: 0, color: css("--muted"), label: `${i + 1}本目: ${where(r)}端が見つからず、距離のまま` });
+    const link = new LinkedX();
+    card.append(el("div", { class: "row" }, link.resetButton()));
+    new LineChart(card, "直進ごとの dc と直した量(灰色の点は見つからず、オレンジの点は左右が合わず)", "mm", [
+      { name: "dc(推定 − 予想)", color: css("--s1"), x, y: Float64Array.from(R, (r) => r.dc) },
+      { name: "直した量", color: css("--s2"), x, y: Float64Array.from(R, (r) => r.corr), dashed: true },
+    ], link, 220, { xName: "何本目の直進か", xDigits: 0, points });
+  }
+  view.append(card);
+  rawCard(view, b);
+}
+
+/* ================= 前壁の読み分かれ(FWALL) ================= */
+/* 探索の判断位置で、左右の前センサの片方だけが閾値を超えたときの記録(motor.c の Front_Wall_Decide、2026-10-19)。
+ * 列: act,x,y,dir,fl,fr,avg。avg = 左右の平均で見たら壁あり。mode 1 は記録だけ(迷路には壁なしと書いた)、2 は avg を書いた */
+function renderFwall(view, b) {
+  const P = b.params, mode = +P.mode;
+  const hi = b.lines.findIndex((l) => l.startsWith("act,"));
+  const cols = hi >= 0 ? b.lines[hi].split(",") : [];
+  const R = hi < 0 ? [] : b.lines.slice(hi + 1).filter((l) => /^-?\d/.test(l)).map((l) => {
+    const f = l.split(",").map(Number), r = {}; cols.forEach((c, j) => { r[c] = f[j]; }); return r;
+  });
+  const th = (P.th || "").split(",");
+  const card = el("div", { class: "card" });
+  card.append(el("h2", { text: `前壁の読み分かれ(${timeStr(b.time)}、${["使っていない", "記録だけ(迷路は今までどおり)", "平均でも壁ありにしている"][mode] || ""})` }),
+    el("div", { class: "note", text: `探索の判断位置で、前の左右のセンサの片方だけが閾値(左 ${th[0] || "?"}、右 ${th[1] || "?"})を超えたとき。` +
+      "迷路には左右とも超えたときだけ前壁を書く。前距離を決める判断は左右の平均で見ているので、ここに出たところは2つの判断が食い違っていた。" +
+      "本当の迷路と比べて、壁があったところが多ければ Front_Wall_Map = 2 にする。壁がなかったところで「平均で見ると壁あり」が多ければ 1 のまま。" }));
+  if (+P.lost) card.append(el("div", { class: "card warn", text: `記録しきれなかった ${P.lost} 回` }));
+  if (!R.length) {
+    card.append(el("p", { text: "左右が分かれたことはなかった。" }));
+  } else {
+    const t = el("table");
+    t.append(el("tr", null, ...["何番目の行動", "区画", "前壁の向き", "前の左", "前の右", "平均で見ると", "迷路に書いた"].map((h, i) => el("th", { class: i ? "" : "l", text: h }))));
+    for (const r of R) {
+      const wrote = mode === 2 ? r.avg : 0;
+      t.append(el("tr", null, el("td", { class: "l", text: r.act }), el("td", { text: r.x >= 0 ? `(${r.x},${r.y})` : "?" }),
+        el("td", { text: "北東南西"[r.dir] || "?" }), el("td", { text: r.fl }), el("td", { text: r.fr }),
+        el("td", { text: r.avg ? "壁あり" : "壁なし" }), el("td", { text: wrote ? "壁あり" : "壁なし" })));
+    }
+    card.append(t);
+  }
+  view.append(card);
+  rawCard(view, b);
+}
+
 function rawCard(view, b) {
   const btn = el("button", { text: "ファイルに保存" });
   btn.addEventListener("click", () => download(fileName(b), b.raw));
@@ -1472,6 +1683,8 @@ function renderView() {
     else if (b.type === "MAZE") renderMaze(view, b);
     else if (b.type === "CENTER") renderCenter(view, b);
     else if (b.type === "NOISE") renderNoise(view, b);
+    else if (b.type === "SCUT") renderScut(view, b);
+    else if (b.type === "FWALL") renderFwall(view, b);
     else if (b === LIVE) renderLive(view);
     else rawCard(view, b);
   } catch (e) {

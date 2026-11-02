@@ -91,4 +91,11 @@
 /* 角度のずれがこれより大きくなったら止める [deg]（モーターの向きが逆、ぶつかって向きが変わった、など） */
 #define ANGLE_ERROR_LIMIT_DEG 30.0f
 
+/* 速さで見つける異常（KOGUMA_PORTING.md の F2・F3。2026-11-02。値は仮で、実機で決める）。
+ * どちらも、当てはまった状態が FAILSAFE_HOLD_MS 続いたら止める（ノイズ 1 回では止めない。F4） */
+#define SPEED_DROP_LIMIT_MM_S   300.0f  /* F2：目標の速さより、測った速さがこれ以上遅い（ぶつかった）[mm/s] */
+#define STALL_TARGET_MIN_MM_S   200.0f  /* F3：加速も減速もせず、目標の速さがこれ以上で走っているはずなのに… */
+#define STALL_SPEED_MAX_MM_S    50.0f   /*     測った速さがこれより遅い（壁を押し続けている）[mm/s] */
+#define FAILSAFE_HOLD_MS        10      /* F4：当てはまった状態がこれだけ続いたら止める [ms] */
+
 #endif /* CONFIG_CTRL_GAINS_H */
