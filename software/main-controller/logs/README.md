@@ -7,7 +7,7 @@
 
 1. Windows の Chrome か Edge で `../tools/viewer.html` を開く（ネットは使わない）
 2. 「保存先フォルダ」を押して、このフォルダ（`software/main-controller/logs/`）を選ぶ
-3. 「接続」を押して、機体の USB シリアル（115200）を選ぶ。Tera Term や VS Code の Serial Monitor は閉じておく（同じ COM ポートは 1 つしか開けない）
+3. 「接続」を押して、機体の USB シリアル（921600）を選ぶ。Tera Term や VS Code の Serial Monitor は閉じておく（同じ COM ポートは 1 つしか開けない）
 4. 測った条件があれば、「メモ」に書く（例：`R 64mm`、`最短 No.2`）。測るたびに書きかえる。
    壁までの距離の表のために測るときは、`R 64mm`・`L 40mm`・`F 52mm` のように「センサの名前（R・L・F）と距離」だけを書く（`tools/wall_table.py` がこの形を読む）
 5. 機体でモード7 No.1（ログ出力）を実行する。届いたデータが 1 つずつ `日時_種類_メモ.txt` で保存される

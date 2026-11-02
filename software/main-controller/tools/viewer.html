@@ -14,7 +14,7 @@
     - 横の壁までの距離は区画中心で 42mm、電圧は V
   ネットは使わない(外から何も読み込まない)。Windows + Chrome / Edge で、このファイルを開いて使う。
 
-  - 「接続」: USBシリアル(115200)を Web Serial で読む。Tera Term は閉じておく(同じCOMポートは1つしか開けない)
+  - 「接続」: USBシリアル(921600)を Web Serial で読む。Tera Term は閉じておく(同じCOMポートは1つしか開けない)
   - 「保存先フォルダ」: 選ぶと、届いたデータを1つずつファイルにして自動で保存する(リポジトリの logs/ を選ぶとよい)
   - 「ファイルを開く」: 保存したファイルや、Tera Term のログを読み込んで表示する
 
@@ -397,7 +397,7 @@ async function connect() {
   }
   try {
     port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 115200 });
+    await port.open({ baudRate: 921600 });
   } catch (e) {
     port = null;
     if (e.name !== "NotFoundError") alert("接続できませんでした: " + e.message + "\nTera Term などで同じ COM ポートを開いていたら閉じてください。");
@@ -405,7 +405,7 @@ async function connect() {
   }
   $("bConnect").disabled = true;
   $("bDisconnect").disabled = false;
-  setStatus("接続中 115200", true);
+  setStatus("接続中 921600", true);
   $("console").classList.remove("hide");
   readLoop();
 }
