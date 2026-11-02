@@ -4,8 +4,9 @@
  * 吸引のときに壁センサにのるノイズを調べるテスト(モード3 No.10、2026-10-12)。
  *
  * 止まったまま(モーターは使わない)、次の組み合わせを全部測る。
- *   読み方(cond) 4通り: LEDを点けて/消してから読むまでの待ち 0 / NOISE_SETTLE_US [us]
- *                        × ADCの取り込み時間 3 / 56 サイクル
+ *   読み方(cond) 2通り: 吸引のPWMに合わせて読む(PL_sensor.c の g_sensor_pwm_sync)なし / あり
+ *   (2026-10-12〜18 は「待ち 0/30us × 取り込み 3/56サイクル」の4通りだった。どれも揺れは変わらず、
+ *    PWMの位置で決まっていたので、PWMに合わせるかどうかを比べるようにした。docs/sensor_noise.md)
  *   吸引 NOISE_DUTY の4通り(0 は吸引なし)
  * 1つの組み合わせごとに、吸引を変えて NOISE_WAIT_MS 待ってから NOISE_N 回(1msごと)読み、
  * 点灯時・消灯時の生のAD値と、その差(点灯 - 消灯)の平均・ばらつき・最小・最大を出す。
@@ -29,18 +30,20 @@
 #define NOISE_TRACE 100		//そのうち、生の値も出す回数
 #define NOISE_WAIT_MS 500	//吸引を変えてから測り始めるまで
 #define NOISE_SETTLE_US 30	//待ちを入れるときの待ち時間[us]
-#define NOISE_NC 4			//読み方の数
+#define NOISE_NC 2			//読み方の数
 #define NOISE_ND 4			//吸引の数
 
 static const uint8_t noise_duty[NOISE_ND] = { 0, 35, 50, 70 };
-static const uint16_t noise_settle[NOISE_NC] = { 0, NOISE_SETTLE_US, 0, NOISE_SETTLE_US };
-static const uint8_t noise_smp[NOISE_NC] = { 0, 0, 3, 3 };	//ADC_SAMPLETIME_3CYCLES、ADC_SAMPLETIME_56CYCLES
-static const uint8_t noise_smp_cyc[NOISE_NC] = { 3, 3, 56, 56 };
+static const uint16_t noise_settle[NOISE_NC] = { 0, 0 };
+static const uint8_t noise_smp[NOISE_NC] = { 0, 0 };	//ADC_SAMPLETIME_3CYCLES(56サイクルは 3)
+static const uint8_t noise_smp_cyc[NOISE_NC] = { 3, 3 };
+static const uint8_t noise_sync[NOISE_NC] = { 0, 1 };	//吸引のPWMに合わせて読むか
 static const char *noise_ch[4] = { "FL", "R", "L", "FR" };	//g_sensor と同じ並び
 static const char *noise_kind[3] = { "on", "off", "diff" };
 
 extern volatile uint16_t g_sensor_settle_us;
 extern volatile int8_t g_sensor_smp_req;
+extern volatile uint8_t g_sensor_pwm_sync;
 
 /* 測っているあいだの集計(割り込みで足す) */
 typedef struct {
@@ -129,13 +132,13 @@ static void print_stat(int c, int d) {
 	for (int i = 0; i < 4; i++) {
 		for (int k = 0; k < 3; k++) {
 			const NoiseStat *s = &noise_res[c][d][i][k];
-			printf("stat,%d,%d,%d,%d,%s,%s,%.1f,%.2f,%d,%d\r\n", c, noise_settle[c], noise_smp_cyc[c],
-					noise_duty[d], noise_ch[i], noise_kind[k], s->mean, s->sd, s->min, s->max);
+			printf("stat,%d,%d,%d,%d,%s,%s,%.1f,%.2f,%d,%d,%d\r\n", c, noise_settle[c], noise_smp_cyc[c],
+					noise_duty[d], noise_ch[i], noise_kind[k], s->mean, s->sd, s->min, s->max, noise_sync[c]);
 		}
 	}
 	const NoiseStat *b = &noise_res_batt[c][d];
-	printf("batt,%d,%d,%d,%d,%.1f,%.2f,%d,%d\r\n", c, noise_settle[c], noise_smp_cyc[c], noise_duty[d], b->mean,
-			b->sd, b->min, b->max);
+	printf("batt,%d,%d,%d,%d,%.1f,%.2f,%d,%d,%d\r\n", c, noise_settle[c], noise_smp_cyc[c], noise_duty[d], b->mean,
+			b->sd, b->min, b->max, noise_sync[c]);
 }
 
 /* 吸引の強さを duty にする(0 なら止める)。now は今の強さ */
@@ -160,6 +163,7 @@ void SensorNoise_Run(void) {
 	for (int c = 0; c < NOISE_NC; c++) {
 		g_sensor_settle_us = noise_settle[c];
 		g_sensor_smp_req = noise_smp[c];
+		g_sensor_pwm_sync = noise_sync[c];
 		HAL_Delay(5);
 		for (int d = 0; d < NOISE_ND; d++) {
 			set_duty(duty_now, noise_duty[d]);
@@ -198,6 +202,7 @@ void SensorNoise_Run(void) {
 	Suction_Stop();
 	g_sensor_settle_us = 0;
 	g_sensor_smp_req = 0;	//もとの3サイクルに戻す
+	g_sensor_pwm_sync = 1;	//ふだんはPWMに合わせて読む
 	HAL_Delay(5);
 	printf("#END NOISE\r\n");
 }

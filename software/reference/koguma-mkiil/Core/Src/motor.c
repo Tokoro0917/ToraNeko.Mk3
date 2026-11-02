@@ -14,10 +14,13 @@
 #include "lsm6dsr.h"
 #include "PL_sensor.h"
 #include "Wallsensor.h"
+#include "PillarEdge.h"
 #include "Maze.h"
 #include "WallDistance.h"
 #include "UI.h"
+#include "Failsafe.h"
 #include "stdlib.h"
+#include <stdio.h>
 
 float G_Robot_speed = 0;
 
@@ -57,7 +60,7 @@ float Ksi_Fun = 0.0015; //0.005
 float Ksd_Fun = 0.1; //0.01
 
 float Ksp_AT = 0.3; //0.3
-float Ksi_AT = 0.003; ////
+float Ksi_AT = 0.0045; //2026-10-21: 0.003 から 1.5倍。ターン後の直線で向きのずれ(約0.5°)を戻しきれなかった(0.5° → 0.39°)
 float Ksd_AT = 0.01;
 
 float Ktp = 0.7; //
@@ -85,13 +88,38 @@ float Motor_Voltage_L = 0;
 float Motor_Voltage_R = 0;
 
 int PID_Mode = 0;
+
+/* 直線の向きの基準(Gyro_Sigma_error、向きのずれの積分)を、直線から直線へ続けて走るときは引き継ぐ(2026-10-21)。
+ * 今までは直線の関数を呼ぶたびに 0 に戻していた。ずれた向きを戻すのに 0.5 秒ほどかかるので、区間に分けて走ると
+ * 戻しきる前に基準が変わっていた(モード5 No.0 のターン後、後距離 50mm と減速 180mm で合わせて -0.9°)。
+ * ターン・壁合わせ・後退(G_Motor_Flag >= 2)のあとは今までどおり 0 から始める(ターン中の積分は直線の向きの基準ではない)。
+ * 止まったとき(Motor_Stop)と Motor_Setup も今までどおり 0 にする。0 にすると今までどおり(直線の関数を呼ぶたびに 0) */
+int G_Heading_Keep = 1;
+static volatile int s_heading_turned = 1;	//前の直線のあとに G_Motor_Flag >= 2 の動きがあったか(割り込みで立てる)
+static void Straight_Heading_Start(void) {
+	if (!G_Heading_Keep || s_heading_turned) {
+		Gyro_Sigma_error = 0;
+	}
+	s_heading_turned = 0;
+}
 int Turn_Mode = 0;
 int Fun_Flag = 0;
 
 int Sula_Flag = 0;
 static int Suction_Duty = 0;	//今の吸引のduty(Suction_Start/Suction_changeで指定した値)
 
-float Alignment_TIME = 0.5;
+float Alignment_TIME = 0.5;	//前壁合わせの上限[s]
+/* 前壁合わせを早く終える(2026-10-20)。前壁合わせは比例制御だけなので、目標の近くでは出力が小さく摩擦で止まり、
+ * 止まったあとは待っても良くならない。それでも毎回0.5秒続けていた。車輪が止まった状態が Align_Still_Time 続いたら終わる
+ * (はじめは止まっているので Align_Min_Time までは終わらない)。ジャイロは吸引の振動で揺れるので、車輪の速度で見る */
+float Align_Min_Time = 0.10f;	//これより早くは終わらない[s]
+float Align_Still_Time = 0.05f;	//止まっている状態がこれだけ続いたら終わる[s]
+float Align_Still_V = 10.0f;	//左右の車輪の速さがこれより小さければ止まっている[mm/s]
+int G_Align_Count = 0;	//前壁合わせの回数(電源を入れてから)
+int G_Align_Timeout = 0;	//そのうち上限まで続いた回数
+float G_Align_Time_Sum = 0;	//かかった時間の合計[s]
+float G_Align_Err_Sum = 0;	//終わったときの前後の誤差の大きさの合計[mm](左右の距離の平均 - Align_Front_mm)
+float G_Align_Diff_Sum = 0;	//終わったときの左右の距離の差の大きさの合計[mm](向きのずれ)
 
 
 float Cut_R = 80;
@@ -109,7 +137,26 @@ float Cut_L_NA = 150;
  *    後距離はXだけ走る(ターンのあと次の境目の柱はターンの終わりのすぐ後に見えるので、後距離のうちには使えない。
  *    その境目は次の前距離で使う) */
 int G_WallCut_Pillar = 0;
-float Edge_Win = 20;	//前距離で、境目の推定を探す範囲(区画中心 ± 90 からの ±)[mm]
+/* 前距離で、境目の推定を探す範囲(区画中心 ± 90 からの ±)[mm]。
+ * 2026-10-18 の最短走行(2000)で、境目の推定が「区画中心 + 90」から 13〜38mm 先に出ていた(距離のずれ)ので
+ * 20 → 40 にした。隣の境目までは 180mm あるので、40 でも取り違えない */
+float Edge_Win = 40;
+/* 柱のときの前距離の読み替え: 曲がり始め = 境目 - 90 + (X × Pillar_X_Scale + Pillar_X_Offs)。
+ * 前距離の X は従来の壁切れ(壁が切れてから X の半分で曲がる)に合わせて調整してある。2026-10-18 の最短走行(2000)では、
+ * 曲がる側に壁がある前距離で、従来は実際には「区画中心 + X/2 - 5mm」くらいで曲がっていたので、その値から始める。
+ * ターンの種類ごとに合わせ直すまでのつなぎ(1.0 / 0 にすると X そのまま)。境目が見つからないときは 区画中心 + Xp + Pillar_Wait_Ofs */
+float Pillar_X_Scale = 0.5f;
+float Pillar_X_Offs = -5.0f;
+/* 柱のとき、境目が見つからないうちに曲がり始めるのは 区画中心 + Xp + Pillar_Wait_Ofs まで待ってから。
+ * 曲がる側は境目の先が開いているので、前の境目の柱の端は必ずある。2026-10-18 の最短走行(2000)では、
+ * 境目は「区画中心 + 90」より 10〜38mm(平均約22mm)先にあり、その端は前距離の始めの前後(約 -10〜+15mm)で見える。
+ * 距離だけ(区画中心 + X)で曲がり始めると、端が見える前に曲がってしまうことがあった(端が1mm後に見えた) */
+float Pillar_Wait_Ofs = 25.0f;
+/* X がこれより小さい前距離(2400の斜め入り、X = 3)は、曲がる側の境目だけを使い、見つからなければ従来と同じ
+ * 区画中心 + X で曲がり始める。2026-10-18 の 2400 の最短(柱)で、このターンだけ従来より 19〜25mm 遅く曲がり始め
+ * (反対側の境目を使った +30.1、待つ距離いっぱいの +23.7。従来は +5)、斜めの出口のあとで右の壁にぶつかった。
+ * 2000 の前距離(X = 5 以上)は今までどおり */
+float Pillar_Short_X = 5.0f;
 #define EDGE_SRC_BEHIND 4	//前距離で、後ろの境目(区画中心 - 90)を使った
 #define EDGE_SRC_CONV_CUT 16	//従来の前距離で、壁切れした(Wallsensor.h の EDGE_SRC_CONV_* と同じ値)
 #define EDGE_SRC_CONV_NONE 32	//従来の前距離で、曲がる側に壁がなく距離だけで走った
@@ -128,6 +175,13 @@ float Bff = 0.50;
 float FF_offset = 15.0;
 
 void Motor_Setup() {
+	if (Failsafe_Flag() == 1) {	//フェイルセーフで止まっているあいだは、モーターを動かさない(解除は main の Failsafe_Wait_Reset)
+		return;
+	}
+	/* 走り出す前にジャイロのゼロ点を測る(0.3秒。2026-10-19)。動いているときは測らない */
+	if (fabsf(G_Tire_Speed_L) < 20 && fabsf(G_Tire_Speed_R) < 20) {
+		Gyro_Calibrate(300);
+	}
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
@@ -160,6 +214,9 @@ void Motor_Stop() {
 }
 
 void Suction_Start(int duty) {
+	if (Failsafe_Flag() == 1) {	//フェイルセーフで止まっているあいだは、吸引も回さない
+		return;
+	}
 	Suction_Duty = duty;
 	Fun_Flag = 1;
 	if (duty == 50) {
@@ -170,7 +227,7 @@ void Suction_Start(int duty) {
 		Fun_Flag = 0;
 	}
 	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-	__HAL_TIM_SET_AUTORELOAD(&htim2, 100);
+	__HAL_TIM_SET_AUTORELOAD(&htim2, 99);	//周期 20us。車輪のPWM(TIM3)とぴったり同じにする(PL_sensor.c の sensor_pwm_sync)
 	duty = duty * (15.8 / Run_Voltage);
 	for (int i = 1; duty > i; i += 1) {
 		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, i);
@@ -355,6 +412,9 @@ void Motor_Speed_PID_ST(int V, int Ac) { // mm/s
 
 void Motor_Speed_PID_Turn(float W, float W_Ac) {
 	float w = 0;
+	if (G_Motor_Flag >= 2) {	//ターン・壁合わせ・後退: 次の直線は向きの基準を 0 から始める
+		s_heading_turned = 1;
+	}
 	if (PID_Mode == 1) {
 		W = calWallConrol() * 0.4;
 	} else if (PID_Mode == 2) {
@@ -430,7 +490,7 @@ void Motor_trapezoid(float Vst, float Vmax, float Vend, float Ac, float X) {
 	G_Motor_W_Target = 0;
 
 	Enc_Sigma_error = 0;
-	Gyro_Sigma_error = 0;
+	Straight_Heading_Start();
 
 	G_Motor_Count = 0;
 
@@ -446,6 +506,9 @@ void Motor_trapezoid(float Vst, float Vmax, float Vend, float Ac, float X) {
 	float Df1 = Vmax - Vst;
 	float t1 = PI * Df1 / 2 / Ac;
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 
 		if (Df1 > 0) {
 			G_Motor_V_Target = Df1 / 2 * (1 - cos(2 * Ac / Df1 * G_Motor_Count))
@@ -479,6 +542,9 @@ void Motor_trapezoid(float Vst, float Vmax, float Vend, float Ac, float X) {
 	G_Motor_Ac = 0;
 
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		if (G_Motor_X > Constant_X) {
 			break;
 		}
@@ -489,6 +555,9 @@ void Motor_trapezoid(float Vst, float Vmax, float Vend, float Ac, float X) {
 	float t3 = PI * Df3 / 2 / Ac;
 	G_Motor_Ac = -Ac;
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		//Df3 / 2* (1 - cos(2 * Ac / Df3 * (G_Motor_Count - t1))) + Vend;
 		G_Motor_V_Target = Df3 / 2
 				- (Df3 / 2) * (1 - cos(G_Motor_Count * ((2 * Ac) / Df3))) + Vend
@@ -543,6 +612,9 @@ void Motor_Multistage_PID(float Vst, float Vmax, float Vend, float Ac_base,
 	// 1. 加速フェーズ（3段階切り替え）
 	// ==========================================
 	while (G_Motor_V_Target < Vmax) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		dt = G_Motor_Count - prev_count;
 		prev_count = G_Motor_Count;
 
@@ -571,6 +643,9 @@ void Motor_Multistage_PID(float Vst, float Vmax, float Vend, float Ac_base,
 	// ==========================================
 	G_Motor_Ac = 0;
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		prev_count = G_Motor_Count;
 		Deceleration_X = (Vmax * Vmax - Vend * Vend) / (2 * Ac_De);
 		if (X - G_Motor_X <= Deceleration_X)
@@ -583,6 +658,9 @@ void Motor_Multistage_PID(float Vst, float Vmax, float Vend, float Ac_base,
 	// ==========================================
 	G_Motor_Ac = -Ac_De;
 	while (G_Motor_V_Target > Vend) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		dt = G_Motor_Count - prev_count;
 		prev_count = G_Motor_Count;
 		G_Motor_V_Target += G_Motor_Ac * dt;
@@ -611,7 +689,7 @@ void Motor_trapezoid_Asymmetric_PID(float Vst, float Vmax, float Vend, float Ac,
 	G_Motor_W_Target = 0;
 
 	Enc_Sigma_error = 0;
-	Gyro_Sigma_error = 0;
+	Straight_Heading_Start();
 
 	G_Motor_Count = 0;
 
@@ -635,6 +713,9 @@ void Motor_trapezoid_Asymmetric_PID(float Vst, float Vmax, float Vend, float Ac,
 
 	// --- 1. 加速フェーズ ---
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		if (Df1 > 0) {
 			G_Motor_V_Target = Df1 / 2 * (1 - cos(2 * Ac / Df1 * G_Motor_Count))
 					+ Vst;
@@ -665,6 +746,9 @@ void Motor_trapezoid_Asymmetric_PID(float Vst, float Vmax, float Vend, float Ac,
 
 	// --- 2. 等速フェーズ ---
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		if (G_Motor_X > Constant_X) {
 			break;
 		}
@@ -676,6 +760,9 @@ void Motor_trapezoid_Asymmetric_PID(float Vst, float Vmax, float Vend, float Ac,
 	float t3 = PI * Df3 / 2 / Ac_dec;
 
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		if (Df3 > 0) {
 			// 減速のcosカーブ。終了点(Vend)に向かって滑らかに着地
 			G_Motor_V_Target = Df3 / 2
@@ -708,7 +795,203 @@ static float Front_Wall_mm(void) {
 			+ WallDist_mm(WALLDIST_FR, g_sensor[3][0])) / 2;
 }
 
+/* ---- 探索の直進の壁切れ(2026-10-18 作り直し、設計は docs/search_wallcut_design.md) ----
+ * 探索の行動は「判断位置」(Motor_Sula_before で壁を読む位置。区画の境目のはず)で始まる。1区画まっすぐ進むときは、
+ * 区画の Search_Look_From(4割)を過ぎたら次の境目の柱の端(Wallsensor.c の Edge_Cut_Find、最短走行の柱の壁切れと
+ * 同じ推定)を探し、dc = 推定 - 距離から予想した境目 を出す。
+ *  - 探索のターン(前距離15・後距離50など)は、今の判断位置のまま調整してある。判断位置が本当の境目からずれていても
+ *    (最短走行の2000では、ターンのあとの境目は予想より 13〜38mm 先だった)、ターンはそのずれ込みで合っている。
+ *    推定にそのまま合わせると判断位置が動いてターンの位置がずれるので、「今のずれの中央値」Search_Edge_Ref を基準にし、
+ *    dc - Search_Edge_Ref だけ直す(ずれの平均は今のまま、ばらつきだけ消す)
+ *  - Search_WallCut: 0 使わない、1 記録だけ(走りは今までどおり。Search_Edge_Ref を測る)、2 直す
+ *  - 直すとき: 推定が 予想 + Ref ± Search_Edge_Win にあり、左右の推定が食い違っていない(EDGE_SRC_DISAGREE でない)ときだけ。
+ *    直す量 = Search_Corr_Gain × (dc - Ref) を ± Search_Corr_Max まで
+ *  - 両側とも壁が続くところは端がないので、どの段階でも何もしない
+ * 記録は Search_Cut_Print(出力のモード4 No.7、SCUT)。ビューアが基準のずれ(中央値)を出す */
+int Search_WallCut = 1;
+float Search_Edge_Ref = 0;		//基準のずれ[mm](記録で測った dc の中央値を書き写す)
+float Search_Edge_Win = 20;		//直すとき、予想 + Ref ± これの推定だけ使う[mm]
+float Search_Rec_Win = 60;		//記録するとき、予想 ± これの推定を残す[mm](隣の境目までは180mm)
+float Search_Corr_Max = 10;		//1回に直す量の上限[mm]
+float Search_Corr_Gain = 1.0f;	//dc - Ref のうち、どれだけ直すか
+float Search_Look_From = 0.4f;	//区画(180mm)のこの割合を進んでから探す
+
+#define SCUT_N 200
+typedef struct {
+	float b;		//予想した次の境目(G_Odo_X)
+	float dc;		//推定 - 予想[mm](推定がなければ 0)
+	float corr;		//直した量[mm]
+	uint16_t act;	//探索を始めてから何番目の行動か(1から)
+	int8_t prev;	//直前の行動(G_Robot_Lastaction: 0 直進、1 右、2 Uターン、3 左、5 まだなし。止まって向きを変えたときは進んだ向き)
+	int8_t src;		//推定(EDGE_SRC_*、0 は見つからず)
+	int8_t x, y, dir;	//区画と向き(Maze_Wall_Update のあと = いま入った区画)
+} SearchCutRec;
+static SearchCutRec Scut[SCUT_N];
+static int Scut_Count = 0;
+static int Scut_Lost = 0;	//入りきらなかった数
+static uint16_t Scut_Action = 0;	//探索の行動の数(Motor_Sula_before のたびに1増やす)
+
+/* ---- 迷路に書く前壁(2026-10-19、docs/search_stability_research.md) ----
+ * 迷路には左右の前センサがどちらも閾値を超えたときだけ前壁を書く(Maze.c)。同じ判断位置で前距離を決める front_wall は
+ * 左右の平均(SULA_FRONT_WALL_TH)で見ているので、左右が分かれた(片方だけ超えた)ときは2つの判断が食い違うことがある。
+ * 境目で前壁があれば左右とも約140なので、壁があって片方が60を切ることは考えにくく、むしろ壁がないのに片方が柱などを
+ * 見ていることがありうる。そこで、まず分かれたときを記録して(FWALL)、本当の壁と比べてから決める。
+ *  - Front_Wall_Map: 0 今までどおり、1 記録だけ(迷路は今までどおり)、2 平均でも壁ありにする(Wallsensor.c の Wall_Front_For_Map) */
+int Front_Wall_Map = 1;
+#define FWALL_N 64
+typedef struct {
+	uint16_t act;	//探索を始めてから何番目の行動か
+	int16_t fl, fr;	//前センサ(左・右、g_sensor_av10)
+	int8_t x, y, dir;	//いま入った区画と向き(前壁はこの区画の dir 側)
+	int8_t avg;		//左右の平均で見たら壁ありか(Wall_Front_For_Map)
+} FrontWallRec;
+static FrontWallRec Fwall[FWALL_N];
+static int Fwall_Count = 0;
+static int Fwall_Lost = 0;
+
+/* Motor_Sula_before の Wall_search() のあとに呼ぶ。迷路に書く前壁を G_Maze_Front_Override に入れ、左右が分かれたら記録する */
+static void Front_Wall_Decide(void) {
+	int split = (G_Wall_data[0] != G_Wall_data[3]);
+	int avg = Wall_Front_For_Map();
+	G_Maze_Front_Override = (Front_Wall_Map == 2) ? avg : -1;
+	if (!split || Front_Wall_Map == 0) {
+		return;
+	}
+	if (Fwall_Count >= FWALL_N) {
+		Fwall_Lost++;
+		return;
+	}
+	FrontWallRec *r = &Fwall[Fwall_Count++];
+	r->act = Scut_Action;
+	r->fl = (int16_t) g_sensor_av10[0];
+	r->fr = (int16_t) g_sensor_av10[3];
+	r->avg = (int8_t) avg;
+	r->x = r->y = r->dir = -1;	//区画は Maze_Wall_Update のあとに入れる(Front_Wall_Rec_Cell)
+}
+
+static void Front_Wall_Rec_Cell(void) {
+	if (Fwall_Count > 0 && Fwall[Fwall_Count - 1].act == Scut_Action && Fwall[Fwall_Count - 1].x < 0) {
+		FrontWallRec *r = &Fwall[Fwall_Count - 1];
+		r->x = (int8_t) G_Robot_MAZE_X;
+		r->y = (int8_t) G_Robot_MAZE_Y;
+		r->dir = (int8_t) G_Robot_Direction;
+	}
+}
+
+void Search_Cut_Reset(void) {
+	Scut_Count = 0;
+	Scut_Lost = 0;
+	Scut_Action = 0;
+	Fwall_Count = 0;
+	Fwall_Lost = 0;
+}
+
+int Search_Cut_Has_Data(void) {
+	return Scut_Count > 0 || Fwall_Count > 0;
+}
+
+void Search_Cut_Print(void) {
+	printf("\r\n#BEGIN FWALL n=%d lost=%d mode=%d th=%d,%d ratio=%.2f\r\n", Fwall_Count, Fwall_Lost, Front_Wall_Map,
+			Wall_threshold[0], Wall_threshold[3], Front_Wall_Min_Ratio);
+	printf("act,x,y,dir,fl,fr,avg\r\n");
+	for (int i = 0; i < Fwall_Count; i++) {
+		const FrontWallRec *r = &Fwall[i];
+		printf("%d,%d,%d,%d,%d,%d,%d\r\n", r->act, r->x, r->y, r->dir, r->fl, r->fr, r->avg);
+	}
+	printf("#END FWALL\r\n");
+
+	printf("\r\n#BEGIN SCUT n=%d lost=%d mode=%d ref=%.1f win=%.0f rec_win=%.0f max=%.0f gain=%.2f look=%.2f align_n=%d align_ms=%.0f align_to=%d align_mm=%d align_err=%.1f align_diff=%.1f gyro_ofs=%.3f gyro_sd=%.3f gyro_rej=%d gyro_torn=%lu gyro_try=",
+			Scut_Count, Scut_Lost, Search_WallCut, Search_Edge_Ref, Search_Edge_Win, Search_Rec_Win, Search_Corr_Max,
+			Search_Corr_Gain, Search_Look_From, G_Align_Count,
+			G_Align_Count ? 1000.0f * G_Align_Time_Sum / G_Align_Count : 0.0f, G_Align_Timeout, Align_Use_mm,
+			G_Align_Count ? G_Align_Err_Sum / G_Align_Count : 0.0f, G_Align_Count ? G_Align_Diff_Sum / G_Align_Count : 0.0f,
+			gyro_z_offset,
+			G_Gyro_Offset_SD, G_Gyro_Cal_Reject, (unsigned long) G_Gyro_Torn);
+	/* 最近測った順に「ばらつき:平均」(使わなかったものも) */
+	int k0 = (G_Gyro_Cal_Count > GYRO_CAL_TRY_N) ? G_Gyro_Cal_Count - GYRO_CAL_TRY_N : 0;
+	for (int k = k0; k < G_Gyro_Cal_Count; k++) {
+		printf("%s%.2f:%.3f", (k > k0) ? "," : "", G_Gyro_Cal_SD[k % GYRO_CAL_TRY_N], G_Gyro_Cal_Mean[k % GYRO_CAL_TRY_N]);
+	}
+	printf("\r\n");
+	printf("act,prev,x,y,dir,b,dc,corr,src\r\n");
+	for (int i = 0; i < Scut_Count; i++) {
+		const SearchCutRec *r = &Scut[i];
+		printf("%d,%d,%d,%d,%d,%.1f,%.1f,%.1f,%d\r\n", r->act, r->prev, r->x, r->y, r->dir, r->b, r->dc, r->corr,
+				r->src);
+	}
+	printf("#END SCUT\r\n");
+}
+
+/* 探索の1区画の直進。X は今の位置から次の境目までの距離(判断位置から始まる行動の、Motor_Sula_before のあとの残り) */
+void Motor_Search_Straight(float V, float X) {
+	if (Search_WallCut == 0) {
+		Motor_trapezoid_PID(V, V, V, 5000, X);
+		return;
+	}
+	G_Log_Phase = LOG_PH_STRAIGHT;
+	G_Motor_Flag = 1;
+	PID_Mode = 1;
+
+	G_Motor_V_Target = V;
+	G_Motor_X = 0;
+	G_Motor_Ac = 0;
+
+	G_Motor_Angle = 0;
+	G_Motor_W_Ac = 0;
+	G_Motor_W_Target = 0;
+
+	Enc_Sigma_error = 0;
+	Straight_Heading_Start();
+	G_Motor_Count = 0;
+
+	int correct = (Search_WallCut == 2);
+	float b = G_Odo_X + X;	//予想した次の境目
+	float lo = correct ? b + Search_Edge_Ref - Search_Edge_Win : b - Search_Rec_Win;
+	float hi = correct ? b + Search_Edge_Ref + Search_Edge_Win : b + Search_Rec_Win;
+	float look = X - 180.0f * (1.0f - Search_Look_From);	//ここまで進んだら端を探す
+	float corr = 0, dc = 0;
+	int src = 0;
+	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
+		if (G_Motor_X >= look) {
+			float cc;
+			int sr;
+			if (Edge_Cut_Find(lo, hi, EDGE_SRC_R | EDGE_SRC_L, &cc, &sr)) {
+				dc = cc - b;
+				src = sr;
+				if (correct && !(sr & EDGE_SRC_DISAGREE)) {
+					corr = Search_Corr_Gain * (dc - Search_Edge_Ref);
+					if (corr > Search_Corr_Max) corr = Search_Corr_Max;
+					if (corr < -Search_Corr_Max) corr = -Search_Corr_Max;
+				}
+			}
+		}
+		if (G_Motor_X >= X + corr) {
+			break;
+		}
+	}
+	if (Scut_Count < SCUT_N) {
+		SearchCutRec *r = &Scut[Scut_Count++];
+		r->b = b;
+		r->dc = dc;
+		r->corr = corr;
+		r->act = Scut_Action;
+		r->prev = (int8_t) G_Robot_Lastaction;
+		r->src = (int8_t) src;
+		r->x = (int8_t) G_Robot_MAZE_X;
+		r->y = (int8_t) G_Robot_MAZE_Y;
+		r->dir = (int8_t) (G_Robot_Direction % 4);
+	} else {
+		Scut_Lost++;
+	}
+	PID_Mode = 0;
+	G_Motor_Flag = 0;
+}
+
 void Motor_Sula_before(float Vst, float Vmax, float Vend, float Ac, float X) {
+	Scut_Action++;	//探索の直進の壁切れの記録で、何番目の行動かを残す
 	G_Log_Phase = LOG_PH_PRE;
 	G_Motor_Flag = 1;
 	PID_Mode = 1;
@@ -721,7 +1004,7 @@ void Motor_Sula_before(float Vst, float Vmax, float Vend, float Ac, float X) {
 	G_Motor_W_Ac = 0;
 	G_Motor_W_Target = 0;
 
-	Gyro_Sigma_error = 0;
+	Straight_Heading_Start();
 	//Enc_Sigma_error = 0;
 
 	float X0 = X;
@@ -731,9 +1014,17 @@ void Motor_Sula_before(float Vst, float Vmax, float Vend, float Ac, float X) {
 	}
 
 	Wall_search();
-	Maze_Wall_Update();
+	Front_Wall_Decide();	//迷路に書く前壁(左右が分かれたら記録する。2026-10-19)
+	if (Failsafe_Flag() == 0) {	//止まったあとの、ずれた位置で読んだ壁は書かない
+		Maze_Wall_Update();
+	}
+	G_Maze_Front_Override = -1;
+	Front_Wall_Rec_Cell();
 
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		if (G_Motor_X > X) {
 			break;
 		}
@@ -761,7 +1052,7 @@ void Motor_Sula_ST(float Vst, float Vmax, float Vend, float Ac, float X) {
 	G_Motor_W_Ac = 0;
 	G_Motor_W_Target = 0;
 
-	Gyro_Sigma_error = 0;
+	Straight_Heading_Start();
 	//Enc_Sigma_error = 0;
 
 	float X0 = X;
@@ -771,6 +1062,9 @@ void Motor_Sula_ST(float Vst, float Vmax, float Vend, float Ac, float X) {
 	}
 
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		if (G_Motor_X > X) {
 			break;
 		}
@@ -821,6 +1115,9 @@ void Motor_trapezoid_Turn(float Angle, float Wmax, float W_Ac) {
 	float t1 = PI * Df1 / 2 / W_Ac;
 	G_Motor_Count = 0;
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		G_Motor_W_Target = Df1 / 2 * (1 - cos(2 * W_Ac / Df1 * G_Motor_Count));
 		if (t1 <= G_Motor_Count) {
 			G_Motor_W_Target = Wmax;
@@ -840,6 +1137,9 @@ void Motor_trapezoid_Turn(float Angle, float Wmax, float W_Ac) {
 	G_Motor_Angle = 0;
 
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		if (SANKAKU == 1) {
 			SANKAKU = 0;
 			break;
@@ -853,6 +1153,9 @@ void Motor_trapezoid_Turn(float Angle, float Wmax, float W_Ac) {
 	float Df3 = G_Motor_W_Target;
 	float t3 = PI * Df3 / 2 / W_Ac;
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		G_Motor_W_Target = Df3 / 2
 				* (1 - cos(2 * W_Ac / Df3 * (G_Motor_Count - t1)));
 		if (t3 <= G_Motor_Count) {
@@ -897,6 +1200,9 @@ void Motor_Sula_COS(float V, float Angle, float Wmax, float W_Ac) {
 	float t1 = PI * Df1 / 2 / W_Ac;
 	G_Motor_Count = 0;
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		//printf("Ac____G_Motor_W_Target:%f----G_Motor_Angle:%f\n\r",
 		//G_Motor_W_Target, G_Motor_Angle);
 		G_Motor_W_Target = Df1 / 2 * (1 - cos(2 * W_Ac / Df1 * G_Motor_Count));
@@ -918,6 +1224,9 @@ void Motor_Sula_COS(float V, float Angle, float Wmax, float W_Ac) {
 	G_Motor_Angle = 0;
 
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		//printf("Co____G_Motor_W_Target:%f----G_Motor_Angle:%f\n\r",
 		//G_Motor_W_Target, G_Motor_Angle + Acceleration_X);
 		if (SANKAKU == 1) {
@@ -934,6 +1243,9 @@ void Motor_Sula_COS(float V, float Angle, float Wmax, float W_Ac) {
 	float Df3 = G_Motor_W_Target;
 	float t3 = PI * Df3 / 2 / W_Ac;
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		G_Motor_W_Target = Df3 / 2
 				* (1 - cos(2 * W_Ac / Df3 * (G_Motor_Count - t1)));
 		//printf("%f\n\r",G_Motor_V_Target);
@@ -967,6 +1279,9 @@ static void Cut_ST_Conv(int direction, float x_center, float X, float X_act, Cut
 	if (direction == 0) { //左旋回
 		if (cut_wall_L) {
 			while (1) {
+				if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+					break;
+				}
 				if (tick) tick();
 				if (Cut_Sensor(2) < Cut_L) {
 					break;
@@ -980,6 +1295,9 @@ static void Cut_ST_Conv(int direction, float x_center, float X, float X_act, Cut
 	} else if (direction == 1) { //右旋回
 		if (cut_wall_R) {
 			while (1) {
+				if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+					break;
+				}
 				if (tick) tick();
 				if (Cut_Sensor(1) < Cut_R) {
 					break;
@@ -994,6 +1312,9 @@ static void Cut_ST_Conv(int direction, float x_center, float X, float X_act, Cut
 	LED_Reset();
 	float X0 = G_Motor_X;
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		if (tick) tick();
 		if (G_Motor_X - X0 > X - X_act) {
 			break;
@@ -1004,32 +1325,41 @@ static void Cut_ST_Conv(int direction, float x_center, float X, float X_act, Cut
 
 /* 柱の前距離。前距離の始めは区画中心(x_center、G_Odo_X)で、そこから X 走ったら曲がり始める。
  * 境目の推定があれば、その実測で曲がり始めを直す:
- *   前の境目(x_center + 90 ± Edge_Win)があれば  曲がり始め = 境目 + X - 90
- *   なければ後ろの境目(x_center - 90 ± Edge_Win)  曲がり始め = 境目 + 90 + X
- *   どちらもなければ x_center + X(距離だけ)
+ *   前の境目(x_center + 90 ± Edge_Win)があれば  曲がり始め = 境目 + Xp - 90
+ *   なければ後ろの境目(x_center - 90 ± Edge_Win)  曲がり始め = 境目 + 90 + Xp
+ *   どちらもなければ x_center + Xp + Pillar_Wait_Ofs(距離だけ。それまでに端が見えたらそちらで直す)
+ * X < Pillar_Short_X のときは曲がる側の境目だけを使い、どちらもなければ x_center + X
+ * Xp = X × Pillar_X_Scale + Pillar_X_Offs(従来に合わせて調整した X の読み替え)
  * 横センサは区画中心で柱の真ん中を見る向きなので、前の境目の柱の端は区画中心の少し先で見える。
  * Xがそれより短いと前の境目は間に合わず、後ろの境目(前の区間で見たもの)を使う */
 static void Cut_ST_Pillar(int direction, float x_center, float X, CutTick tick) {
 	float b0 = x_center + 90.0f;
 	float b1 = x_center - 90.0f;
-	float target = x_center + X;
+	float Xp = X * Pillar_X_Scale + Pillar_X_Offs;	//境目から合わせるときの X
+	int short_x = X < Pillar_Short_X;
+	int sides = short_x ? (direction == 1 ? EDGE_SRC_R : EDGE_SRC_L) : (EDGE_SRC_R | EDGE_SRC_L);
+	float wait = short_x ? x_center + X : x_center + Xp + Pillar_Wait_Ofs;
+	float target = wait;
 	float c = 0;
 	int src = 0;
 	Edge_Log_Mark(EDGE_LOG_ST, direction, x_center, X, 0);
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		if (tick) tick();
 		float cc;
 		int sr;
-		if (Edge_Cut_Find(b0 - Edge_Win, b0 + Edge_Win, &cc, &sr)) {
-			target = cc + X - 90.0f;
+		if (Edge_Cut_Find(b0 - Edge_Win, b0 + Edge_Win, sides, &cc, &sr)) {
+			target = cc + Xp - 90.0f;
 			c = cc;
 			src = sr;
-		} else if (Edge_Cut_Find(b1 - Edge_Win, b1 + Edge_Win, &cc, &sr)) {
-			target = cc + 90.0f + X;
+		} else if (Edge_Cut_Find(b1 - Edge_Win, b1 + Edge_Win, sides, &cc, &sr)) {
+			target = cc + 90.0f + Xp;
 			c = cc;
 			src = sr | EDGE_SRC_BEHIND;
 		} else {
-			target = x_center + X;
+			target = wait;
 			src = 0;
 		}
 		if (G_Odo_X >= target) {
@@ -1048,6 +1378,9 @@ static void Cut_END(float X, CutTick tick) {
 	int src = 0;
 	Edge_Log_Mark(EDGE_LOG_END, 0, G_Odo_X, X, 0);
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		if (tick) tick();
 		if (G_Motor_X > X) {
 			break;
@@ -1088,6 +1421,9 @@ void Motor_Wallcut_ST(float Vmax, float X, int direction) {		//壁の有無を�
 		return;
 	}
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		if (G_Motor_X > X * 0.50) {
 			X_act = G_Motor_X;
 			break;
@@ -1107,7 +1443,7 @@ void Motor_Wallcut_END(float Vmax, float X, int direction) {
 	G_Motor_Ac = 0;
 
 	Enc_Sigma_error = 0;
-	Gyro_Sigma_error = 0;
+	Straight_Heading_Start();
 
 	Wall_search();
 	G_Motor_X = 0;
@@ -1125,17 +1461,23 @@ void Motor_Wallcut_ST_NANAME(float Vmax, float X, int direction) {
 	G_Motor_Ac = 0;
 
 	Enc_Sigma_error = 0;
-	Gyro_Sigma_error = 0;
+	Straight_Heading_Start();
 	Wall_search();
 	G_Motor_X = 0;
 	if (direction == 0) { //左旋回
 		while (1) {
+			if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+				break;
+			}
 			if (Cut_Sensor(2) < Cut_L_NA) {
 				break;
 			}
 		}
 	} else if (direction == 1) { //右旋回
 		while (1) {
+			if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+				break;
+			}
 			if (Cut_Sensor(1) < Cut_R_NA) {
 				break;
 			}
@@ -1143,6 +1485,9 @@ void Motor_Wallcut_ST_NANAME(float Vmax, float X, int direction) {
 	}
 	G_Motor_X = 0;
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		if (G_Motor_X > X) {
 			break;
 		}
@@ -1160,11 +1505,14 @@ void Motor_Wallcut_END_NANAME(float Vmax, float X, int direction) {
 	G_Motor_Ac = 0;
 
 	Enc_Sigma_error = 0;
-	Gyro_Sigma_error = 0;
+	Straight_Heading_Start();
 
 	G_Motor_X = 0;
 
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		if (G_Motor_X > X) {
 			break;
 		}
@@ -1172,12 +1520,18 @@ void Motor_Wallcut_END_NANAME(float Vmax, float X, int direction) {
 	Wall_search();
 	if (G_Wall_data[2] == 1 && direction == 0) {
 		while (1) {
+			if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+				break;
+			}
 			if (Cut_Sensor(1) < Cut_R_NA) {
 				break;
 			}
 		}
 	} else if (G_Wall_data[1] == 1 && direction == 1) {
 		while (1) {
+			if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+				break;
+			}
 			if (Cut_Sensor(2) < Cut_L_NA) {
 				break;
 			}
@@ -1219,7 +1573,7 @@ static void Accel_Start(float Vst, int pid_mode) {
 	G_Motor_W_Ac = 0;
 	G_Motor_W_Target = 0;
 	Enc_Sigma_error = 0;
-	Gyro_Sigma_error = 0;
+	Straight_Heading_Start();
 	G_Motor_Count = 0;
 	G_Motor_X = 0;
 }
@@ -1246,6 +1600,9 @@ void Motor_Wallcut_ST_Accel(float Vst, float Vmax, float Ac, float X_pre,
 	}
 	float X_act = 0;
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		Accel_Target_Update(Vst, Vmax, Ac);
 		if (G_Motor_X > X_pre + X * 0.50) {
 			X_act = G_Motor_X - X_pre;
@@ -1275,6 +1632,9 @@ void Motor_Wallcut_END_NANAME_Accel(float Vst, float Vmax, float Ac, float X,
 	G_Log_Phase = LOG_PH_POST_DIAG;
 	Accel_Start(Vst, 2);
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		Accel_Target_Update(Vst, Vmax, Ac);
 		if (G_Motor_X > X) {
 			break;
@@ -1283,6 +1643,9 @@ void Motor_Wallcut_END_NANAME_Accel(float Vst, float Vmax, float Ac, float X,
 	Wall_search();
 	if (G_Wall_data[2] == 1 && direction == 0) {
 		while (1) {
+			if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+				break;
+			}
 			Accel_Target_Update(Vst, Vmax, Ac);
 			if (Cut_Sensor(1) < Cut_R_NA) {
 				break;
@@ -1290,6 +1653,9 @@ void Motor_Wallcut_END_NANAME_Accel(float Vst, float Vmax, float Ac, float X,
 		}
 	} else if (G_Wall_data[1] == 1 && direction == 1) {
 		while (1) {
+			if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+				break;
+			}
 			Accel_Target_Update(Vst, Vmax, Ac);
 			if (Cut_Sensor(2) < Cut_L_NA) {
 				break;
@@ -1389,6 +1755,9 @@ float Motor_First_Turn_Accel(float X_pre, float pre, float post, float v_ref,
 	} else {
 		float X_act = 0;
 		while (1) {
+			if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+				break;
+			}
 			FT_Target_Update();
 			if (G_Motor_X > X_pre + pre * 0.50) {
 				X_act = G_Motor_X - X_pre;
@@ -1411,6 +1780,9 @@ float Motor_First_Turn_Accel(float X_pre, float pre, float post, float v_ref,
 	G_Motor_Flag = 3;
 	float L = v_ref * r.T;
 	while (1) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+			break;
+		}
 		FT_Target_Update();
 		float s = G_Motor_X;
 		if (s >= L) {
@@ -1440,6 +1812,9 @@ float Motor_First_Turn_Accel(float X_pre, float pre, float post, float v_ref,
 	if (naname) {
 		PID_Mode = 2;
 		while (1) {
+			if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+				break;
+			}
 			FT_Target_Update();
 			if (G_Motor_X > post) {
 				break;
@@ -1448,6 +1823,9 @@ float Motor_First_Turn_Accel(float X_pre, float pre, float post, float v_ref,
 		Wall_search();
 		if (G_Wall_data[2] == 1 && direction == 0) {
 			while (1) {
+				if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+					break;
+				}
 				FT_Target_Update();
 				if (Cut_Sensor(1) < Cut_R_NA) {
 					break;
@@ -1455,6 +1833,9 @@ float Motor_First_Turn_Accel(float X_pre, float pre, float post, float v_ref,
 			}
 		} else if (G_Wall_data[1] == 1 && direction == 1) {
 			while (1) {
+				if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
+					break;
+				}
 				FT_Target_Update();
 				if (Cut_Sensor(2) < Cut_L_NA) {
 					break;
@@ -1485,10 +1866,29 @@ void Motor_Robot_Alignment() {
 	Gyro_Sigma_error = 0;
 	Enc_Sigma_error = 0;
 	G_Motor_Count = 0;
+	float still_from = 0;	//止まり始めた時刻
 	while (1) {
-		if (G_Motor_Count > Alignment_TIME) {
+		if (Failsafe_Flag() == 1) {	//フェイルセーフで止まったら、すぐに抜ける
 			break;
 		}
+		float t = G_Motor_Count;
+		if (t > Alignment_TIME) {
+			G_Align_Timeout++;
+			break;
+		}
+		if (fabsf(G_Tire_Speed_L) >= Align_Still_V || fabsf(G_Tire_Speed_R) >= Align_Still_V) {
+			still_from = t;
+		} else if (t >= Align_Min_Time && t - still_from >= Align_Still_Time) {
+			break;
+		}
+	}
+	G_Align_Count++;
+	G_Align_Time_Sum += G_Motor_Count;
+	{
+		float fl = WallDist_mm(WALLDIST_FL, g_sensor[0][0]);
+		float fr = WallDist_mm(WALLDIST_FR, g_sensor[3][0]);
+		G_Align_Err_Sum += fabsf((fl + fr) * 0.5f - Align_Front_mm);
+		G_Align_Diff_Sum += fabsf(fl - fr);
 	}
 	Enc_Sigma_error = 0;
 	Gyro_Sigma_error = 0;

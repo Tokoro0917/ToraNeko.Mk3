@@ -46,13 +46,16 @@ static void Robot_Align_If_Wall(int wall_in_front) {
 /* その場Uターン(左90°を2回)。前に壁があれば前壁に、左90°回ったあとは
  * 元の左の壁(今の前)があればそれに合わせる。
  * 以前は2回目も元の「前」の壁の有無で判定していたため、前が壁で左が空いている
- * 区画では、何もない方向に向かって前壁合わせをして急に前進していた */
+ * 区画では、何もない方向に向かって前壁合わせをして急に前進していた。
+ * 2回目は、回ったあとの前センサで元の左の壁(今の前)を見て決める(2026-10-20)。それまでは G_Wall_data[1] で
+ * 決めていたが、G_Wall_data は1msごとに読み直すので、回ったあとは元の後ろ(来た向きで、いつも壁がない)を見ていて、
+ * 2回目の壁合わせはほとんどしていなかった */
 void Robot_adjustment() {
 	Motor_Stop();
 	Robot_Align_If_Wall(G_Wall_data[0] == 1 && G_Wall_data[3] == 1);	//前の壁
 	Motor_trapezoid_Turn(90, 600, 20000);
 	Motor_Stop();
-	Robot_Align_If_Wall(G_Wall_data[1] == 1);	//元の左の壁(今の前)
+	Robot_Align_If_Wall(G_Wall_data[0] == 1 && G_Wall_data[3] == 1);	//今の前の壁(元の左の壁)
 	Motor_trapezoid_Turn(90, 600, 20000);
 	Motor_Stop();
 }
@@ -83,7 +86,7 @@ void Robot_Maze_Sula_Action() {
 	Motor_Sula_before(500, 500, 500, 5000, 20);
 	if ((G_Maze_Flont <= G_Maze_Left) && (G_Maze_Flont <= G_Maze_Right)	//前進
 			&& (G_Maze_Flont <= G_Maze_Back)) {
-		Motor_trapezoid_PID(500, 500, 500, 5000, 160);
+		Motor_Search_Straight(500, 160);	//柱の端で残りの距離を直す(Search_WallCut)
 		G_Robot_Direction += 0;
 		G_Robot_Lastaction = 0;
 
@@ -186,7 +189,7 @@ void Robot_Maze_Go_From_Stop(float v, float ac) {
 		}
 		Motor_trapezoid_Turn(90, 600, 20000);
 		Motor_Stop();
-		Robot_Align_If_Wall(G_Wall_data[1] == 1);	//元の左の壁(今の前)
+		Robot_Align_If_Wall(G_Wall_data[0] == 1 && G_Wall_data[3] == 1);	//今の前の壁(元の左の壁。Robot_adjustment の説明)
 		Motor_trapezoid_Turn(90, 600, 20000);
 		Motor_Stop();
 		G_Robot_Direction += 2;
@@ -223,7 +226,7 @@ void Robot_Maze_Suction_Action() {
 	Motor_Sula_before(1000, 1000, 1000, 5000, 15);
 	if ((G_Maze_Flont <= G_Maze_Left) && (G_Maze_Flont <= G_Maze_Right)	//前進
 			&& (G_Maze_Flont <= G_Maze_Back)) {
-		Motor_trapezoid_PID(1000, 1000, 1000, 5000, 165);
+		Motor_Search_Straight(1000, 165);	//柱の端で残りの距離を直す(Search_WallCut)
 		G_Robot_Direction += 0;
 		G_Robot_Lastaction = 0;
 
@@ -283,6 +286,12 @@ void Robot_Maze_Suction_Action() {
 
 }
 
+/* 1: 既知区間を斜めの命令列(Known_Pass_NANAME)で走る。斜め入り・斜め出・V90 は G_Turn1000、斜めの直線は Motor_NANAME_PID。
+ * 0: 今までどおり(G_Known_Pass、直進と小回りだけ)。main.c の Maze_Search_Action がモード0 No.12 のときだけ 1 にする(2026-10-21) */
+int G_Known_Naname = 0;
+
+static int Turn2000_Naname_Kind(int code, int *kind, int *dir);
+
 void Robot_Maze_Pass_Action() {
 	int Known_X = G_Robot_MAZE_X;
 	int Known_Y = G_Robot_MAZE_Y;
@@ -301,50 +310,55 @@ void Robot_Maze_Pass_Action() {
 	}
 	if (G_MAZE_Explored[Known_X][Known_Y] == 1) {
 		Known_Pass_Generation();
-		for (int i = 0; G_Known_Pass[i] != 0; i++) {
+		/* 斜めで走るときは Known_Pass_NANAME。直進・小回り・Uターン・大回りの命令の意味は G_Known_Pass と同じで、
+		 * 斜めの命令(-50の倍数、-51〜-54、-61〜-66)が増える。斜め入りの前・斜め出のあとの直進は半区画減っている(奇数) */
+		const int16_t *pass = G_Known_Naname ? Known_Pass_NANAME : G_Known_Pass;
+		for (int i = 0; pass[i] != 0; i++) {
 			if (Failsafe_Flag() == 1) {
 				break;
 			}
-			if (G_Known_Pass[i] > 0) {			//1区間前進
+			int kind, dir;
+			if (pass[i] > 0) {			//半区画 pass[i] 個前進
 				Motor_trapezoid_PID(1000, 4000, 1000, 15000,
-						90 * G_Known_Pass[i]);
-			} else if (G_Known_Pass[i] == -2) {			//左
+						90 * pass[i]);
+			} else if (G_Known_Naname && (pass[i] <= -50)
+					&& Turn2000_Naname_Kind(pass[i], &kind, &dir)) {	//斜め入り・斜め出・V90
+				Turn1000_Run(kind, dir);
+			} else if (G_Known_Naname && (pass[i] <= -50) && (pass[i] % 50 == 0)) {	//斜めの直線
+				Motor_NANAME_PID(1000, 3000, 1000, 10000, 127.3 * pass[i] / -50);
+			} else if (pass[i] == -2) {			//左
 				Motor_Sula_ST(1000, 1000, 1000, 5000, 20);
-				Motor_Sula_COS(1000, 90, 1630, 60000);
+				Motor_Sula_COS(1000, 90, 1640, 60000);
 				Motor_trapezoid_PID(1000, 1000, 1000, 5000, 48);
-			} else if (G_Known_Pass[i] == -3) {			//右
+			} else if (pass[i] == -3) {			//右
 				Motor_Sula_ST(1000, 1000, 1000, 5000, 20);
-				Motor_Sula_COS(1000, -90, 1630, 60000);
+				Motor_Sula_COS(1000, -90, 1640, 60000);
 				Motor_trapezoid_PID(1000, 1000, 1000, 5000, 48);
-			} else if (G_Known_Pass[i] == -8) {			//行き止まりUターン
+			} else if (pass[i] == -8) {			//行き止まりUターン
 				Motor_trapezoid(1000, 1000, 0, 10000, 75);
 				Motor_Stop();
 				Stop_Hook_Run();	//既知区間の残りはこのまま走る(Uターンは変えない)
 				G_Just_UTurned = 1;
 				Robot_adjustment();
 				Motor_trapezoid_PID(0, 1000, 1000, 10000, 90);
-			} else if (G_Known_Pass[i] == -4) {			//左大廻９０
+			} else if (pass[i] == -4) {			//左大廻９０
 				Motor_Wallcut_ST(1000, 50, 0);
 				Motor_Sula_COS(1000, 90, 750, 20000);
 				Motor_Wallcut_END(1000, 85, 0);
-			} else if (G_Known_Pass[i] == -6) {			//右大廻９０
+			} else if (pass[i] == -6) {			//右大廻９０
 				Motor_Wallcut_ST(1000, 50, 1);
 				Motor_Sula_COS(1000, -90, 750, 20000);
 				Motor_Wallcut_END(1000, 85, 1);
-			} else if (G_Known_Pass[i] == -5) {			//左大廻１８０
+			} else if (pass[i] == -5) {			//左大廻１８０
 				Motor_Wallcut_ST(1000, 40, 0);
 				Motor_Sula_COS(1000, 180, 680, 13000);
 				Motor_Wallcut_END(1000, 70, 0);
-			} else if (G_Known_Pass[i] == -7) {			//右大廻１８０
+			} else if (pass[i] == -7) {			//右大廻１８０
 				Motor_Wallcut_ST(1000, 40, 1);
 				Motor_Sula_COS(1000, -180, 680, 13000);
 				Motor_Wallcut_END(1000, 70, 1);
 			}
-			// 斜め(NANAME)区間の実行は未実装・未チューニングのためコメントアウトのまま。
-			// 有効化する際は (1) このforループの走査対象をG_Known_Pass[]ではなく
-			// Known_Pass_NANAME[]に切り替え、(2) 下記の速度・距離・角度の各定数を
-			// 実機で再チューニングすること。生成側はKnown_Pass_Compression_NANAME()
-			// (Maze.c)で既にKnown_Pass_NANAME[]として計算済み。
+			// 2026-10-21: 斜めは上の G_Known_Naname の分岐(G_Turn1000)で走る。下は以前の 600mm/s の値(使わない)
 			/* else if (Known_Pass_NANAME[i] == -51) {			//入り　左４５
 			 Motor_Wallcut_ST(600, 35, 0);
 			 Motor_Sula_COS(600, 45, 450, 8000);
@@ -404,10 +418,21 @@ void Robot_Maze_Pass_Action() {
  * (探索が途中で止まった、未確認の壁を壁とみなすと塞がる等)では
  * Maze_Shortest_Calculation()/Maze_Dijkstra_Calculation()が空の経路を返すので、
  * そのときはエラーを知らせて走らずに戻る。戻り値1=走ってよい */
+/* 最短走行の止まり方(2026-10-20)。命令列(G_Short_Pass_NANAME)は走っているあいだに書き換わる
+ * (Short_Start が最初の直線を半区画減らし、Short_First_Turn が最初のターンを -1 にする)ので、
+ * 走る前(Short_Pass_Check)に求めておく。走ったあとの命令列から求めると半区画ずれる
+ * (10-20、モード0 No.11 で最短のあとの帰りを始めたとたんに壁に当たった) */
+static int s_goal_boundary = 0;	//命令列が境目で終わる(Short_Goal_X)
+int G_Short_End_OK = 0;	//止まる区画を求められた
+int G_Short_End_X = 0, G_Short_End_Y = 0, G_Short_End_Dir = 0;	//止まる区画と向き(Robot_adjustment で向きを変える前)
+
 static int Short_Pass_Check(void) {
 	if (G_Short_Pass[0] != 0) {
+		s_goal_boundary = Short_Pass_Ends_At_Boundary();
+		G_Short_End_OK = Short_Pass_End_Cell(&G_Short_End_X, &G_Short_End_Y, &G_Short_End_Dir);
 		return 1;
 	}
+	G_Short_End_OK = 0;
 	printf("ERROR: no shortest path (start cannot reach goal)\r\n");
 	LED_Path_Error();
 	return 0;
@@ -568,6 +593,12 @@ static float Short_AC_Naname(int AC, int def_minus) {
 	return (G_Short_AC_NANAME > 0) ? G_Short_AC_NANAME : AC - def_minus;
 }
 
+/* ダイクストラのコストを、これから走る値(ターンの速度 v、直線の最高速度・加速度、ターンの表)の時間にする(2026-10-27) */
+static void Short_Dijkstra_Use(int v, int MAX, int AC, const Turn2000_Param *turn) {
+	ShortRunParam p = { v, MAX, AC, (int) Short_AC_Naname(AC, 5000), turn };
+	Maze_Dijkstra_Set_Run(&p);
+}
+
 /* 最初のターンの直後の直線(vs < V のとき)。vs から V までは加速度 SHORT_FIRST_AC で上げ、
  * 残りの距離を返す(残りはいつもどおり V から走る)。直線全体を強い加速度にすると、
  * 最高速への加速と減速まで強くなるので、V に届くまでの区間だけにする。
@@ -631,6 +662,13 @@ static float Short_Start(float V) {
 		return V;
 	}
 	return Short_First_Turn(V, f);
+}
+
+/* 最短走行の最後に止まるまでの距離(2026-10-20)。ゴールの奥の区画の中心で止まる。
+ * 命令列が境目で終わるとき(最後が直進)は 1.5区画、区画の中心で終わるとき(最後がターン)は 1区画。
+ * それまでは、どちらも1区画(180mm)だったので、最後が直進のときはゴールの区画の境目で止まっていた */
+static float Short_Goal_X(void) {
+	return s_goal_boundary ? 270.0f : 180.0f;	//走る前に求めた値(Short_Pass_Check)
 }
 
 void Short_NANAME_Move1000(int MAX, int AC) {
@@ -749,48 +787,61 @@ void Short_NANAME_Move1000(int MAX, int AC) {
 
 	}
 	if (Failsafe_Flag() == 0) {
-		Motor_trapezoid_PID(1000, 1000, 0, 10000, 180);
+		Motor_trapezoid_PID(1000, 1000, 0, 10000, Short_Goal_X());
 		Motor_Stop();
 		Suction_Stop();
 
 		Robot_adjustment();
 		LED_Goal();
-	} else {
-		Failsafe_Flag_OFF();
-	}
+	}	//フェイルセーフで止まったときは、main の Failsafe_Wait_Reset() で解除する
 
 }
 
-/* ---- 2000のターンの値(2026-10-09) ----
- * 以前は Short_NANAME_Move2000(BFS)・Short_Dijkstra_Move2000(ダイクストラ)・モード6(ターン単体テスト)に
- * 別々に書かれていて、ダイクストラだけ値が違っていた。BFS(=モード6)の値で1つの表にまとめた。
- * モード6 No.1〜7(Turn2000_Test、左旋回、壁切れを使わず決まった距離)で合わせて、ここを直す。
- * 前距離・後距離[mm]、角度[deg]、最大角速度[deg/s]、角加速度[deg/s^2] */
-Turn2000_Param G_Turn2000[T2000_NUM] = {
+/* 2000・2400のターンの値(G_Turn2000 / G_Turn2400)は ShortParam.c に移した(2026-10-27) */
+
+/* ---- 1000のターンの値(2026-10-21) ----
+ * 吸引探索の既知区間を斜めで走るとき(モード0 No.12)に使う。値はモード5(ターン単体テスト)に書かれていた値のまま
+ * (大回り90・180 は Robot_Maze_Pass_Action の既知区間の大回りと同じ)。角度が 45/135/90 でないのは、そのときの調整の結果。
+ * モード5 No.1〜7(Turn1000_Test)で合わせて、ここを直す */
+Turn2000_Param G_Turn1000[T2000_NUM] = {
 	//          前の壁切れ   前距離 角度  最大角速度 角加速度  後の壁切れ   後距離
-	[T2000_BIG90]  = { WC2000_NORMAL, 10,  90, 2000,  40000, WC2000_NORMAL, 75 },	//大回り90
-	[T2000_BIG180] = { WC2000_NORMAL,  5, 180, 1220,  40000, WC2000_NORMAL, 73 },	//大回り180
-	[T2000_IN45]   = { WC2000_NORMAL,  5,  45, 1900, 120000, WC2000_NANAME, 110 },	//斜め入り45
-	[T2000_IN135]  = { WC2000_NORMAL, 31, 135, 1500,  80000, WC2000_NANAME, 80 },	//斜め入り135
-	[T2000_OUT45]  = { WC2000_NANAME, 8,  45, 1500,  40000, WC2000_NORMAL, 33 },	//斜め出45
-	[T2000_OUT135] = { WC2000_NANAME, 5, 135, 1350,  80000, WC2000_NORMAL, 80 },	//斜め出135
-	[T2000_V90]    = { WC2000_NANAME, 15,  90, 2000, 130000, WC2000_NANAME, 90},	//V90
+	[T2000_BIG90]  = { WC2000_NORMAL, 50,  90,  750,  20000, WC2000_NORMAL, 85 },	//大回り90
+	[T2000_BIG180] = { WC2000_NORMAL, 40, 180,  680,  13000, WC2000_NORMAL, 70 },	//大回り180
+	[T2000_IN45]   = { WC2000_NORMAL, 13,  45,  800,  20000, WC2000_NANAME, 78 },	//斜め入り45
+	[T2000_IN135]  = { WC2000_NORMAL, 38, 135,  800,  20000, WC2000_NANAME, 53 },	//斜め入り135
+	[T2000_OUT45]  = { WC2000_NANAME, 35, 45, 700,  20000, WC2000_NORMAL,55 },	//斜め出45
+	[T2000_OUT135] = { WC2000_NANAME, 20, 135,  800,  20000, WC2000_NORMAL, 70 },	//斜め出135
+	[T2000_V90]    = { WC2000_NANAME, 10, 90, 1000,  25000, WC2000_NANAME, 55 },	//V90
 };
+
+/* ターンを1つ走る(壁切れあり)。p: G_Turn1000 / G_Turn2000 / G_Turn2400 の行、V: 速度、dir: 0 左 / 1 右 */
+static void Turn_Run(const Turn2000_Param *p, float V, int dir) {
+	if (p->st_kind == WC2000_NANAME) {
+		Motor_Wallcut_ST_NANAME(V, p->st, dir);
+	} else {
+		Motor_Wallcut_ST(V, p->st, dir);
+	}
+	Motor_Sula_COS(V, dir == 0 ? p->ang : -p->ang, p->w, p->w_ac);
+	if (p->end_kind == WC2000_NANAME) {
+		Motor_Wallcut_END_NANAME(V, p->end, dir);
+	} else {
+		Motor_Wallcut_END(V, p->end, dir);
+	}
+}
 
 /* 2000のターンを1つ走る(壁切れあり)。kind: T2000_*、dir: 0 左 / 1 右 */
 void Turn2000_Run(int kind, int dir) {
-	const Turn2000_Param *p = &G_Turn2000[kind];
-	if (p->st_kind == WC2000_NANAME) {
-		Motor_Wallcut_ST_NANAME(2000, p->st, dir);
-	} else {
-		Motor_Wallcut_ST(2000, p->st, dir);
-	}
-	Motor_Sula_COS(2000, dir == 0 ? p->ang : -p->ang, p->w, p->w_ac);
-	if (p->end_kind == WC2000_NANAME) {
-		Motor_Wallcut_END_NANAME(2000, p->end, dir);
-	} else {
-		Motor_Wallcut_END(2000, p->end, dir);
-	}
+	Turn_Run(&G_Turn2000[kind], 2000, dir);
+}
+
+/* 1000のターンを1つ走る(壁切れあり)。kind: T2000_*、dir: 0 左 / 1 右 */
+void Turn1000_Run(int kind, int dir) {
+	Turn_Run(&G_Turn1000[kind], 1000, dir);
+}
+
+/* 2400のターンを1つ走る(壁切れあり)。kind: T2000_*、dir: 0 左 / 1 右 */
+void Turn2400_Run(int kind, int dir) {
+	Turn_Run(&G_Turn2400[kind], 2400, dir);
 }
 
 /* 斜めの命令(-51〜-54、-61〜-66)をターンの種類と向きにする。ターンでなければ0 */
@@ -841,6 +892,118 @@ void Turn2000_Test(int kind) {
 	} else {
 		Motor_trapezoid(2000, 2000, 0, 20000, 180);
 	}
+}
+
+/* モード5 No.1〜7: ターンを1つ、G_Turn1000 の値で走る(左旋回)。壁切れを使わず、前距離・後距離は決まった距離。
+ * Turn2000_Test と同じ置き方: 区画中心から入るターンはスタート位置から1区画先の区画の中心(180mm)まで、
+ * 斜めから入るターン(斜め出45/135・V90)は機体を斜めに置いて斜め1区間(127.3mm)で1000まで上げる(10000 で 79mm)。
+ * 止まるのは、まっすぐ出るターンは1区画(180mm)、斜めに出るターンは斜め1区間(127.3mm)。どちらも 15000(52mm) */
+void Turn1000_Test(int kind) {
+	const Turn2000_Param *p = &G_Turn1000[kind];
+	if (p->st_kind == WC2000_NANAME) {
+		Motor_trapezoid(0, 1000, 1000, 10000, 127.3);
+		Motor_trapezoid(1000, 1000, 1000, 15000, p->st);
+	} else {
+		Motor_trapezoid_PID(0, 1000, 1000, 15000, 90 + 90);
+		Motor_trapezoid_PID(1000, 1000, 1000, 15000, p->st);
+	}
+	Motor_Sula_COS(1000, p->ang, p->w, p->w_ac);
+	Motor_trapezoid(1000, 1000, 1000, 15000, p->end);
+	if (p->end_kind == WC2000_NANAME) {
+		Motor_trapezoid(1000, 1000, 0, 15000, 127.3);
+	} else {
+		Motor_trapezoid(1000, 1000, 0, 15000, 180);
+	}
+}
+
+/* 大回りの命令(-4 左90、-6 右90、-5 左180、-7 右180)を2400で */
+static void Turn2400_Big(int code) {
+	if (code == -4) {
+		Turn2400_Run(T2000_BIG90, 0);
+	} else if (code == -6) {
+		Turn2400_Run(T2000_BIG90, 1);
+	} else if (code == -5) {
+		Turn2400_Run(T2000_BIG180, 0);
+	} else if (code == -7) {
+		Turn2400_Run(T2000_BIG180, 1);
+	}
+}
+
+/* モード7 No.1〜7: ターンを1つ、G_Turn2400 の値で走る(左旋回)。壁切れを使わず、前距離・後距離は決まった距離。
+ * Turn2000_Test と同じく、ターンを1つずつ単体で走る(以前は斜め出・V90 を斜め入り45 のあとにつなげていた)。
+ *  - 区画中心から入るターン: スタート位置から2区画先の区画の中心(360mm)までで2400まで上げる(25000 で 181mm)。2000 と同じ置き方
+ *  - 斜めから入るターン(斜め出45/135・V90): 機体を斜めに置き、斜め3区間(381.9mm)で2400まで上げる(加速度 20000 で 226mm)。
+ *    斜め2区間(加速度 25000)では加速の遅れで前距離が足りず、ターンがずっと手前で始まった(2026-10-21)。2000 より斜め2区間ぶん後ろに置く
+ *  - 止まるのは、まっすぐ出るターンは1区画(180mm、30000 で 151mm)、斜めに出るターンは斜め2区間(254.6mm、25000 で 181mm) */
+void Turn2400_Test(int kind) {
+	const Turn2000_Param *p = &G_Turn2400[kind];
+	if (p->st_kind == WC2000_NANAME) {
+		Motor_trapezoid(0, 2400, 2400, 20000, 127.3 * 3);
+		Motor_trapezoid(2400, 2400, 2400, 15000, p->st);
+	} else {
+		Motor_trapezoid_PID(0, 2400, 2400, 25000, 90 + 90 + 180);
+		Motor_trapezoid_PID(2400, 2400, 2400, 15000, p->st);
+	}
+	Motor_Sula_COS(2400, p->ang, p->w, p->w_ac);
+	Motor_trapezoid(2400, 2400, 2400, 15000, p->end);
+	if (p->end_kind == WC2000_NANAME) {
+		Motor_trapezoid(2400, 2400, 0, 25000, 127.3 * 2);
+	} else {
+		Motor_trapezoid(2400, 2400, 0, 30000, 180);
+	}
+}
+
+/* ---- 2200のターン(2026-10-20、Turn-Sim_KOGUMA で作る) ----
+ * https://tokoro0917.github.io/Turn-Sim_KOGUMA/ の「Cの表をコピー」の行を、そのまま下に貼る(並びもシミュレーターと同じ)。
+ * offset_st(前距離)はターン区間の始まり(大回り・斜め入りは区画の中心、斜め出・V90 は斜めの壁の中点)から曲がり始めるまで、
+ * offset_end(後距離)は曲がり終わってから直進する距離[mm]。左ターンの値。v_mid(ターン中の最低速度)は使わない(速度一定で回る)。
+ * 今の値は仮(2000の表を角速度 ×1.1、角加速度 ×1.21 にしただけ。前距離・後距離は壁切れからの値なので意味が違う)。
+ * 実機の停止位置テストはモード11 No.1〜7(Turn2200_Test) */
+TurnSim_Param G_Turn2200[TS_NUM] = {
+	/*            v     v_mid   angle  w_max     w_ac    offset_st offset_end */
+	/* 斜め入り45 */ { 2200, 2200, 45, 1937, 150000, 12.9, 85.6 },
+	/* V90 */ { 2200, 2200, 90, 1897, 150000, 10.0, 63.2 },
+	/* 斜め入り135 */ { 2200, 2200, 135, 1397, 150000, 20.0, 48.0 },
+	/* 斜め出45 */ { 2200, 2200, 45, 668, 150000, 20.0, 26.5 },
+	/* 斜め出135 */ { 2200, 2200, 135, 1511, 150000, 20.0, 78.9 },
+	/* 大回り90 */ { 2200, 2200, 90, 980, 130000, 10.0, 63.7 },
+	/* 大回り180 */ { 2200, 2200, 180, 1365, 150000, 20.0, 63.5 },
+};
+
+/* モード11 No.1〜7 の番号(モード6と同じ並び: 1 大回り90、2 大回り180、3 斜め入り45、4 斜め入り135、5 斜め出45、6 斜め出135、7 V90)
+ * から G_Turn2200 の並び(シミュレーターの並び)へ */
+static const int8_t Turn2200_No_To_TS[7] = { TS_BIG90, TS_BIG180, TS_IN45, TS_IN135, TS_OUT45, TS_OUT135, TS_V90 };
+
+#define TURN2200_TEST_LEN_NANAME 254.6f	//停止位置テストの後ろの直線[mm]、斜めに出るターン(斜め入り45・135、V90): 斜め2区間。斜めの壁の中点で止まる
+#define TURN2200_TEST_LEN_ST 180.0f	//同じく、まっすぐ出るターン(大回り、斜め出): 1区画。次の区画の中心で止まる
+#define TURN2200_AC 15000.0f	//停止位置テストの加速度・減速度
+
+/* モード11 No.1〜7: Turn-Sim_KOGUMA の停止位置テスト(手順3・6・7)。G_Turn2200 の値で、ターンを1つ(左)。
+ * 加速の直線 → 前距離 → ターン → 後距離 → 後ろの直線(斜めに出るなら 254.6mm、まっすぐ出るなら 180mm)で減速して止まる。壁切れは使わない。
+ * 後ろの直線は短くてよい: シミュレーターのモデルでは滑りのずれはターンを出たところで決まり、直線の長さでは変わらない
+ * (長くすると角度の誤差のほうが大きく出て k に紛れる)。2200 から減速度 15000 で止まるのは 161mm。
+ * 後ろの直線(後距離から)は壁制御を切る(効いていると横ずれが補正されて見えなくなる)。
+ *  - 区画の中心から入るターン(大回り・斜め入り): スタート区画に置き、2区画先の区画の中心(スタート位置から 24 + 360mm)まで
+ *    で速度 v まで上げ、そこから前距離
+ *  - 斜めから入るターン(斜め出・V90): 機体を斜めに置き、斜め2区間(254.6mm)で速度 v まで上げ、そこ(斜めの壁の中点)から前距離 */
+void Turn2200_Test(int no) {
+	if (no < 1 || no > 7) {
+		return;
+	}
+	int ts = Turn2200_No_To_TS[no - 1];
+	const TurnSim_Param *p = &G_Turn2200[ts];
+	float V = p->v;
+	if (ts == TS_OUT45 || ts == TS_OUT135 || ts == TS_V90) {
+		Motor_trapezoid(0, V, V, TURN2200_AC, 254.6f);
+		Motor_trapezoid(V, V, V, TURN2200_AC, p->st);
+	} else {
+		Motor_trapezoid_PID(0, V, V, TURN2200_AC, SHORT_START_X + 360);
+		Motor_trapezoid_PID(V, V, V, TURN2200_AC, p->st);
+	}
+	Motor_Sula_COS(V, p->angle, p->w_max, p->w_ac);
+	Motor_trapezoid(V, V, V, TURN2200_AC, p->end);
+	int naname_out = (ts == TS_IN45 || ts == TS_IN135 || ts == TS_V90);
+	Motor_trapezoid(V, V, 0, TURN2200_AC, naname_out ? TURN2200_TEST_LEN_NANAME : TURN2200_TEST_LEN_ST);
 }
 
 void Short_NANAME_Move2000(int MAX, int AC) {
@@ -905,15 +1068,13 @@ void Short_NANAME_Move2000(int MAX, int AC) {
 
 	}
 	if (Failsafe_Flag() == 0) {
-		Motor_trapezoid_PID(2000, 2000, 0, 15000, 180);
+		Motor_trapezoid_PID(2000, 2000, 0, 15000, Short_Goal_X());
 		Motor_Stop();
 		Suction_Stop();
 
 		Robot_adjustment();
 		LED_Goal();
-	} else {
-		Failsafe_Flag_OFF();
-	}
+	}	//フェイルセーフで止まったときは、main の Failsafe_Wait_Reset() で解除する
 
 }
 
@@ -932,6 +1093,7 @@ void Short_NANAME_Move2400(int MAX, int AC) {
 	G_MAZE_Explored[G_Gool_X][G_Gool_Y] = 0;
 	Maze_Step_Calculate();
 	if (Short_Use_Dijkstra) {
+		Short_Dijkstra_Use(2400, MAX, AC, G_Turn2400);
 		Maze_Dijkstra_Calculation();
 	} else {
 		Maze_Shortest_Calculation();
@@ -963,67 +1125,11 @@ void Short_NANAME_Move2400(int MAX, int AC) {
 			}
 		} else if ((G_Short_Pass_NANAME[i] <= -4)
 				&& (G_Short_Pass_NANAME[i] > -50)) {
-			if (G_Short_Pass_CP[i] == -4) {			//左大廻９０
-				Motor_Wallcut_ST(2400, 25, 0);
-				Motor_Sula_COS(2400, 90, 1600, 80000);
-				Motor_Wallcut_END(2400, 100, 0);
-			} else if (G_Short_Pass_CP[i] == -6) {			//右大廻９０
-				Motor_Wallcut_ST(2400, 25, 1);
-				Motor_Sula_COS(2400, -90, 1600, 80000);
-				Motor_Wallcut_END(2400, 100, 1);
-			} else if (G_Short_Pass_CP[i] == -5) {			//左大廻１８０
-				Motor_Wallcut_ST(2400, 15, 0);
-				Motor_Sula_COS(2400, 180, 1500, 70000);
-				Motor_Wallcut_END(2400, 88, 0);
-			} else if (G_Short_Pass_CP[i] == -7) {			//右大廻１８０
-				Motor_Wallcut_ST(2400, 15, 1);
-				Motor_Sula_COS(2400, -180, 1500, 70000);
-				Motor_Wallcut_END(2400, 88, 1);
-
-			}
+			Turn2400_Big(G_Short_Pass_CP[i]);	//大回り(G_Turn2400)
 		} else if (G_Short_Pass_NANAME[i] <= -50) {			//斜め
-			if (G_Short_Pass_NANAME[i] == -51) {			//入り　左４５
-				Motor_Wallcut_ST(2400, 3, 0);
-				Motor_Sula_COS(2400, 45, 2500, 160000);
-				Motor_Wallcut_END_NANAME(2400, 113, 0);
-			} else if (G_Short_Pass_NANAME[i] == -52) {			//入り　左１３５
-				Motor_Wallcut_ST(2400, 15, 0);
-				Motor_Sula_COS(2400, 135, 2000, 55000);
-				Motor_Wallcut_END_NANAME(2400, 85, 0);
-			} else if (G_Short_Pass_NANAME[i] == -53) {			//入り　右４５
-				Motor_Wallcut_ST(2400, 3, 1);
-				Motor_Sula_COS(2400, -45, 2500, 160000);
-				Motor_Wallcut_END_NANAME(2400, 113, 1);
-			} else if (G_Short_Pass_NANAME[i] == -54) {			//入り　右１３５
-				Motor_Wallcut_ST(2400, 15, 1);
-				Motor_Sula_COS(2400, -135, 2000, 55000);
-				Motor_Wallcut_END_NANAME(2400, 85, 1);
-			} else if (G_Short_Pass_NANAME[i] == -61) {			//出　左４５
-				Motor_Wallcut_ST_NANAME(2400, 8, 0);
-				Motor_Sula_COS(2400, 45, 1550, 70000);
-				Motor_Wallcut_END(2400, 40, 0);
-			} else if (G_Short_Pass_NANAME[i] == -62) {			//出　左１３５
-				Motor_Wallcut_ST_NANAME(2400, 17, 0);
-				Motor_Sula_COS(2400, 135, 2100, 80000);
-				Motor_Wallcut_END(2400, 123, 0);
-			} else if (G_Short_Pass_NANAME[i] == -63) {			//出　右４５
-				Motor_Wallcut_ST_NANAME(2400, 8, 1);
-				Motor_Sula_COS(2400, -45, 1550, 70000);
-				Motor_Wallcut_END(2400, 40, 1);
-			} else if (G_Short_Pass_NANAME[i] == -64) {			//出　右１３５
-				Motor_Wallcut_ST_NANAME(2400, 17, 1);
-				Motor_Sula_COS(2400, -135, 2100, 80000);
-				Motor_Wallcut_END(2400, 123, 1);
-			} else if (G_Short_Pass_NANAME[i] == -65) {			//V90左
-				Motor_Wallcut_ST_NANAME(2400, 5, 0);
-				//Motor_NANAME_PID(500, 500, 500, 5000, 10);
-				Motor_Sula_COS(2400, 87, 2600, 150000);
-				Motor_Wallcut_END_NANAME(2400, 90, 0);
-			} else if (G_Short_Pass_NANAME[i] == -66) {			//V90右
-				Motor_Wallcut_ST_NANAME(2400, 5, 1);
-				//Motor_NANAME_PID(500, 500, 500, 5000, 10);
-				Motor_Sula_COS(2400, -87, 2600, 150000);
-				Motor_Wallcut_END_NANAME(2400, 90, 1);
+			int kind, dir;
+			if (Turn2000_Naname_Kind(G_Short_Pass_NANAME[i], &kind, &dir)) {
+				Turn2400_Run(kind, dir);	//斜め入り・斜め出・V90(G_Turn2400)
 			} else if (G_Short_Pass_NANAME[i] % 50 == 0) {			//直線
 				{
 					float rest = Short_Catchup(vs, 2400, 127.3 * G_Short_Pass_NANAME[i] / -50, 1);
@@ -1037,15 +1143,13 @@ void Short_NANAME_Move2400(int MAX, int AC) {
 
 	}
 	if (Failsafe_Flag() == 0) {
-		Motor_trapezoid_PID(2400, 2400, 0, 30000, 180);
+		Motor_trapezoid_PID(2400, 2400, 0, 30000, Short_Goal_X());
 		Motor_Stop();
 		Suction_Stop();
 
 		Robot_adjustment();
 		LED_Goal();
-	} else {
-		Failsafe_Flag_OFF();
-	}
+	}	//フェイルセーフで止まったときは、main の Failsafe_Wait_Reset() で解除する
 
 }
 
@@ -1167,19 +1271,21 @@ void Short_NANAME_Move2700(int MAX, int AC) {
 
 	}
 	if (Failsafe_Flag() == 0) {
-		Motor_trapezoid_PID(2700, 2700, 0, 33000, 180);
+		Motor_trapezoid_PID(2700, 2700, 0, 33000, Short_Goal_X());
 		Motor_Stop();
 		Suction_Stop();
 
 		Robot_adjustment();
 		LED_Goal();
-	} else {
-		Failsafe_Flag_OFF();
-	}
+	}	//フェイルセーフで止まったときは、main の Failsafe_Wait_Reset() で解除する
 
 }
 
+/* Short_Dijkstra_Move2000 がゴールまで走りきったら1(2026-10-20。モード0 No.11 が、最短のあとゴールから帰るかを決めるのに使う) */
+int G_Short_Reached = 0;
+
 void Short_Dijkstra_Move2000(int MAX, int AC) {
+	G_Short_Reached = 0;
 	Maze_Road();
 	Maze_Wall_fill();
 	G_Gool_X = MAZE_GOOL_X;
@@ -1191,6 +1297,7 @@ void Short_Dijkstra_Move2000(int MAX, int AC) {
 	Maze_Step_Calculate();
 
 	//Maze_Shortest_Calculation();
+	Short_Dijkstra_Use(2000, MAX, AC, G_Turn2000);
 	Maze_Dijkstra_Calculation();
 
 	Shortest_Pass_Compression();
@@ -1239,15 +1346,14 @@ void Short_Dijkstra_Move2000(int MAX, int AC) {
 
 	}
 	if (Failsafe_Flag() == 0) {
-		Motor_trapezoid_PID(2000, 2000, 0, 20000, 180);
+		Motor_trapezoid_PID(2000, 2000, 0, 20000, Short_Goal_X());
 		Motor_Stop();
 		Suction_Stop();
 
 		Robot_adjustment();
 		LED_Goal();
-	} else {
-		Failsafe_Flag_OFF();
-	}
+		G_Short_Reached = 1;
+	}	//フェイルセーフで止まったときは、main の Failsafe_Wait_Reset() で解除する
 
 }
 
@@ -1406,6 +1512,7 @@ void Short_NANAME_MoveTurnV(int MAX, int AC) {
 	G_MAZE_Explored[G_Gool_X][G_Gool_Y] = 0;
 	Maze_Step_Calculate();
 	if (TurnV_Use_Dijkstra) {
+		Short_Dijkstra_Use(2400, MAX, AC, G_Turn2400);
 		Maze_Dijkstra_Calculation();
 	} else {
 		Maze_Shortest_Calculation();
@@ -1489,15 +1596,13 @@ void Short_NANAME_MoveTurnV(int MAX, int AC) {
 	}
 	if (Failsafe_Flag() == 0) {
 		float vg = plan.v_goal_in;
-		Motor_trapezoid_PID(vg, vg, 0, 30000, 180);
+		Motor_trapezoid_PID(vg, vg, 0, 30000, Short_Goal_X());
 		Motor_Stop();
 		Suction_Stop();
 
 		Robot_adjustment();
 		LED_Goal();
-	} else {
-		Failsafe_Flag_OFF();
-	}
+	}	//フェイルセーフで止まったときは、main の Failsafe_Wait_Reset() で解除する
 }
 
 /* ダイクストラの経路を、Short_NANAME_MoveTurnV と同じ動きで走る */

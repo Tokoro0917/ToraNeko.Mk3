@@ -22,3 +22,10 @@ KOGUMA.MkII/Release/
 /test_deadend
 /test_deadend32
 /test_walldist
+
+# 調べもののメモと報告の下書き(まとめたものは docs/ に置く)
+/research_notes/
+/reports/
+
+# Python のキャッシュ(tools/*.py を import すると作られる)
+__pycache__/

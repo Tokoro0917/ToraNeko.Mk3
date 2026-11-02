@@ -53,6 +53,15 @@ float read_accel_y_axis();
 float read_accel_z_axis();
 
 float read_NoiseCut_gyro_z();
+int Gyro_Calibrate(int n);	//止まっているときにゼロ点を測る(n ms)
+extern float gyro_z_offset;
+extern float G_Gyro_Offset_SD;
+extern int G_Gyro_Cal_Reject;
+#define GYRO_CAL_TRY_N 4
+extern float G_Gyro_Cal_SD[GYRO_CAL_TRY_N];
+extern float G_Gyro_Cal_Mean[GYRO_CAL_TRY_N];
+extern int G_Gyro_Cal_Count;
+extern volatile uint32_t G_Gyro_Torn;
 
 float read_average_acc_x();
 

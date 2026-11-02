@@ -10,6 +10,8 @@
 #include"Wallsensor.h"
 #include"stdio.h"
 #include "Define.h"
+#include <math.h>
+#include <string.h>
 
 /* 計算時間の計測(実機のみ。DWTのサイクルカウンタ)。PCのテストでは0のまま。
  * 各関数の最大時間[us]を記録し、Maze_Debug_Dump()で表示する */
@@ -75,6 +77,10 @@ int G_Robot_Lastaction = 5; //0~3 直進　右　後ろ　左
  * Dijkstra誘導 未知壁探索(main.c)が「Uターンした時だけ経路を再計算する」
  * ための検出に使う。呼び出し側が使い終わったら自分で0に戻すこと */
 int G_Just_UTurned = 0;
+/* 迷路に書く前壁を、壁を読む側(motor.c の Motor_Sula_before)が決めて渡す。-1 なら今までどおり
+ * G_Wall_data[0] と [3] の両方(Wallsensor.c の Wall_Front_For_Map、2026-10-19) */
+int G_Maze_Front_Override = -1;
+#define MAZE_FRONT_WALL() ((G_Maze_Front_Override >= 0) ? G_Maze_Front_Override : (G_Wall_data[0] == 1 && G_Wall_data[3] == 1))
 
 uint16_t G_Maze_Flont;
 uint16_t G_Maze_Back;
@@ -112,6 +118,9 @@ int G_Dijk_Path_Len = 0;
 /* Maze_Unknown_Wall_Scan()が見つけた「経路上で最初に見つかった未知壁」の
  * 手前側セル座標(Maze_Gool_Setting()のmode==2で目標地点として使う)と、
  * その壁自体の識別子(Maze_Unknown_Wall_Still_Unknown()での再確認用) */
+/* 見に行く途中で目標の区画に行けなくなったら1(Maze_Step_Calculate、2026-10-27)。
+ * Maze_Unknown_Target_ModeSet() で0に戻る */
+int G_Unknown_Target_Lost = 0;
 int G_Unknown_Target_X = 0;
 int G_Unknown_Target_Y = 0;
 uint8_t G_Unknown_Wall_IsRow = 0;
@@ -202,32 +211,7 @@ unsigned short popStack_walk(STACK_T *stack) {
 	return ret;
 }
 
-/* ---- ダイクストラ(SPFA)のノード ------------------------------------------
- * ノードは壁の位置(境界)。Row型 = 横壁 G_Maze_Row[y] の bit x、
- * Column型 = 縦壁 G_Maze_Column[x] の bit y。
- * 境界は2つのマスに挟まれているので、ノードを「どちら向きに通過しているか」
- * (sense)で2つの状態に分ける。sense=1 は Row型なら北向き、Column型なら東向き。
- * 向きを分けないと、あとから向きが入れ替わったノードの先に古いつながりが残り、
- * 「マスに入って横へ抜け、同じマスに戻って別の壁へ抜ける」実際には走れない経路が
- * できてしまう(test/test_shortpath.c で検出)。
- * 状態番号 = ((isRow * (MAZE_SIZE+1) + x) * (MAZE_SIZE+1) + y) * 2 + sense */
-#define DIJK_W (MAZE_SIZE + 1)
-#define DIJK_STATE_NUM (2 * DIJK_W * DIJK_W * 2)
-#define DIJK_NO_PRED 0xFFFF
-
-typedef struct {
-	uint16_t cost;
-	uint16_t pred;		//ゴール側の1つ前の状態番号
-	uint8_t direction;	//この状態に入ったときの向き(0=N,1=NE,...,7=NW。ゴールから外へ向かう向き)
-	uint8_t inQueue;	//SPFA: 現在キューに積まれているか(確定済みフラグではない)
-} DIJK_STATE_T;
-
-static DIJK_STATE_T dijk_state[DIJK_STATE_NUM];
-
-/* SPFAのキュー。inQueueで同じ状態は同時に1回しか積まれないので状態数で足りる */
-static uint16_t dijk_queue[DIJK_STATE_NUM];
-static int dijk_q_head, dijk_q_tail, dijk_q_count;
-
+/* シミュレータ(sim/sim_main.c)が見る数 */
 #ifdef SIM_DEBUG
 int g_queue_node_push_count = 0;
 int g_queue_node_max_occupancy = 0;
@@ -235,53 +219,6 @@ int g_queue_node_overflow_count = 0;
 int g_dijkstra_backtrace_hops = 0;
 int g_bfs_outer_hops = 0;
 #endif
-
-static int dijk_index(int isRow, int x, int y, int sense) {
-	return ((isRow * DIJK_W + x) * DIJK_W + y) * 2 + sense;
-}
-
-static void dijk_push(int s) {
-	if (dijk_q_count >= DIJK_STATE_NUM) {	//inQueueがある限り起きない
-#ifdef SIM_DEBUG
-		g_queue_node_overflow_count++;
-#endif
-		return;
-	}
-	dijk_queue[dijk_q_tail] = (uint16_t) s;
-	dijk_q_tail = (dijk_q_tail + 1) % DIJK_STATE_NUM;
-	dijk_q_count++;
-	dijk_state[s].inQueue = 1;
-#ifdef SIM_DEBUG
-	g_queue_node_push_count++;
-	if (dijk_q_count > g_queue_node_max_occupancy)
-		g_queue_node_max_occupancy = dijk_q_count;
-#endif
-}
-
-static int dijk_pop(void) {
-	if (dijk_q_count == 0) {
-		return -1;
-	}
-	int s = dijk_queue[dijk_q_head];
-	dijk_q_head = (dijk_q_head + 1) % DIJK_STATE_NUM;
-	dijk_q_count--;
-	dijk_state[s].inQueue = 0;
-	return s;
-}
-
-static int dijk_is_wall(int isRow, int x, int y) {
-	if (isRow) {
-		return (G_Maze_Row[y] & (1u << x)) != 0;
-	}
-	return (G_Maze_Column[x] & (1u << y)) != 0;
-}
-
-/* 表示用: そのノードの2つの向きのうち小さい方のコスト */
-static int dijk_node_cost(int isRow, int x, int y) {
-	int a = dijk_state[dijk_index(isRow, x, y, 0)].cost;
-	int b = dijk_state[dijk_index(isRow, x, y, 1)].cost;
-	return (a < b) ? a : b;
-}
 
 void Maze_Initialization() {
 	for (i = 0; i < MAZE_SIZE; i++) {
@@ -384,7 +321,7 @@ static void Maze_Wall_Update_Body(void) {
 				G_Maze_Column[G_Robot_MAZE_X] = G_Maze_Column[G_Robot_MAZE_X]
 						| (1u << (G_Robot_MAZE_Y));
 			}
-			if (G_Wall_data[0] == 1 && G_Wall_data[3] == 1) {		//前壁がある//
+			if (MAZE_FRONT_WALL()) {		//前壁がある//
 				G_Maze_Row[G_Robot_MAZE_Y + 1] = G_Maze_Row[G_Robot_MAZE_Y + 1]
 						| (1u << (G_Robot_MAZE_X));
 			}
@@ -433,7 +370,7 @@ static void Maze_Wall_Update_Body(void) {
 				G_Maze_Row[G_Robot_MAZE_Y + 1] = G_Maze_Row[G_Robot_MAZE_Y + 1]
 						| (1u << (G_Robot_MAZE_X));
 			}
-			if (G_Wall_data[0] == 1 && G_Wall_data[3] == 1) {		//前壁がある
+			if (MAZE_FRONT_WALL()) {		//前壁がある
 				G_Maze_Column[G_Robot_MAZE_X + 1] = G_Maze_Column[G_Robot_MAZE_X
 						+ 1] | (1u << (G_Robot_MAZE_Y));
 			}
@@ -481,7 +418,7 @@ static void Maze_Wall_Update_Body(void) {
 				G_Maze_Column[G_Robot_MAZE_X + 1] = G_Maze_Column[G_Robot_MAZE_X
 						+ 1] | (1u << (G_Robot_MAZE_Y));
 			}
-			if (G_Wall_data[0] == 1 && G_Wall_data[3] == 1) {		//前壁がある
+			if (MAZE_FRONT_WALL()) {		//前壁がある
 				G_Maze_Row[G_Robot_MAZE_Y] = G_Maze_Row[G_Robot_MAZE_Y]
 						| (1u << (G_Robot_MAZE_X));
 			}
@@ -532,7 +469,7 @@ static void Maze_Wall_Update_Body(void) {
 				G_Maze_Row[G_Robot_MAZE_Y] = G_Maze_Row[G_Robot_MAZE_Y]
 						| (1u << (G_Robot_MAZE_X));
 			}
-			if (G_Wall_data[0] == 1 && G_Wall_data[3] == 1) {		//前壁がある
+			if (MAZE_FRONT_WALL()) {		//前壁がある
 				G_Maze_Column[G_Robot_MAZE_X] = G_Maze_Column[G_Robot_MAZE_X]
 						| (1u << (G_Robot_MAZE_Y));
 			}
@@ -711,31 +648,58 @@ static void Known_Pass_Generation_Body(void) {
  *   Known_Pass_NANAME[]を消費しない(有効化するにはMove.cの対応ブロックの
  *   コメントアウトを外し、実行ループの参照先をKnown_Pass_NANAMEへ切り替える必要がある)。
  */
+/* 斜めの区間を、斜めに入る前の形に戻す。from: 斜め入りで1つ減らした直進の位置、from_val: 減らす前のその値、
+ * to: 戻す範囲の終わり(含まない)。直進は、前の斜め出で減らしてあることがあるので Known_Pass_CP ではなく減らす前の値に戻す */
+static void Known_Naname_Revert(int from, int from_val, int to) {
+	Known_Pass_NANAME[from] = from_val;
+	for (int k = from + 1; k < to; k++) {
+		Known_Pass_NANAME[k] = Known_Pass_CP[k];
+	}
+}
+
 void Known_Pass_Compression_NANAME() {
 	NANAME_Flag = 0;
+	int naname_from = 0;	//今の斜めの区間を戻すときの始まり(斜め入りの前の直進)
+	int naname_from_val = 0;	//その直進の、斜め入りで減らす前の値
 
 	for (i = 0; Known_Pass_CP[i] != 0; i++) {
 		Known_Pass_NANAME[i] = Known_Pass_CP[i];
 	}
-	/* Known_Pass_CPの終端(0)自体はコピーされないので、この位置の
-	 * Known_Pass_NANAMEは前回実行時の値が残ったまま。末尾コーナー判定の
-	 * 先読み用に1を置き(CP側と同じ手法)、処理後に必ず0へ戻す。
-	 * これをしないと下のループが終端を見失い前回の残骸を読み進めてしまう */
+	/* 終端の先を0にしておく(下の先読み [i+1]・[i+2] が前回の残りを読まないように)。
+	 * 2026-10-21: 以前は終端に1を置いて「直進が続く」ことにしていたが、既知区間は未探索の区画の手前の
+	 * 境目で終わり、その先に直進はない。最後の曲がりが斜め出になると、その半区画を先読みの1から取ってしまい、
+	 * 半区画手前で終わっていた。斜め出は、後ろに本当の直進(> 0)があるときだけにする */
 	int naname_term_idx = i;
-	Known_Pass_NANAME[i] = 1;
+	for (int k = naname_term_idx; k < naname_term_idx + 3 && k < MAX_STEP; k++) {
+		Known_Pass_NANAME[k] = 0;
+	}
 	for (i = 0; i < naname_term_idx; i++) {
+		if ((Known_Pass_NANAME[i] == -8) && (NANAME_Flag == 1)) {
+			/* 斜めのまま行き止まりのUターンには入れない(Uターンは直進の向きで、区画の境目から)。
+			 * 斜め出できなかった斜めの区間は、小回りに戻す */
+			Known_Naname_Revert(naname_from, naname_from_val, i);
+			NANAME_Flag = 0;
+			continue;
+		}
 		if ((Known_Pass_NANAME[i] == -2) || (Known_Pass_NANAME[i] == -3)) {
 			if (Known_Pass_NANAME[i - 1] > 0) { //斜め入り
+				/* 既知区間は大回りにしない(KNOWN_PASS_BIG_TURN 0)ので、直進 → 同じ向きに2回 → 直進(大回り180の形)が残っている。
+				 * 135 は、そのあとも曲がり続けるときだけ(最短では先に大回り180になるので、この形は来ない) */
+				int turn2 = (Known_Pass_NANAME[i + 2] == -2) || (Known_Pass_NANAME[i + 2] == -3);
 				if (Known_Pass_NANAME[i] == -2) { //左
 
 					if (Known_Pass_NANAME[i + 1] == -3) {
 						//入り４５
+						naname_from = i - 1;
+						naname_from_val = Known_Pass_NANAME[i - 1];
 						Known_Pass_NANAME[i - 1] -= 1;
 						Known_Pass_NANAME[i] = -51;
 						NANAME_Flag = 1;
 						Pass_zero_act();
-					} else if (Known_Pass_NANAME[i + 1] == -2) {
+					} else if ((Known_Pass_NANAME[i + 1] == -2) && turn2) {
 						//入り135
+						naname_from = i - 1;
+						naname_from_val = Known_Pass_NANAME[i - 1];
 						Known_Pass_NANAME[i - 1] -= 1;
 						Known_Pass_NANAME[i] = -52;
 						Known_Pass_NANAME[i + 1] = -1;
@@ -746,12 +710,16 @@ void Known_Pass_Compression_NANAME() {
 
 					if (Known_Pass_NANAME[i + 1] == -2) {
 						//入り４５
+						naname_from = i - 1;
+						naname_from_val = Known_Pass_NANAME[i - 1];
 						Known_Pass_NANAME[i - 1] -= 1;
 						Known_Pass_NANAME[i] = -53;
 						NANAME_Flag = 1;
 						Pass_zero_act();
-					} else if (Known_Pass_NANAME[i + 1] == -3) {
+					} else if ((Known_Pass_NANAME[i + 1] == -3) && turn2) {
 						//入り135
+						naname_from = i - 1;
+						naname_from_val = Known_Pass_NANAME[i - 1];
 						Known_Pass_NANAME[i - 1] -= 1;
 						Known_Pass_NANAME[i] = -54;
 						Known_Pass_NANAME[i + 1] = -1;
@@ -759,7 +727,7 @@ void Known_Pass_Compression_NANAME() {
 						Pass_zero_act();
 					}
 				}
-			} else if ((Known_Pass_NANAME[i + 1] >= 0) && (NANAME_Flag == 1)) { //斜め出 45
+			} else if ((Known_Pass_NANAME[i + 1] > 0) && (NANAME_Flag == 1)) { //斜め出 45
 				if (Known_Pass_NANAME[i] == -3) {
 					//右４５
 					Known_Pass_NANAME[i] = -63;
@@ -772,7 +740,7 @@ void Known_Pass_Compression_NANAME() {
 					Pass_zero_act();
 				}
 				NANAME_Flag = 0;
-			} else if ((Known_Pass_NANAME[i + 2] >= 0) && (NANAME_Flag == 1)) {
+			} else if ((Known_Pass_NANAME[i + 2] > 0) && (NANAME_Flag == 1)) {
 				if (Known_Pass_NANAME[i] == Known_Pass_NANAME[i + 1]) {
 					if (Known_Pass_NANAME[i] == -3) {
 						//右135
@@ -822,6 +790,11 @@ void Known_Pass_Compression_NANAME() {
 			}
 		}
 	}
+	if (NANAME_Flag == 1) {
+		/* 斜めのまま既知区間が終わった: 未探索の区画の手前の境目で、直進の向きで終わらないといけないので、小回りに戻す */
+		Known_Naname_Revert(naname_from, naname_from_val, naname_term_idx);
+		NANAME_Flag = 0;
+	}
 	for (i = 0; i < naname_term_idx; i++) {
 		if (Known_Pass_NANAME[i] == -50) {
 			for (int j = 1; Known_Pass_NANAME[i + j] == -50; j++) {
@@ -831,7 +804,7 @@ void Known_Pass_Compression_NANAME() {
 		}
 	}
 
-	/* 先読み用の1を正式な0終端に戻す */
+	/* 正式な0終端(Pass_zero_act が終端の0を-1にしていることがある) */
 	Known_Pass_NANAME[naname_term_idx] = 0;
 }
 
@@ -1083,6 +1056,17 @@ static void Maze_Step_Calculate_Body(void) {
 		ALL_MODE = 0;
 		Maze_Step_Calculate();
 	}
+	/* ダイクストラ誘導の未知壁探索(ALL_MODE == 2)で、見に行く途中でほかの壁が見つかり、
+	 * 目標の区画に行けなくなった(今いる区画が MAX_STEP。2026-10-27)。このままだと前後左右が
+	 * 全部 MAX_STEP になり、前に壁があっても前進を選んでしまう(シミュレータでは迷路の外へ出た)。
+	 * いったんゴール(G_Gool_X,Y)を目標にして動けるようにし、G_Unknown_Target_Lost を立てる
+	 * (main.c がその区画で止まって経路を計算し直す) */
+	if (ALL_MODE == 2
+			&& G_Step_Map[G_Robot_MAZE_X][G_Robot_MAZE_Y] == MAX_STEP) {
+		G_Unknown_Target_Lost = 1;
+		ALL_MODE = 0;
+		Maze_Step_Calculate();
+	}
 }
 
 void Maze_Shortest_Calculation() {
@@ -1291,8 +1275,82 @@ void Maze_Shortest_Calculation() {
 	}
 }
 
-/* 状態(isRow,x,y,sense)から進める3本の辺。進む先は今の向きの先にあるマスを
- * 通るものだけ(直進1本+斜め2本)。{dir, isRow, dx, dy, sense} */
+/* ---- ダイクストラ(2026-10-27: 最短走行の時間) ----------------------------------
+ * ノードは壁の位置(境界)。Row型 = 横壁 G_Maze_Row[y] の bit x、Column型 = 縦壁 G_Maze_Column[x] の bit y。
+ * 境界は2つのマスに挟まれているので、ノードを「どちら向きに通過しているか」(sense)で2つに分ける。
+ * sense=1 は Row型なら北向き、Column型なら東向き。
+ * ノード番号 = ((isRow * (MAZE_SIZE+1) + x) * (MAZE_SIZE+1) + y) * 2 + sense
+ * ノードから進める「ホップ」は、今の向きの先のマスを通る3本(直進1本 + 斜め2本、dijk_edges)。
+ * 直進のホップはマスをまっすぐ、斜めのホップはマスの中で小回り1回(G_Short_Pass の -2/-3)。
+ *
+ * 状態 = ノード × ここから進む直線の向き(dijk_edges の3本のどれか)。
+ *   縦横の状態: 大回り・斜め出が終わったところ。ここから縦横の直線(k マス)とターンを1つ進む
+ *   斜めの状態: 斜め入り・V90 が終わったところ。ここから斜めの直線(m ホップ)とターンを1つ進む
+ * 1回の移動のコストは、Shortest_Pass_Compression(_NANAME) がそこに作る命令(直線・ターン)の時間の合計
+ * (tools/route_time.py と同じ数え方)。なので、経路のコストは命令列 G_Short_Pass_NANAME の時間になる。
+ * ターンとホップの並び(Shortest_Pass_Compression(_NANAME) と同じ):
+ *   大回り90    縦横k, 斜め1(45°)                   → 縦横(90°)
+ *   大回り180   縦横k, 斜め1(45°), 斜め1(さらに90°)   → 縦横(180°)
+ *   斜め入り45  縦横k, 斜め(45°)                    → 斜め
+ *   斜め入り135 縦横k, 斜め1(45°), 斜め(さらに90°)    → 斜め
+ *   斜め出45    斜めm                               → 縦横(45°)
+ *   斜め出135   斜めm, 斜め1(90°)                   → 縦横(135°)
+ *   V90         斜めm, 斜め(90°)                    → 斜め
+ * 縦横の直線は前後のターンが半区画ずつ使うので 2k-2 半区画、斜めの直線は、斜めに入ったターン(の最後の
+ * ホップ)と出るターン(の最初のホップ)が1ホップずつ使うので m-1 区間。
+ * ゴールの2x2区画の外側の境界を内向きに通ったら経路の終わり。最後が直線なら境目から、
+ * ターンならゴールの区画の中心から止まる。
+ * 以前(2026-10-14〜26)は状態をノードだけにして、ゴールから同じ向きの区間ごとに広げていた。
+ * ターンごとの時間を数えるには、ここから進む向きを状態に持たないといけないので、状態を3倍にした。
+ * 1つ前の状態は持たず、経路をたどるときに「コストが合う1つ前の状態」を探す(RAM を減らすため) */
+#define DIJK_W (MAZE_SIZE + 1)
+#define DIJK_NODE_NUM (2 * DIJK_W * DIJK_W * 2)
+#define DIJK_STATE_NUM (DIJK_NODE_NUM * 3)
+#define DIJK_HOP_MAX (MAZE_SIZE * MAZE_SIZE + 4)	//経路のホップの数の上限(1ホップで1マス)
+
+#if DIJK_MAXCOST > 65535
+typedef uint32_t dijk_cost_t;
+#else
+typedef uint16_t dijk_cost_t;
+#endif
+
+static dijk_cost_t dijk_cost[DIJK_STATE_NUM];
+
+/* SPFAのキュー。dijk_inq で同じ状態は同時に1回しか積まれないので状態数で足りる */
+static uint16_t dijk_queue[DIJK_STATE_NUM];
+static uint8_t dijk_inq[(DIJK_STATE_NUM + 7) / 8];
+static int dijk_q_head, dijk_q_count;
+
+static void dijk_push(int s) {
+	if (dijk_q_count >= DIJK_STATE_NUM) {	//dijk_inq がある限り起きない
+#ifdef SIM_DEBUG
+		g_queue_node_overflow_count++;
+#endif
+		return;
+	}
+	dijk_queue[(dijk_q_head + dijk_q_count) % DIJK_STATE_NUM] = (uint16_t) s;
+	dijk_q_count++;
+	dijk_inq[s >> 3] |= (uint8_t) (1u << (s & 7));
+#ifdef SIM_DEBUG
+	g_queue_node_push_count++;
+	if (dijk_q_count > g_queue_node_max_occupancy)
+		g_queue_node_max_occupancy = dijk_q_count;
+#endif
+}
+
+static int dijk_pop(void) {
+	if (dijk_q_count == 0) {
+		return -1;
+	}
+	int s = dijk_queue[dijk_q_head];
+	dijk_q_head = (dijk_q_head + 1) % DIJK_STATE_NUM;
+	dijk_q_count--;
+	dijk_inq[s >> 3] &= (uint8_t) ~(1u << (s & 7));
+	return s;
+}
+
+/* ノードから進める3本の辺。進む先は今の向きの先にあるマスを通るものだけ(直進1本+斜め2本)。
+ * [0] がいつも直進。{dir, isRow, dx, dy, sense}。dir は 0=N,1=NE,...,7=NW(時計回り) */
 typedef struct {
 	int8_t dir, isRow, dx, dy, sense;
 } DIJK_EDGE_T;
@@ -1324,205 +1382,675 @@ static const DIJK_EDGE_T dijk_edges[2][2][3] = {
 	},
 };
 
-static void Maze_Dijkstra_Calculation_Body(void) {
-	for (int s = 0; s < DIJK_STATE_NUM; s++) {	//初期化
-		dijk_state[s].cost = DIJK_MAXCOST;
-		dijk_state[s].pred = DIJK_NO_PRED;
-		dijk_state[s].direction = 0;
-		dijk_state[s].inQueue = 0;
-	}
-	dijk_q_head = 0;
-	dijk_q_tail = 0;
-	dijk_q_count = 0;
+typedef struct {
+	int8_t isRow, x, y, sense;
+} DIJK_NODE_T;
 
-	/* ゴールは2x2区画。Maze_Shortest_Calculation(普通の最短)と同じく、
-	 * どの面から入ってもゴール区画に入った時点で経路生成を止めたい。
-	 * 大会ルール上どの面が開口になっているか事前には分からないため、
-	 * 2x2区画を囲む8本の「外から侵入する境界」全てをコスト0の
-	 * マルチソースにする(壁で塞がれている境界は起点にしない)。
-	 * 起点からはゴールの外側へ向かって広げる(南の境界なら南向き) */
-	{
-		int gx = G_Gool_X;
-		int gy = G_Gool_Y;
-		/* {isRow, x, y, sense, direction} */
-		const int goal_entries[8][5] = { { 1, gx, gy, 0, 4 },	//(gx,gy)     南から
-				{ 1, gx + 1, gy, 0, 4 },			//(gx+1,gy)   南から
-				{ 1, gx, gy + 2, 1, 0 },			//(gx,gy+1)   北から
-				{ 1, gx + 1, gy + 2, 1, 0 },		//(gx+1,gy+1) 北から
-				{ 0, gx, gy, 0, 6 },				//(gx,gy)     西から
-				{ 0, gx, gy + 1, 0, 6 },			//(gx,gy+1)   西から
-				{ 0, gx + 2, gy, 1, 2 },			//(gx+1,gy)   東から
-				{ 0, gx + 2, gy + 1, 1, 2 },		//(gx+1,gy+1) 東から
-				};
-		for (int k = 0; k < 8; k++) {
-			const int *e = goal_entries[k];
-			if (dijk_is_wall(e[0], e[1], e[2])) {
-				continue;
+static int dijk_is_wall(int isRow, int x, int y) {
+	if (isRow) {
+		return (G_Maze_Row[y] & (1u << x)) != 0;
+	}
+	return (G_Maze_Column[x] & (1u << y)) != 0;
+}
+
+static int dijk_state_index(const DIJK_NODE_T *n, int k) {
+	return (((n->isRow * DIJK_W + n->x) * DIJK_W + n->y) * 2 + n->sense) * 3 + k;
+}
+
+static void dijk_state_node(int s, DIJK_NODE_T *n, int *k) {
+	*k = s % 3;
+	s /= 3;
+	n->sense = (int8_t) (s & 1);
+	s >>= 1;
+	n->y = (int8_t) (s % DIJK_W);
+	s /= DIJK_W;
+	n->x = (int8_t) (s % DIJK_W);
+	n->isRow = (int8_t) (s / DIJK_W);
+}
+
+/* ノード n の3本の辺のうち向き dir のもの(0〜2)。なければ -1 */
+static int dijk_edge_k(const DIJK_NODE_T *n, int dir) {
+	for (int k = 0; k < 3; k++) {
+		if (dijk_edges[n->isRow][n->sense][k].dir == dir) {
+			return k;
+		}
+	}
+	return -1;
+}
+
+/* ノード n から向き dir に1ホップ。進めれば(その向きの辺があって、行き先が迷路の中で壁でなければ)1 */
+static int dijk_hop(const DIJK_NODE_T *n, int dir, DIJK_NODE_T *out) {
+	int k = dijk_edge_k(n, dir);
+	if (k < 0) {
+		return 0;
+	}
+	const DIJK_EDGE_T *e = &dijk_edges[n->isRow][n->sense][k];
+	int nx = n->x + e->dx, ny = n->y + e->dy;
+	/* 外周は全部壁なので、外周より外へ出るホップは壁の手前で止まる。念のため範囲も確認する */
+	if (nx < 0 || nx > MAZE_SIZE || ny < 0 || ny > MAZE_SIZE || dijk_is_wall(e->isRow, nx, ny)) {
+		return 0;
+	}
+	out->isRow = e->isRow;
+	out->x = (int8_t) nx;
+	out->y = (int8_t) ny;
+	out->sense = e->sense;
+	return 1;
+}
+
+/* ノード n に向き dir のホップで来たときの、1つ前のノード(壁は見ない)。なければ 0 */
+static int dijk_hop_back(const DIJK_NODE_T *n, int dir, DIJK_NODE_T *out) {
+	DIJK_NODE_T r = *n;
+	r.sense = (int8_t) (1 - n->sense);
+	int k = dijk_edge_k(&r, (dir + 4) & 7);
+	if (k < 0) {
+		return 0;
+	}
+	const DIJK_EDGE_T *e = &dijk_edges[r.isRow][r.sense][k];
+	int nx = n->x + e->dx, ny = n->y + e->dy;
+	if (nx < 0 || nx > MAZE_SIZE || ny < 0 || ny > MAZE_SIZE) {
+		return 0;
+	}
+	out->isRow = e->isRow;
+	out->x = (int8_t) nx;
+	out->y = (int8_t) ny;
+	out->sense = (int8_t) (1 - e->sense);
+	return 1;
+}
+
+/* ノード n を通るとゴールの2x2区画に入るか(外側の境界を内向きに通る) */
+static int dijk_is_goal_entry(const DIJK_NODE_T *n) {
+	int gx = G_Gool_X, gy = G_Gool_Y;
+	if (n->isRow) {	//横壁 y: マス(x,y-1)とマス(x,y)のあいだ
+		if (n->x < gx || n->x > gx + 1) {
+			return 0;
+		}
+		return (n->sense == 1 && n->y == gy) || (n->sense == 0 && n->y == gy + 2);
+	}
+	if (n->y < gy || n->y > gy + 1) {	//縦壁 x: マス(x-1,y)とマス(x,y)のあいだ
+		return 0;
+	}
+	return (n->sense == 1 && n->x == gx) || (n->sense == 0 && n->x == gx + 2);
+}
+
+/* 表示用: そのノードの状態のうち一番小さいコスト。
+ * 最短走行の時間(G_Dijk_Time_Cost)のときは3桁に収まるように10ms単位にする */
+static int dijk_node_cost(int isRow, int x, int y) {
+	DIJK_NODE_T n = { (int8_t) isRow, (int8_t) x, (int8_t) y, 0 };
+	int c = DIJK_MAXCOST;
+	for (int sense = 0; sense < 2; sense++) {
+		n.sense = (int8_t) sense;
+		for (int k = 0; k < 3; k++) {
+			int v = dijk_cost[dijk_state_index(&n, k)];
+			if (v < c) {
+				c = v;
 			}
-			int s = dijk_index(e[0], e[1], e[2], e[3]);
-			dijk_state[s].cost = 0;
-			dijk_state[s].direction = (uint8_t) e[4];
+		}
+	}
+	if (G_Dijk_Time_Cost) {
+		c = (c >= DIJK_MAXCOST) ? 999 : c / (DIJK_COST_PER_S / 100);
+	}
+	return c;
+}
+
+/* ---- コスト(最短走行の時間) ---- */
+int G_Dijk_Time_Cost = 1;
+DijkCost G_Dijk_Cost;
+int G_Dijk_Best_Cost = -1;
+static int dijk_cost_ready = 0;
+
+#define DIJK_PI 3.14159265f
+#define DIJK_D2R (DIJK_PI / 180.0f)
+#define DIJK_DIAG 127.3f	//斜め1区間[mm]
+
+/* cos型の加減速で、距離 L[mm] を速度 v → (最高 vmax) → v で走る時間[s]。加速 ac、減速 dc */
+static float dijk_run_time(float L, float v, float vmax, float ac, float dc) {
+	if (L <= 0) {
+		return 0;
+	}
+	float r = DIJK_PI / 4.0f * (1.0f / ac + 1.0f / dc);	//v から vp まで上げて戻る距離 = r*(vp^2 - v^2)
+	float vp = vmax;
+	if (r * (vp * vp - v * v) > L) {	//最高速度まで届かない
+		vp = sqrtf(v * v + L / r);
+	}
+	float rest = L - r * (vp * vp - v * v);
+	if (rest < 0) {
+		rest = 0;
+	}
+	return DIJK_PI / 2.0f * (vp - v) * (1.0f / ac + 1.0f / dc) + rest / vp;
+}
+
+/* ターンの理想の始まりの点から終わりの点までの時間[s](tools/route_time.py の turn_time と同じ)。
+ * 速度 v で、角速度は cos 型の加速 → 等角速度 → cos 型の減速。前後の直進は理想の線に乗る長さ */
+static float dijk_turn_time(int kind, float v, const Turn2000_Param *t) {
+	/* 理想の始まりの点と向き、終わりの点、曲がる角度(左ターン。区画 180mm、中心が (0,0)) */
+	static const float geom[T2000_NUM][6] = {
+		[T2000_BIG90]  = { 0, 0, 90, -180, 180, 90 },
+		[T2000_BIG180] = { 0, 0, 90, -180, 0, 180 },
+		[T2000_IN45]   = { 0, 0, 90, -90, 180, 45 },
+		[T2000_IN135]  = { 0, 0, 90, -180, 90, 135 },
+		[T2000_OUT45]  = { 90, 180, 225, 0, 0, 45 },
+		[T2000_OUT135] = { 180, 90, 135, 0, 0, 135 },
+		[T2000_V90]    = { 90, 0, 45, 90, 180, 90 },
+	};
+	const float *g = geom[kind];
+	float ang = fabsf(t->ang), wmax = t->w, wac = t->w_ac;
+	float x13 = DIJK_PI / (2 * wac) * wmax * wmax;	//加速と減速で回る角度
+	if (x13 > ang) {
+		wmax = sqrtf(2 * wac * ang / DIJK_PI);
+		x13 = ang;
+	}
+	float t1 = DIJK_PI * wmax / (2 * wac);
+	float tc = (ang - x13) / wmax;
+	float T = 2 * t1 + tc;
+	/* 回るあいだに進む位置(始まりの向きで前・左)。64 段で、0.5ms 単位に丸めた時間は 4000 段(route_time.py)と同じ */
+	const int n = 64;
+	float h = T / n, ax = 0, ay = 0, th = 0;
+	for (int i = 0; i < n; i++) {
+		float tt = (i + 0.5f) * h, w;
+		if (tt < t1) {
+			w = wmax / 2 * (1 - cosf(DIJK_PI * tt / t1));
+		} else if (tt < t1 + tc) {
+			w = wmax;
+		} else {
+			w = wmax / 2 * (1 + cosf(DIJK_PI * (tt - t1 - tc) / t1));
+		}
+		float thm = th + w * DIJK_D2R * h / 2;
+		ax += v * cosf(thm) * h;
+		ay += v * sinf(thm) * h;
+		th += w * DIJK_D2R * h;
+	}
+	float a = g[2] * DIJK_D2R, dx = g[3] - g[0], dy = g[4] - g[1];
+	float lx = dx * cosf(a) + dy * sinf(a), ly = -dx * sinf(a) + dy * cosf(a);	//始まりの向きで見た終わりの点
+	float ae = g[5] * DIJK_D2R, s = sinf(ae), st, end;
+	if (fabsf(s) < 1e-6f) {	//180°: 前後は平行なので、前の直進を0にして後ろで合わせる
+		st = 0;
+		end = (ax - lx > 0) ? ax - lx : 0;
+	} else {
+		end = (ly - ay) / s;
+		st = (lx - ax) - end * cosf(ae);
+	}
+	return ((st > 0 ? st : 0) + (end > 0 ? end : 0)) / v + T;
+}
+
+static uint16_t dijk_units(float sec) {
+	float c = sec * DIJK_COST_PER_S + 0.5f;
+	return (uint16_t) ((c < 0) ? 0 : (c > 60000) ? 60000 : c);
+}
+
+/* 作った表を覚えておく(探索は止まるたびに G_Short_Run_Set の組を順に使うので、同じ値なら作り直さない) */
+#define DIJK_CACHE_NUM 2
+typedef struct {
+	int v, vmax, ac, ac_naname;
+	float turn[T2000_NUM][3];
+} DijkRunKey;
+static DijkRunKey dijk_cache_key[DIJK_CACHE_NUM];
+static DijkCost dijk_cache_cost[DIJK_CACHE_NUM];
+static int dijk_cache_n = 0, dijk_cache_next = 0;
+
+static void dijk_run_key(const ShortRunParam *p, DijkRunKey *k) {
+	memset(k, 0, sizeof(*k));
+	k->v = p->v;
+	k->vmax = p->vmax;
+	k->ac = p->ac;
+	k->ac_naname = p->ac_naname;
+	for (int t = 0; t < T2000_NUM; t++) {
+		k->turn[t][0] = p->turn[t].ang;
+		k->turn[t][1] = p->turn[t].w;
+		k->turn[t][2] = p->turn[t].w_ac;
+	}
+}
+
+void Maze_Dijkstra_Set_Run(const ShortRunParam *p) {
+	DijkRunKey key;
+	dijk_run_key(p, &key);
+	for (int k = 0; k < dijk_cache_n; k++) {
+		if (memcmp(&key, &dijk_cache_key[k], sizeof(key)) == 0) {
+			G_Dijk_Cost = dijk_cache_cost[k];
+			dijk_cost_ready = 1;
+			return;
+		}
+	}
+	float v = p->v, vmax = (p->vmax > p->v) ? p->vmax : p->v, ac = p->ac;
+	float acn = (p->ac_naname > 0) ? p->ac_naname : p->ac - 5000;
+	DijkCost *c = &G_Dijk_Cost;
+	/* 直線: 縦横は加速 ac・減速 2*ac(Motor_trapezoid_Asymmetric_PID)、斜めは加速・減速とも acn(Motor_NANAME_PID) */
+	for (int k = 0; k < DIJK_TH_NUM; k++) {
+		c->th[k] = dijk_units(dijk_run_time(90.0f * k, v, vmax, ac, 2 * ac));
+	}
+	for (int k = 0; k < DIJK_TD_NUM; k++) {
+		c->td[k] = dijk_units(dijk_run_time(DIJK_DIAG * k, v, vmax, acn, acn));
+	}
+	for (int k = 0; k < T2000_NUM; k++) {
+		c->turn[k] = dijk_units(dijk_turn_time(k, v, &p->turn[k]));
+	}
+	/* 走り出し: 最初が直線なら区画の境目までの114mmで 0 から v、最初がターンなら 10mm で v(Short_Start) */
+	c->start_s = dijk_units(2 * 114.0f / v);
+	c->start_t = dijk_units(DIJK_PI * v / (2 * 70000.0f));
+	/* 止まる: v から 30000 で減速して、境目から270mm、区画の中心から180mm */
+	float dec = DIJK_PI * v * v / (4 * 30000.0f), tdec = DIJK_PI * v / (2 * 30000.0f);
+	c->stop_b = dijk_units((270.0f - dec) / v + tdec);
+	c->stop_c = dijk_units((180.0f - dec) / v + tdec);
+	dijk_cost_ready = 1;
+	dijk_cache_key[dijk_cache_next] = key;
+	dijk_cache_cost[dijk_cache_next] = *c;
+	dijk_cache_next = (dijk_cache_next + 1) % DIJK_CACHE_NUM;
+	if (dijk_cache_n < DIJK_CACHE_NUM) {
+		dijk_cache_n++;
+	}
+}
+
+#define DIJK_GOAL T2000_NUM	//縦横の直線のままゴールに入る
+/* 以前のコスト(G_Dijk_Time_Cost = 0)で、ターンが使う斜めのホップのうち新しく向きを変えるもの(DIAG_COST)の数 */
+static const uint8_t dijk_old_turn[T2000_NUM] = { 1, 2, 1, 2, 0, 1, 1 };
+
+/* 縦横の状態から、縦横 k マス + ターン t(DIJK_GOAL なら直線のままゴール)。start: スタートの状態から */
+static int dijk_cost_o(int start, int k, int t) {
+	const DijkCost *c = &G_Dijk_Cost;
+	if (G_Dijk_Time_Cost) {
+		if (t == DIJK_GOAL) {
+			return (start ? c->start_s + c->th[2 * k] : c->th[2 * k - 1]) + c->stop_b;
+		}
+		if (start) {
+			return ((k == 0) ? c->start_t : c->start_s + c->th[2 * k - 1]) + c->turn[t];
+		}
+		return c->th[2 * k - 2] + c->turn[t];
+	}
+	/* 以前のコスト: 同じ向きに続く区間は 最初の1歩(縦横 ST_COST・斜め DIAG_COST) + CON_COST*(k-1)。
+	 * ゴールに入る縦横の直線は全部 CON_COST(以前と同じ) */
+	if (t == DIJK_GOAL) {
+		return CON_COST * k;
+	}
+	return ((k == 0) ? 0 : ST_COST + CON_COST * (k - 1)) + DIAG_COST * dijk_old_turn[t];
+}
+
+/* 斜めの状態から、斜め m ホップ + ターン t(斜め出45・斜め出135・V90) */
+static int dijk_cost_d(int m, int t) {
+	if (G_Dijk_Time_Cost) {
+		return G_Dijk_Cost.td[m - 1] + G_Dijk_Cost.turn[t];
+	}
+	return CON_COST * m + DIAG_COST * dijk_old_turn[t];
+}
+
+/* ターンでゴールに入ったときに足す時間(区画の中心から止まる) */
+static int dijk_cost_stop_c(void) {
+	return G_Dijk_Time_Cost ? G_Dijk_Cost.stop_c : 0;
+}
+
+/* 一番速いゴールまでの経路の、最後の移動(状態 s から直線 len + ターン t、t の最初の斜めのホップの向き dir1) */
+static int dijk_best, dijk_best_s, dijk_best_len, dijk_best_t, dijk_best_dir1;
+
+static void dijk_goal(int cost, int s, int len, int t, int dir1) {
+	if (cost < dijk_best) {
+		dijk_best = cost;
+		dijk_best_s = s;
+		dijk_best_len = len;
+		dijk_best_t = t;
+		dijk_best_dir1 = dir1;
+	}
+}
+
+static void dijk_relax(const DIJK_NODE_T *n, int k, int cost) {
+	if (k < 0 || cost >= DIJK_MAXCOST) {
+		return;
+	}
+	int s = dijk_state_index(n, k);
+	if (dijk_cost[s] > cost) {
+		dijk_cost[s] = (dijk_cost_t) cost;
+		if (!(dijk_inq[s >> 3] & (1u << (s & 7)))) {
 			dijk_push(s);
 		}
 	}
+}
+
+/* 縦横の状態 s(ノード p、向き d)から、縦横の直線 k マス + 入りのターン(大回り90・180、斜め入り45・135) */
+static void dijk_expand_o(int s, const DIJK_NODE_T *p, int d, int c, int start) {
+	DIJK_NODE_T r = *p, a, b, nx;
+	for (int k = 0;; k++) {
+		if (k >= 1 || start) {	//スタート以外は、前のターンが半区画使うので1マス以上
+			for (int side = 0; side < 2; side++) {
+				int d1 = (d + (side ? 1 : 7)) & 7;	//45°(右 / 左)
+				if (!dijk_hop(&r, d1, &a)) {
+					continue;
+				}
+				if (dijk_is_goal_entry(&a)) {
+					dijk_goal(c + dijk_cost_o(start, k, T2000_BIG90) + dijk_cost_stop_c(), s, k, T2000_BIG90, d1);
+					continue;
+				}
+				dijk_relax(&a, 0, c + dijk_cost_o(start, k, T2000_BIG90));
+				dijk_relax(&a, dijk_edge_k(&a, d1), c + dijk_cost_o(start, k, T2000_IN45));
+				int d2 = (d1 + (side ? 2 : 6)) & 7;	//さらに90°
+				if (!dijk_hop(&a, d2, &b)) {
+					continue;
+				}
+				if (dijk_is_goal_entry(&b)) {
+					dijk_goal(c + dijk_cost_o(start, k, T2000_BIG180) + dijk_cost_stop_c(), s, k, T2000_BIG180, d1);
+					continue;
+				}
+				dijk_relax(&b, 0, c + dijk_cost_o(start, k, T2000_BIG180));
+				dijk_relax(&b, dijk_edge_k(&b, d2), c + dijk_cost_o(start, k, T2000_IN135));
+			}
+		}
+		if (!dijk_hop(&r, d, &nx)) {
+			break;
+		}
+		if (dijk_is_goal_entry(&nx)) {
+			dijk_goal(c + dijk_cost_o(start, k + 1, DIJK_GOAL), s, k + 1, DIJK_GOAL, -1);
+			break;
+		}
+		r = nx;
+	}
+}
+
+/* ノード n で、向き d でないほうの斜め */
+static int dijk_other_diag(const DIJK_NODE_T *n, int d) {
+	int d1 = dijk_edges[n->isRow][n->sense][1].dir;
+	return (d1 == d) ? dijk_edges[n->isRow][n->sense][2].dir : d1;
+}
+
+/* 斜めの状態 s(ノード p、向き d)から、斜めの直線 m ホップ + 出るターン(斜め出45・135、V90) */
+static void dijk_expand_d(int s, const DIJK_NODE_T *p, int d, int c) {
+	DIJK_NODE_T r = *p, b, nx;
+	for (int m = 1;; m++) {
+		if (!dijk_hop(&r, d, &nx)) {
+			break;
+		}
+		if (dijk_is_goal_entry(&nx)) {
+			dijk_goal(c + dijk_cost_d(m, T2000_OUT45) + dijk_cost_stop_c(), s, m, T2000_OUT45, -1);
+			break;
+		}
+		r = nx;
+		dijk_relax(&r, 0, c + dijk_cost_d(m, T2000_OUT45));
+		int d2 = dijk_other_diag(&r, d);	//90°
+		if (dijk_hop(&r, d2, &b)) {
+			if (dijk_is_goal_entry(&b)) {
+				dijk_goal(c + dijk_cost_d(m, T2000_OUT135) + dijk_cost_stop_c(), s, m, T2000_OUT135, d2);
+			} else {
+				dijk_relax(&b, 0, c + dijk_cost_d(m, T2000_OUT135));
+				dijk_relax(&b, dijk_edge_k(&b, d2), c + dijk_cost_d(m, T2000_V90));
+			}
+		}
+	}
+}
+
+/* 経路のホップの向き(ゴール側から積む) */
+static uint8_t dijk_hops[DIJK_HOP_MAX];
+static int dijk_hop_n;
+
+static void dijk_hop_put(int dir) {
+	if (dijk_hop_n < DIJK_HOP_MAX) {
+		dijk_hops[dijk_hop_n++] = (uint8_t) dir;
+	}
+}
+
+/* 1つ前の状態を探す: x は直線の終わり(ターンの始まり)のノード。そこから直線の向き run_dir に戻りながら、
+ * 「1つ前の状態のコスト + この移動のコスト + extra」が ct になる状態を探す。見つかれば状態と直線の長さ */
+static int dijk_find_pred(DIJK_NODE_T x, int run_dir, int orth, int t, int ct,
+		int extra, int start_s, int *pred, int *len) {
+	for (int j = 0; j <= 2 * MAZE_SIZE + 2; j++) {
+		int k = dijk_edge_k(&x, run_dir);
+		if (k >= 0 && (j >= 1 || (orth && dijk_state_index(&x, k) == start_s))) {
+			int ps = dijk_state_index(&x, k);
+			if (dijk_cost[ps] < DIJK_MAXCOST) {
+				int w = orth ? dijk_cost_o(ps == start_s, j, t) : dijk_cost_d(j, t);
+				if ((int) dijk_cost[ps] + w + extra == ct) {
+					*pred = ps;
+					*len = j;
+					return 1;
+				}
+			}
+		}
+		/* もう1ホップ戻る。x は直線のホップの行き先なので、壁でなく、ゴールの入口でもない */
+		if (dijk_is_wall(x.isRow, x.x, x.y) || dijk_is_goal_entry(&x)) {
+			return 0;
+		}
+		if (!dijk_hop_back(&x, run_dir, &x)) {
+			return 0;
+		}
+	}
+	return 0;
+}
+
+/* ノード n にホップの向き dir で戻る(n はホップの行き先なので、壁でなくゴールの入口でもないこと) */
+static int dijk_back_mid(DIJK_NODE_T *n, int dir) {
+	if (dijk_is_wall(n->isRow, n->x, n->y) || dijk_is_goal_entry(n)) {
+		return 0;
+	}
+	return dijk_hop_back(n, dir, n);
+}
+
+/* 状態 s(コスト ct)に来た1つ前の移動を探し、そのホップを積む。戻り値: 1つ前の状態(なければ -1) */
+static int dijk_back_step(int s, int start_s) {
+	DIJK_NODE_T q, x;
+	int cls, pred, len;
+	dijk_state_node(s, &q, &cls);
+	int f = dijk_edges[q.isRow][q.sense][cls].dir;
+	int ct = dijk_cost[s];
+	for (int side = 1; side >= -1; side -= 2) {
+		if (cls == 0) {	//縦横の状態: 大回り90・180、斜め出45・135 で来た
+			int h = (f - side + 8) & 7;
+			/* 大回り90: 縦横(f-2s), 斜め1(f-s) */
+			x = q;
+			if (dijk_hop_back(&x, h, &x)
+					&& dijk_find_pred(x, (f - 2 * side + 8) & 7, 1, T2000_BIG90, ct, 0, start_s, &pred, &len)) {
+				dijk_hop_put(h);
+				for (int j = 0; j < len; j++) dijk_hop_put((f - 2 * side + 8) & 7);
+				return pred;
+			}
+			/* 大回り180: 縦横(f+4), 斜め1(f-3s), 斜め1(f-s) */
+			x = q;
+			if (dijk_hop_back(&x, h, &x) && dijk_back_mid(&x, (f - 3 * side + 8) & 7)
+					&& dijk_find_pred(x, (f + 4) & 7, 1, T2000_BIG180, ct, 0, start_s, &pred, &len)) {
+				dijk_hop_put(h);
+				dijk_hop_put((f - 3 * side + 8) & 7);
+				for (int j = 0; j < len; j++) dijk_hop_put((f + 4) & 7);
+				return pred;
+			}
+			/* 斜め出45: 斜め(f-s) */
+			if (dijk_find_pred(q, h, 0, T2000_OUT45, ct, 0, start_s, &pred, &len)) {
+				for (int j = 0; j < len; j++) dijk_hop_put(h);
+				return pred;
+			}
+			/* 斜め出135: 斜め(f-3s), 斜め1(f-s) */
+			x = q;
+			if (dijk_hop_back(&x, h, &x)
+					&& dijk_find_pred(x, (f - 3 * side + 8) & 7, 0, T2000_OUT135, ct, 0, start_s, &pred, &len)) {
+				dijk_hop_put(h);
+				for (int j = 0; j < len; j++) dijk_hop_put((f - 3 * side + 8) & 7);
+				return pred;
+			}
+		} else {	//斜めの状態: 斜め入り45・135、V90 で来た
+			/* 斜め入り45: 縦横(f-s), 斜め(f) */
+			x = q;
+			if (dijk_hop_back(&x, f, &x)
+					&& dijk_find_pred(x, (f - side + 8) & 7, 1, T2000_IN45, ct, 0, start_s, &pred, &len)) {
+				dijk_hop_put(f);
+				for (int j = 0; j < len; j++) dijk_hop_put((f - side + 8) & 7);
+				return pred;
+			}
+			/* 斜め入り135: 縦横(f-3s), 斜め1(f-2s), 斜め(f) */
+			x = q;
+			if (dijk_hop_back(&x, f, &x) && dijk_back_mid(&x, (f - 2 * side + 8) & 7)
+					&& dijk_find_pred(x, (f - 3 * side + 8) & 7, 1, T2000_IN135, ct, 0, start_s, &pred, &len)) {
+				dijk_hop_put(f);
+				dijk_hop_put((f - 2 * side + 8) & 7);
+				for (int j = 0; j < len; j++) dijk_hop_put((f - 3 * side + 8) & 7);
+				return pred;
+			}
+			/* V90: 斜め(f-2s), 斜め(f) */
+			x = q;
+			if (dijk_hop_back(&x, f, &x)
+					&& dijk_find_pred(x, (f - 2 * side + 8) & 7, 0, T2000_V90, ct, 0, start_s, &pred, &len)) {
+				dijk_hop_put(f);
+				for (int j = 0; j < len; j++) dijk_hop_put((f - 2 * side + 8) & 7);
+				return pred;
+			}
+		}
+	}
+	return -1;
+}
+
+/* 壁のノード n をホップの向き dir で通るときに入るマス */
+static void dijk_cell_after(const DIJK_NODE_T *n, int dir, int16_t *cx, int16_t *cy) {
+	*cx = n->x;
+	*cy = n->y;
+	if (n->isRow) {
+		if (!(dir == 0 || dir == 1 || dir == 7)) {	//南へ
+			*cy = n->y - 1;
+		}
+	} else if (!(dir == 1 || dir == 2 || dir == 3)) {	//西へ
+		*cx = n->x - 1;
+	}
+}
+
+static void dijk_path_put(const DIJK_NODE_T *n, int dir) {
+	if (G_Dijk_Path_Len < MAX_STEP - 1) {
+		/* 壁が今わかっているかどうかは、Maze_Unknown_Wall_Scan() が呼ばれるたびに
+		 * Maze_Row_Look / Maze_Column_Look を見て決める(同じ経路で何回も探せるように) */
+		dijk_cell_after(n, dir, &G_Dijk_Path_X[G_Dijk_Path_Len], &G_Dijk_Path_Y[G_Dijk_Path_Len]);
+		G_Dijk_Path_WallIsRow[G_Dijk_Path_Len] = (uint8_t) n->isRow;
+		G_Dijk_Path_WallI[G_Dijk_Path_Len] = n->x;
+		G_Dijk_Path_WallJ[G_Dijk_Path_Len] = n->y;
+		G_Dijk_Path_Len++;
+	}
+}
+
+static void Maze_Dijkstra_Calculation_Body(void) {
+	if (!dijk_cost_ready) {	//まだ作っていなければモード1 No.5 と同じ
+		Maze_Dijkstra_Set_Run(&G_Short_Run_Set[0]);
+	}
+	for (int s = 0; s < DIJK_STATE_NUM; s++) {	//初期化
+		dijk_cost[s] = DIJK_MAXCOST;
+	}
+	for (int k = 0; k < (int) sizeof(dijk_inq); k++) {
+		dijk_inq[k] = 0;
+	}
+	dijk_q_head = 0;
+	dijk_q_count = 0;
+	dijk_best = DIJK_MAXCOST;
+	dijk_best_s = -1;
+
+	for (int k = 0; k < MAX_STEP; k++) {
+		G_Short_Pass[k] = 0;
+	}
+	G_Dijk_Path_Len = 0;
+	G_Dijk_Best_Cost = -1;
+
+	/* スタート: スタートの区画の北の壁を北向きに通ったところ。区画の中心からここまでは走り出し */
+	const DIJK_NODE_T start = { 1, 0, 1, 1 };
+	if (dijk_is_wall(start.isRow, start.x, start.y)) {
+		return;
+	}
+	int start_s = dijk_state_index(&start, 0);
+	dijk_cost[start_s] = 0;
+	dijk_push(start_s);
 
 	while (1) {
 		int s = dijk_pop();
 		if (s < 0) { //END
 			break;
 		}
-		int sense = s & 1;
-		int y = (s >> 1) % DIJK_W;
-		int x = ((s >> 1) / DIJK_W) % DIJK_W;
-		int isRow = (s >> 1) / (DIJK_W * DIJK_W);
-		DIJK_STATE_T *cur = &dijk_state[s];
-
-		for (int k = 0; k < 3; k++) {
-			const DIJK_EDGE_T *e = &dijk_edges[isRow][sense][k];
-			int nx = x + e->dx;
-			int ny = y + e->dy;
-			/* 外周は全部壁なので、外周より外へ出る辺は壁の手前で止まり
-			 * ここには来ない。念のため範囲だけ確認する */
-			if (nx < 0 || nx > MAZE_SIZE || ny < 0 || ny > MAZE_SIZE) {
-				continue;
-			}
-			if (dijk_is_wall(e->isRow, nx, ny)) {
-				continue;
-			}
-			int cost;
-			if (e->dir == cur->direction) {
-				cost = CON_COST;	//同じ向きが続く(直進の連続・斜めの連続)
-			} else if ((e->dir & 1) == 0) {
-				cost = ST_COST;
-			} else {
-				cost = DIAG_COST;
-			}
-			int ns = dijk_index(e->isRow, nx, ny, e->sense);
-			DIJK_STATE_T *next = &dijk_state[ns];
-			if (next->cost > cur->cost + cost) {
-				next->cost = (uint16_t) (cur->cost + cost);
-				next->direction = (uint8_t) e->dir;
-				next->pred = (uint16_t) s;
-				if (!next->inQueue) {
-					dijk_push(ns);
-				}
-			}
+		DIJK_NODE_T p;
+		int cls;
+		dijk_state_node(s, &p, &cls);
+		int c = dijk_cost[s];
+		if (c >= dijk_best) {	//ゴールまでの一番速い経路より遅い(コストは進むほど増える)
+			continue;
+		}
+		int d = dijk_edges[p.isRow][p.sense][cls].dir;
+		if (cls == 0) {
+			dijk_expand_o(s, &p, d, c, s == start_s);
+		} else {
+			dijk_expand_d(s, &p, d, c);
 		}
 	}
-
-	/* スタート区画の北の壁を北向きに通る状態から、ゴールまでたどる。
-	 * 探索はゴールから外へ広げたので、ロボットの進む向きは
-	 * direction の逆(+4)、ノードの向き(sense)も逆(南向き=0)になる */
-	int N = 0;
-	int s = dijk_index(1, 0, 1, 0);
-
-	for (int i = 0; i < MAX_STEP; i++) {
-		G_Short_Pass[i] = 0;
-	}
-	G_Dijk_Path_Len = 0;
-	/* スタートからゴールへ行けないときは経路を空にして返す
-	 * (Maze_Shortest_Calculation()と同じ) */
-	if (dijk_state[s].pred == DIJK_NO_PRED) {
+	/* スタートからゴールへ行けないときは経路を空にして返す(Maze_Shortest_Calculation()と同じ) */
+	if (dijk_best_s < 0) {
 		return;
 	}
+	G_Dijk_Best_Cost = dijk_best;
 
-	G_Short_Pass[0] -= 1;
-
+	/* ゴールからたどって、ホップの向きをゴール側から積む。最後の移動は覚えてある */
+	dijk_hop_n = 0;
+	{
+		DIJK_NODE_T p;
+		int cls;
+		dijk_state_node(dijk_best_s, &p, &cls);
+		int d = dijk_edges[p.isRow][p.sense][cls].dir, d1 = dijk_best_dir1;
+		if (dijk_best_t == T2000_BIG180) {	//大回り180: 斜め1, さらに90°の斜め1
+			dijk_hop_put((d1 + (((d1 - d) & 7) == 1 ? 2 : 6)) & 7);
+		}
+		if (d1 >= 0) {
+			dijk_hop_put(d1);
+		}
+		for (int j = 0; j < dijk_best_len; j++) {
+			dijk_hop_put(d);
+		}
+	}
+	int s = dijk_best_s, guard = 0;
+	while (s != start_s && s >= 0 && ++guard <= DIJK_HOP_MAX) {
+		s = dijk_back_step(s, start_s);
+	}
+	if (s != start_s) {	//異常系(たどれなかった)
+		G_Dijk_Best_Cost = -1;
+		return;
+	}
 #ifdef SIM_DEBUG
-	int dbg_backtrace_hops = 0;
+	g_dijkstra_backtrace_hops = dijk_hop_n;
 #endif
-	int dijk_backtrace_guard = 0;
-	while (1) {
-#ifdef SIM_DEBUG
-		dbg_backtrace_hops++;
-#endif
-		if (++dijk_backtrace_guard > DIJK_STATE_NUM) {	//異常系フェイルセーフ(通常は経路長で先に止まる)
-			break;
-		}
-		DIJK_STATE_T *cur = &dijk_state[s];
-		if (cur->cost == 0 || cur->pred == DIJK_NO_PRED) {	//ゴール(到達不能なら何もしない)
-			break;
-		}
-		int nodeIsRow = (s >> 1) / (DIJK_W * DIJK_W);
-		int nodeX = ((s >> 1) / DIJK_W) % DIJK_W;
-		int nodeY = (s >> 1) % DIJK_W;
-		int toGool_direction = (cur->direction + 4) % 8;
 
-		/* Dijkstra誘導 未知壁探索用: このホップが通る壁(今のノード自身)が
-		 * 実際に通過するセルはtoGool_directionの向きで決まる(進行方向側のセル)。
-		 * Row型ノードはtoGool_directionが{0,1,7}なら北側セル、{3,4,5}なら南側セル。
-		 * Column型ノードは{1,2,3}なら東側セル、{5,6,7}なら西側セルになる */
-		if (G_Dijk_Path_Len < MAX_STEP - 1) {
-			int16_t cellX, cellY;
-			if (nodeIsRow) {
-				if (toGool_direction == 0 || toGool_direction == 1
-						|| toGool_direction == 7) {
-					cellX = nodeX;
-					cellY = nodeY;
-				} else {
-					cellX = nodeX;
-					cellY = nodeY - 1;
-				}
-			} else {
-				if (toGool_direction == 2 || toGool_direction == 1
-						|| toGool_direction == 3) {
-					cellX = nodeX;
-					cellY = nodeY;
-				} else {
-					cellX = nodeX - 1;
-					cellY = nodeY;
-				}
-			}
-			/* この壁が現時点で既知か未知かは記録時点のスナップショットにせず、
-			 * Maze_Unknown_Wall_Scan()が呼ばれる都度Maze_Row_Look/Column_Lookを
-			 * 直接見てライブ判定する(同じ経路データを使い回して複数回スキャン
-			 * できるようにするため。詳しくはMaze_Unknown_Wall_Scan()参照) */
-			G_Dijk_Path_X[G_Dijk_Path_Len] = cellX;
-			G_Dijk_Path_Y[G_Dijk_Path_Len] = cellY;
-			G_Dijk_Path_WallIsRow[G_Dijk_Path_Len] = nodeIsRow;
-			G_Dijk_Path_WallI[G_Dijk_Path_Len] = nodeX;
-			G_Dijk_Path_WallJ[G_Dijk_Path_Len] = nodeY;
-			G_Dijk_Path_Len++;
-		}
-
-		if (N >= MAX_STEP - 2) {	//配列の終端(0)を必ず残す
+	/* スタートから、ホップごとに命令(直進は半区画2つ、斜めは小回り)と、通る壁を書く */
+	DIJK_NODE_T n = start;
+	int np = 0;
+	G_Short_Pass[0] = -1;
+	for (int k = dijk_hop_n - 1; k >= 0; k--) {
+		int h = dijk_hops[k];
+		dijk_path_put(&n, h);
+		if (np >= MAX_STEP - 2) {	//配列の終端(0)を必ず残す
 			break;
 		}
-		if ((toGool_direction & 1) == 0) {	//直進(半区画2つ=1区画)
-			if (G_Short_Pass[N] < 0) {
-				N++;
+		if ((h & 1) == 0) {	//直進(半区画2つ=1区画)
+			if (G_Short_Pass[np] < 0) {
+				np++;
 			}
-			G_Short_Pass[N] += 2;
+			G_Short_Pass[np] += 2;
 		} else {	//小回り: 進む向きとノードの種類で左右が決まる
-			int left;
-			if (nodeIsRow) {
-				left = (toGool_direction == 3 || toGool_direction == 7);
-			} else {
-				left = (toGool_direction == 1 || toGool_direction == 5);
-			}
-			N++;
-			G_Short_Pass[N] = left ? -2 : -3;
+			int left = n.isRow ? (h == 3 || h == 7) : (h == 1 || h == 5);
+			np++;
+			G_Short_Pass[np] = left ? -2 : -3;
 		}
-		s = cur->pred;
+		if (!dijk_hop(&n, h, &n)) {	//異常系(ホップの並びがおかしい)
+			break;
+		}
 	}
-
-	if (G_Short_Pass[0] == 0) {
-		G_Short_Pass[0] = -1;
+	if (dijk_hop_n > 0) {	//ゴールの入口の壁も、通る壁として書く
+		dijk_path_put(&n, dijk_hops[0]);
 	}
-#ifdef SIM_DEBUG
-	g_dijkstra_backtrace_hops = dbg_backtrace_hops;
-#endif
 }
 
 /* 直近のMaze_Dijkstra_Calculation()が記録した経路(G_Dijk_Path_*)を先頭から
  * 走査し、まだ未確認の壁をG_Unknown_Target_X/Yとその壁自体の識別子
- * (G_Unknown_Wall_*)に記録する。戻り値1=見つかった、0=経路上の壁は全て確認済み
+ * (G_Unknown_Wall_*)に記録する。戻り値1=見つかった、0=経路上の壁は全て確認済み、
+ * 2=経路の壁のどれかが「壁あり」とわかった(見に行く途中で見つかった。経路は通れないので計算し直す。2026-10-27。
+ *   以前はこれを見ずに 0 を返して探索を終え、見た範囲の最短が本当の最短より遅いことがあった)
  * (Dijkstra再計算タイミングをゴール到達直後とUターン発生時に絞るため、
  * 各壁が現時点で未知かどうかはMaze_Row_Look/Maze_Column_Lookをその都度
  * ライブで見て判定する。これにより、同じ経路データに対してこの関数を
  * 複数回呼び、既に確認済みになった壁を自然に読み飛ばして次の未知壁を
  * 見つけられる — Dijkstraを毎回再計算し直す必要がない) */
 int Maze_Unknown_Wall_Scan(void) {
+	for (int k = 0; k < G_Dijk_Path_Len; k++) {
+		int known, wall;
+		if (G_Dijk_Path_WallIsRow[k]) {
+			known = (Maze_Row_Look[G_Dijk_Path_WallJ[k]] >> G_Dijk_Path_WallI[k]) & 1u;
+			wall = (G_Maze_Row[G_Dijk_Path_WallJ[k]] >> G_Dijk_Path_WallI[k]) & 1u;
+		} else {
+			known = (Maze_Column_Look[G_Dijk_Path_WallI[k]] >> G_Dijk_Path_WallJ[k]) & 1u;
+			wall = (G_Maze_Column[G_Dijk_Path_WallI[k]] >> G_Dijk_Path_WallJ[k]) & 1u;
+		}
+		if (known && wall) {
+			return 2;
+		}
+	}
 	for (int k = 0; k < G_Dijk_Path_Len; k++) {
 		int wallUnknown;
 		if (G_Dijk_Path_WallIsRow[k]) {
@@ -1572,6 +2100,7 @@ int Maze_Unknown_Wall_Is_Wall(void) {
 void Maze_Unknown_Target_ModeSet(int x, int y) {
 	G_Unknown_Target_X = x;
 	G_Unknown_Target_Y = y;
+	G_Unknown_Target_Lost = 0;
 	ALL_MODE = 2;
 }
 
@@ -1639,6 +2168,111 @@ void Shortest_Pass_Compression() {
 	 * 呼んだ時)が終端を見失い、前回の残骸を読み進めてしまう */
 	G_Short_Pass[term_idx] = 0;
 	G_Short_Pass_CP[term_idx] = 0;
+}
+
+/* 最短走行の命令列(G_Short_Pass_NANAME)が、区画の境目で終わるか(2026-10-20)。
+ * 経路はゴールに入ったところで終わる。最後が直進(-1 を除いた最後の命令が正)なら、ゴールに入る境目で終わる。
+ * 最後がターン(大回り・斜め出)なら、そのターンがゴールの区画の中心で終わる。
+ * 最短走行の最後に止まるまでの距離を決めるのに使う(Move.c の Short_Goal_X)。test/test_shortpath.c で確かめている。
+ * 命令列は走っているあいだに書き換わる(Move.c の Short_Start)ので、走る前に呼ぶ(Move.c の Short_Pass_Check) */
+int Short_Pass_Ends_At_Boundary(void) {
+	int16_t last = 0;
+	for (int k = 0; k < MAX_STEP && G_Short_Pass_NANAME[k] != 0; k++) {
+		if (G_Short_Pass_NANAME[k] != -1) {
+			last = G_Short_Pass_NANAME[k];
+		}
+	}
+	return last > 0;
+}
+
+/* 最短走行で止まる区画と向き(2026-10-20)。命令列(G_Short_Pass_NANAME)を半区画の格子でたどり
+ * (test/test_shortpath.c の run_tokens と同じ動き。スタートは (0,0) の中心で北向き)、最後に止まるまでの距離
+ * (境目で終わるなら1.5区画、区画の中心で終わるなら1区画。Move.c の Short_Goal_X)を足した位置を出す。
+ * x, y: 区画、dir: 止まったときの向き(0 北、1 東、2 南、3 西。最後の Robot_adjustment で向きを変える前)。
+ * 戻り値: 1 求めた、0 命令列が読めない(斜めで終わる、知らない命令など)。
+ * 命令列は走っているあいだに書き換わる(Move.c の Short_Start が最初の直線を半区画減らす)ので、走る前に呼ぶ
+ * (Move.c の Short_Pass_Check。走ったあとに呼ぶと半区画ずれる) */
+int Short_Pass_End_Cell(int *x, int *y, int *dir) {
+	static const int8_t hx[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
+	static const int8_t hy[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
+	int px = 1, py = 1, ph = 0;	//半区画の格子(区画(x,y)の中心が(2x+1, 2y+1))と、45°ごとの向き(0 北、時計回り)
+/* 今の向きで、前に f、左に s 半区画動く */
+#define END_GO(f, s) do { px += (f) * hx[ph] + (s) * hx[(ph + 6) % 8]; \
+		py += (f) * hy[ph] + (s) * hy[(ph + 6) % 8]; } while (0)
+	for (int k = 0; k < MAX_STEP && G_Short_Pass_NANAME[k] != 0; k++) {
+		int t = G_Short_Pass_NANAME[k];
+		int diag = ph & 1;
+		int sgn;
+		if (t == -1) {
+			continue;
+		}
+		if (t > 0) {	//直進(半区画 × t)
+			if (diag) return 0;
+			END_GO(t, 0);
+		} else if (t <= -50 && t % 50 == 0) {	//斜めの直進
+			if (!diag) return 0;
+			px += (-t / 50) * hx[ph];
+			py += (-t / 50) * hy[ph];
+		} else if (t == -4 || t == -6) {	//大回り90(-4 左)
+			if (diag) return 0;
+			sgn = (t == -4) ? 1 : -1;
+			END_GO(2, 2 * sgn);
+			ph = (ph + 8 - 2 * sgn) % 8;
+		} else if (t == -5 || t == -7) {	//大回り180
+			if (diag) return 0;
+			sgn = (t == -5) ? 1 : -1;
+			END_GO(0, 2 * sgn);
+			ph = (ph + 4) % 8;
+		} else if (t == -51 || t == -53) {	//斜め入り45
+			if (diag) return 0;
+			sgn = (t == -51) ? 1 : -1;
+			END_GO(2, sgn);
+			ph = (ph + 8 - sgn) % 8;
+		} else if (t == -52 || t == -54) {	//斜め入り135
+			if (diag) return 0;
+			sgn = (t == -52) ? 1 : -1;
+			END_GO(1, 2 * sgn);
+			ph = (ph + 8 - 3 * sgn) % 8;
+		} else if (t == -61 || t == -63) {	//斜め出45
+			if (!diag) return 0;
+			sgn = (t == -61) ? 1 : -1;
+			px += hx[ph];
+			py += hy[ph];
+			ph = (ph + 8 - sgn) % 8;
+			END_GO(1, 0);
+		} else if (t == -62 || t == -64) {	//斜め出135
+			if (!diag) return 0;
+			sgn = (t == -62) ? 1 : -1;
+			px += hx[ph];
+			py += hy[ph];
+			ph = (ph + 8 - sgn) % 8;
+			END_GO(1, sgn);
+			ph = (ph + 8 - 2 * sgn) % 8;
+			END_GO(1, 0);
+		} else if (t == -65 || t == -66) {	//V90
+			if (!diag) return 0;
+			sgn = (t == -65) ? 1 : -1;
+			px += hx[ph];
+			py += hy[ph];
+			ph = (ph + 8 - 2 * sgn) % 8;
+			px += hx[ph];
+			py += hy[ph];
+		} else {
+			return 0;
+		}
+	}
+	if (ph & 1) {
+		return 0;
+	}
+	END_GO(((px & 1) && (py & 1)) ? 2 : 3, 0);	//最後に止まるまで(区画の中心からなら1区画、境目からなら1.5区画)
+#undef END_GO
+	if (!((px & 1) && (py & 1)) || px < 0 || py < 0) {
+		return 0;
+	}
+	*x = px / 2;
+	*y = py / 2;
+	*dir = ph / 2;
+	return 1;
 }
 
 void Shortest_Pass_Compression_NANAME() {
@@ -1955,6 +2589,7 @@ static void Maze_Debug_Plan(int dijkstra) {
 	G_MAZE_Explored[G_Gool_X][G_Gool_Y] = 0;
 	Maze_Step_Calculate();
 	if (dijkstra) {
+		Maze_Dijkstra_Set_Run(&G_Short_Run_Set[0]);	//モード1 No.5 と同じ値で(2026-10-27)
 		Maze_Dijkstra_Calculation();
 	} else {
 		Maze_Shortest_Calculation();
@@ -2042,8 +2677,98 @@ void Maze_Debug_Dump(void) {
  * 探索中は計算のあいだも機体は前の速度のまま進むので、計算が長いとその分だけ
  * 直線が伸びる。最大時間はファイル先頭の G_Time_Max_* に記録する */
 
+/* ---- フェイルセーフで止まったときに、最後に壁を書いた区画を戻す(2026-10-27、ToraNeko.Mk3 と同じ) ----
+ * 壁を書く前に「その区画と、書く前の4枚の壁・見たかどうか・G_MAZE_Explored」を覚えておく(新しい MAZE_UNDO_CELLS 回ぶん)。
+ * ぶつかる直前の区画は、ずれた位置・向きで壁を読んだかもしれないので、フェイルセーフで止まったら
+ * 新しいほうから順に、書く前の状態に戻す(その走行で初めて入った区画は「まだ見ていない」に戻る)。
+ * Uターンで同じ区画に2回入ると、その区画は2回と数える */
+#define MAZE_UNDO_CELLS 5
+typedef struct {
+	uint8_t x, y;
+	uint8_t wall;		//bit0 北 bit1 東 bit2 南 bit3 西(1 = 壁あり)
+	uint8_t look;		//同じ並び(1 = 見た)
+	uint8_t explored;
+} Maze_Undo_Cell;
+static Maze_Undo_Cell s_undo[MAZE_UNDO_CELLS];
+static int s_undo_n = 0;
+
+/* 区画 (x, y) の北・東・南・西の壁を、row・column の並びから4ビットにする */
+static uint8_t Maze_Undo_Bits(const uint32_t *row, const uint32_t *col, int x, int y) {
+	uint8_t b = 0;
+	if (row[y + 1] & (1u << x)) {
+		b |= 1;
+	}
+	if (col[x + 1] & (1u << y)) {
+		b |= 2;
+	}
+	if (row[y] & (1u << x)) {
+		b |= 4;
+	}
+	if (col[x] & (1u << y)) {
+		b |= 8;
+	}
+	return b;
+}
+
+/* 4ビットの壁を、row・column の並びの区画 (x, y) に書き戻す */
+static void Maze_Undo_Put(uint32_t *row, uint32_t *col, int x, int y, uint8_t b) {
+	row[y + 1] = (b & 1) ? (row[y + 1] | (1u << x)) : (row[y + 1] & ~(1u << x));
+	col[x + 1] = (b & 2) ? (col[x + 1] | (1u << y)) : (col[x + 1] & ~(1u << y));
+	row[y] = (b & 4) ? (row[y] | (1u << x)) : (row[y] & ~(1u << x));
+	col[x] = (b & 8) ? (col[x] | (1u << y)) : (col[x] & ~(1u << y));
+}
+
+/* 覚えている区画を忘れる。探索を始めるときに呼ぶ(その走行で書いた壁だけを戻すため) */
+void Maze_Undo_Clear(void) {
+	s_undo_n = 0;
+}
+
+/* 壁を書く区画 (x, y) の、書く前の状態を覚える。いっぱいなら、いちばん古いものを捨てる */
+static void Maze_Undo_Record(int x, int y) {
+	if ((x < 0) || (x >= MAZE_SIZE) || (y < 0) || (y >= MAZE_SIZE)) {
+		return;
+	}
+	if (s_undo_n == MAZE_UNDO_CELLS) {
+		for (int k = 0; k + 1 < MAZE_UNDO_CELLS; k++) {
+			s_undo[k] = s_undo[k + 1];
+		}
+		s_undo_n = MAZE_UNDO_CELLS - 1;
+	}
+	Maze_Undo_Cell *c = &s_undo[s_undo_n];
+	c->x = x;
+	c->y = y;
+	c->wall = Maze_Undo_Bits(G_Maze_Row, G_Maze_Column, x, y);
+	c->look = Maze_Undo_Bits(Maze_Row_Look, Maze_Column_Look, x, y);
+	c->explored = G_MAZE_Explored[x][y];
+	s_undo_n++;
+}
+
+/* 最後に壁を書いた区画(MAZE_UNDO_CELLS 回まで)を、新しいほうから順に書く前の状態に戻す。
+ * 戻したら忘れる(2回呼んでも1回ぶんしか戻さない)。戻した回数を返す。
+ * 保存した迷路(Maze_Save)は変えないので、戻したあとに Maze_Save() する */
+int Maze_Undo_Recent_Cells(void) {
+	int n = s_undo_n;
+	for (int k = s_undo_n - 1; k >= 0; k--) {
+		Maze_Undo_Cell *c = &s_undo[k];
+		Maze_Undo_Put(G_Maze_Row, G_Maze_Column, c->x, c->y, c->wall);
+		Maze_Undo_Put(Maze_Row_Look, Maze_Column_Look, c->x, c->y, c->look);
+		G_MAZE_Explored[c->x][c->y] = c->explored;
+	}
+	s_undo_n = 0;
+	return n;
+}
+
 void Maze_Wall_Update() {
 	uint32_t t = Maze_Time_Start();
+	if (Known_Flag == 0) {
+		static const int dx[4] = { 0, 1, 0, -1 };
+		static const int dy[4] = { 1, 0, -1, 0 };
+		int d = G_Robot_Direction % 4;	//Maze_Wall_Update_Body と同じ: 0 北、1 東、2 南、それ以外は西
+		if ((d < 0) || (d > 2)) {
+			d = 3;
+		}
+		Maze_Undo_Record(G_Robot_MAZE_X + dx[d], G_Robot_MAZE_Y + dy[d]);
+	}
 	Maze_Wall_Update_Body();
 	Maze_Time_End(&G_Time_Max_WallUpdate_us, t);
 }

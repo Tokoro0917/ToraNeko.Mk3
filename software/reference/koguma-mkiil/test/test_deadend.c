@@ -2,8 +2,8 @@
  * Core/Src/Maze.c をそのままリンクして、実装が満たすべき不変条件を確認する。
  *
  * ビルドと実行 (リポジトリ直下で):
- *   gcc -std=c11 -Wall -ICore/Inc -o /tmp/t test/test_deadend.c Core/Src/Maze.c && /tmp/t
- *   gcc -std=c11 -Wall -DMAZE_SIZE=32 -ICore/Inc -o /tmp/t32 test/test_deadend.c Core/Src/Maze.c && /tmp/t32
+ *   gcc -std=c11 -Wall -ICore/Inc -o /tmp/t test/test_deadend.c Core/Src/Maze.c Core/Src/ShortParam.c -lm && /tmp/t
+ *   gcc -std=c11 -Wall -DMAZE_SIZE=32 -ICore/Inc -o /tmp/t32 test/test_deadend.c Core/Src/Maze.c Core/Src/ShortParam.c -lm && /tmp/t32
  */
 #include <stdio.h>
 #include <stdlib.h>

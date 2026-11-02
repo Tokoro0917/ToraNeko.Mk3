@@ -11,6 +11,13 @@
 void LED_Reset();
 
 void LED_ALL_ON();
+void LED_Loading();
+
+/* スイッチ(基板の S2、PB3。押すと 0) */
+#define SW_Pin GPIO_PIN_3
+#define SW_GPIO_Port GPIOB
+void Switch_Init();
+int Switch_Pressed();
 
 void LED_Setup_Robot();
 void LED_batt_error();
@@ -31,5 +38,6 @@ void Buzzer_Mode_Change() ;
 
 void Buzzer_Enter();
 void Buzzer_Start();
+void Buzzer_Finish();	//全部走り終えてスタートに戻ったときの曲
 
 #endif /* INC_UI_H_ */
