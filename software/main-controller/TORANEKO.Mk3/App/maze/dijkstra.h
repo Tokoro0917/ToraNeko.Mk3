@@ -11,9 +11,10 @@
 #include <stdbool.h>
 
 #include "maze/maze_map.h"
+#include "maze/path.h"
 
 #define ROUTE_CELL_MAX (MAZE_SIZE * MAZE_SIZE)  /* 道に入る区画の数の上限 */
-#define DIJKSTRA_TABLE_LENGTH 40  /* 走行時間のコストの表の長さ（区間の 1〜39 歩目。もっと長い区間は 39 歩目の値） */
+#define DIJKSTRA_TABLE_LENGTH 40  /* 区間ごとの走行時間の表の長さ（区間の 1〜39 歩目。もっと長い区間は 39 歩目の値） */
 
 bool dijkstra_find_route(int goal_x, int goal_y, int goal_width, int goal_height, bool unknown_as_wall);
 int dijkstra_get_route_length(void);
@@ -27,7 +28,9 @@ void dijkstra_set_time_cost_diagonal(float turn_speed_mm_s, float max_speed_mm_s
                                      float diag_max_speed_mm_s, float diag_accel_mm_s2);
 void dijkstra_set_step_cost(void);
 bool dijkstra_is_time_cost(void);
+bool dijkstra_is_turn_cost(void);
 int dijkstra_get_orth_step_cost(int step);
 int dijkstra_get_diag_step_cost(int step);
+int dijkstra_count_path_cost(const path_t *path);
 
 #endif /* MAZE_DIJKSTRA_H */

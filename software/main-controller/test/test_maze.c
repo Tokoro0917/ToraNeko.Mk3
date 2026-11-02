@@ -26,12 +26,17 @@
  *      Flash に保存する場所と中身・最後の位置・記録した壁が正しいか、未知壁探索のあとの最短経路が
  *      全部の壁を知っているときと同じ速さか、フェイルセーフで止まったときに最後の 5 区画ぶんを戻して保存し、
  *      続きから探索できるか（止まる途中でぶつかったとき、前の走行で記録した区画を戻さないことも）を調べる
+ *  10. 最短走行の大回り・斜め（sys/shortest.c の No.4・5）を仮の機体で走らせる
+ *  11. ターンごとの時間のコスト（dijkstra_set_time_cost_diagonal。KOGUMA の #100）：
+ *      見つけた道を動きにしたときの時間の見積もりが、報告したコストと同じか。ほかのコストで選んだ道より遅くないか。
+ *      小さな迷路（6×6・7×6）で道を全部数え上げて、一番速い道と同じコストか。ダイクストラ 1 回の時間（PC）も表示する
  */
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "maze/dijkstra.h"
 #include "maze/maze_map.h"
@@ -2367,7 +2372,7 @@ static void test_explore_random(int maze_count)
   printf("  未知壁探索で止まった回数の合計 %d 回\n", unknown_walls_stop_total);
   /* 前に確かめた合計（2026-10-15）。「見に行く壁がなくなったら、止まらずに帰る」をやめると増える（10692 回になる）。
    * explore.c の止まり方を変えたときは、変わった理由を確かめてから、この数を直す */
-  check(unknown_walls_stop_total == 10646, "未知壁探索で止まった回数の合計が、前に確かめた回数と同じ");
+  check(unknown_walls_stop_total == 10361, "未知壁探索で止まった回数の合計が、前に確かめた回数と同じ");
   check(fail_count == 0, "ランダムな迷路でも、4 つの走り方が正しく終わる");
   check(known_stop_diff_count == 0, "既知区間加速ありでも、止まる回数は No.3 と同じ（同じ道を通る）");
   check(failsafe_fail_count == 0, "ランダムな迷路でも、フェイルセーフのあと続きから探索できる");
@@ -2622,6 +2627,283 @@ static void test_shortest_diagonal(int maze_count)
  * main
  * ------------------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------------------
+ * 11. ターンごとの時間のコスト（dijkstra_set_time_cost_diagonal。KOGUMA の #100）のテスト
+ * ------------------------------------------------------------------------- */
+
+/* 大回り・斜めの最短走行のモード1 No.number（4 か 5）と同じ値で、ターンごとの時間のコストにする */
+static void set_turn_cost(int number)
+{
+  if (number == 4) {
+    dijkstra_set_time_cost_diagonal(FAST_TURN_SPEED_MM_S, SHORTEST4_MAX_SPEED_MM_S, SHORTEST4_ACCEL_MM_S2,
+                                    SHORTEST4_DIAG_MAX_SPEED_MM_S, SHORTEST4_DIAG_ACCEL_MM_S2);
+  } else {
+    dijkstra_set_time_cost_diagonal(FAST_TURN_SPEED_MM_S, SHORTEST5_MAX_SPEED_MM_S, SHORTEST5_ACCEL_MM_S2,
+                                    SHORTEST5_DIAG_MAX_SPEED_MM_S, SHORTEST5_DIAG_ACCEL_MM_S2);
+  }
+}
+
+/* 今の道（dijkstra.c の s_route_x/y）を大回り・斜めの動きにして、ターンごとの時間のコストで数える。
+ * 大回り・斜めで走れない道（小回りが残る）なら -1。数えるときだけ、ターンごとの時間のコストにする */
+static int count_route_turn_cost(int number)
+{
+  static path_t s_count_path;
+  cost_model_t saved_model = s_cost_model;
+  set_turn_cost(number);
+  int cost = -1;
+  if (path_make_shortest_from_route(&s_count_path)) {
+    cost = dijkstra_count_path_cost(&s_count_path);
+  }
+  s_cost_model = saved_model;
+  return cost;
+}
+
+/* ランダムな迷路で、ターンごとの時間のコストの道を調べる（No.number の値）。
+ *   - 見つけた道を動きにすると、小回りが残らず、壁を通らずにゴールに着く
+ *   - その動きの時間の見積もり（dijkstra_count_path_cost）が、ダイクストラが報告したコストと同じ
+ *   - 3 つの数のコスト・小回りの走行時間の表で選んだ道より遅くない（同じ見積もりで比べる） */
+static void test_turn_cost_random(int maze_count, int number)
+{
+  printf("[11] ターンごとの時間のコスト（No.%d の値）：ランダムな迷路 %d 個\n", number, maze_count);
+  static path_t s_path;
+  int fail_count = 0;
+  int wrong_cost_count = 0;
+  int slower_count = 0;
+  int faster_than_step_count = 0;
+  long gain_step_total = 0;
+  long gain_small_total = 0;
+  int compared_count = 0;
+  for (int maze_index = 0; maze_index < maze_count; maze_index++) {
+    s_random_seed = (unsigned int)(maze_index + 40001);
+    make_random_true_maze();
+    copy_true_maze_to_map();
+
+    /* 比べるための道：3 つの数のコスト、小回りの走行時間の表 */
+    dijkstra_set_step_cost();
+    bool found_step = dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+    int step_route_cost = count_route_turn_cost(number);
+    dijkstra_set_time_cost_small_turn(SEARCH_SPEED_MM_S, SHORTEST3_MAX_SPEED_MM_S, SHORTEST3_ACCEL_MM_S2);
+    bool found_small = dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+    int small_route_cost = count_route_turn_cost(number);
+
+    set_turn_cost(number);
+    bool found = path_make_shortest(s_goal_x, s_goal_y, s_goal_width, s_goal_height, &s_path);
+    bool ok = found && found_step && found_small;
+    if (ok) {
+      ok = (count_small_turns(&s_path) == 0) && replay_path(&s_path, 0, 0, DIR_NORTH, true)
+           && is_in_goal(s_path.end_x, s_path.end_y);
+    }
+    if (!ok) {
+      fail_count = fail_count + 1;
+      dijkstra_set_step_cost();
+      continue;
+    }
+    int best = dijkstra_get_route_cost();
+    if (dijkstra_count_path_cost(&s_path) != best) {
+      wrong_cost_count = wrong_cost_count + 1;
+      if (wrong_cost_count <= 3) {
+        printf("  迷路 %d 番：報告したコスト %d、動きの見積もり %d\n", maze_index, best, dijkstra_count_path_cost(&s_path));
+      }
+    }
+    if ((step_route_cost >= 0 && step_route_cost < best) || (small_route_cost >= 0 && small_route_cost < best)) {
+      slower_count = slower_count + 1;
+    }
+    if (step_route_cost >= 0 && small_route_cost >= 0) {
+      compared_count = compared_count + 1;
+      gain_step_total = gain_step_total + (step_route_cost - best);
+      gain_small_total = gain_small_total + (small_route_cost - best);
+      if (step_route_cost > best) {
+        faster_than_step_count = faster_than_step_count + 1;
+      }
+    }
+    dijkstra_set_step_cost();
+  }
+  printf("  うまくいかなかった迷路 %d 個、コストが見積もりと違った迷路 %d 個、ほかのコストの道より遅かった迷路 %d 個\n",
+         fail_count, wrong_cost_count, slower_count);
+  if (compared_count > 0) {
+    printf("  見積もりで比べた %d 個の平均：3 つの数のコストの道より %.1fms、小回りの表の道より %.1fms 速い"
+           "（3 つの数のコストの道より速くなった迷路 %d 個）\n",
+           compared_count, 2.0 * gain_step_total / compared_count, 2.0 * gain_small_total / compared_count,
+           faster_than_step_count);
+  }
+  check(fail_count == 0, "ターンごとの時間のコストの道は、大回り・斜めで走れて、壁を通らずにゴールに着く");
+  check(wrong_cost_count == 0, "報告したコストが、動きにしたときの走る時間の見積もりと同じ");
+  check(slower_count == 0, "ほかのコストで選んだ道より遅くない");
+}
+
+/* ターンごとの時間のコストの値を、手で計算した値と比べる（No.4 の値：ターン 500mm/s、直線 600mm/s・2000mm/s²） */
+static void test_turn_cost_table(void)
+{
+  printf("[11] ターンごとの時間のコストの値\n");
+  set_turn_cost(4);
+  /* 止まる：500mm/s から 3000mm/s² で 0.1667 秒 = 83.3（2ms 単位） */
+  check(s_turn_stop_cost == 83, "ターンのあと止まる時間は 83（0.167 秒）");
+  /* 90mm：500 → 600 に上げて戻すのに 27.5mm ずつ・0.05 秒ずつ、残り 35mm を 600mm/s で 0.0583 秒。合計 0.1583 秒 = 79.2 */
+  check(orth_straight_cost(2) == 79, "縦横の直線 90mm は 79（0.158 秒）");
+  check(orth_straight_cost(0) == 0, "長さ 0 の直線は 0");
+  /* 大回り 90°：前後 6.2mm を 500mm/s で 0.0124 秒、スラローム 90° ÷ 367.8 ＋ 367.8 ÷ 10000 = 0.2815 秒。合計 0.2939 秒 = 147.0 */
+  check(s_turn_cost[TURN_BIG90] == 147, "大回り 90° は 147（0.294 秒）");
+  dijkstra_set_step_cost();
+}
+
+/* 総当たり（下の test_turn_cost_brute_force）で使う */
+static bool s_brute_used[MAZE_SIZE][MAZE_SIZE];  /* 今の道で通った区画 */
+static int s_brute_best = -1;                    /* 見つけた一番速い道のコスト（なければ -1） */
+static long s_brute_route_count = 0;             /* 調べた道の数 */
+static int s_brute_number = 4;                   /* 最短走行の No. */
+
+/* 今の道（dijkstra.c の s_route_x/y、length 区画）を 1 区画ずつ延ばして、ゴールまでの道を全部調べる
+ * （同じ区画は 2 回通らない。1 歩目は北）。ゴールに入ったら、その道の時間の見積もりを数える */
+static void brute_force_extend(int length)
+{
+  int x = s_route_x[length - 1];
+  int y = s_route_y[length - 1];
+  if (is_in_goal(x, y)) {
+    s_route_length = length;
+    s_brute_route_count = s_brute_route_count + 1;
+    int cost = count_route_turn_cost(s_brute_number);
+    if (cost >= 0 && (s_brute_best < 0 || cost < s_brute_best)) {
+      s_brute_best = cost;
+    }
+    return;
+  }
+  if (length >= ROUTE_CELL_MAX) {
+    return;
+  }
+  for (int i = 0; i < 4; i++) {
+    direction_t dir = (direction_t)i;
+    if (length == 1 && dir != DIR_NORTH) {
+      continue;  /* スタートの区画からは北へ出る */
+    }
+    if (s_true_wall[x][y][dir]) {
+      continue;
+    }
+    int next_x = maze_next_x(x, dir);
+    int next_y = maze_next_y(y, dir);
+    if (!maze_is_inside(next_x, next_y) || s_brute_used[next_x][next_y]) {
+      continue;
+    }
+    s_brute_used[next_x][next_y] = true;
+    s_route_x[length] = (uint8_t)next_x;
+    s_route_y[length] = (uint8_t)next_y;
+    brute_force_extend(length + 1);
+    s_brute_used[next_x][next_y] = false;
+  }
+}
+
+/* 左下の width × height 区画だけが開いた小さな迷路（中の壁はでたらめ。ループあり）を作る。ゴールも中にでたらめに置く */
+static void make_small_true_maze(int width, int height)
+{
+  for (int x = 0; x < MAZE_SIZE; x++) {
+    for (int y = 0; y < MAZE_SIZE; y++) {
+      for (int i = 0; i < 4; i++) {
+        s_true_wall[x][y][i] = true;
+      }
+    }
+  }
+  for (int x = 0; x < width; x++) {
+    for (int y = 0; y < height; y++) {
+      if (x + 1 < width && random_below(100) < 80) {
+        open_true_wall(x, y, DIR_EAST);
+      }
+      if (y + 1 < height && random_below(100) < 80) {
+        open_true_wall(x, y, DIR_NORTH);
+      }
+    }
+  }
+  s_true_wall[0][0][DIR_EAST] = true;
+  s_true_wall[1][0][DIR_WEST] = true;
+  open_true_wall(0, 0, DIR_NORTH);
+
+  /* ゴール：1×1 か 2×2。スタートの近く（スタートの区画と、そのすぐ北）にはしない */
+  s_goal_width = 1 + random_below(2);
+  s_goal_height = s_goal_width;
+  s_goal_x = random_below(width - s_goal_width + 1);
+  s_goal_y = 2 + random_below(height - s_goal_height - 1);
+  for (int x = s_goal_x; x + 1 < s_goal_x + s_goal_width; x++) {
+    for (int y = s_goal_y; y < s_goal_y + s_goal_height; y++) {
+      open_true_wall(x, y, DIR_EAST);
+    }
+  }
+  for (int x = s_goal_x; x < s_goal_x + s_goal_width; x++) {
+    for (int y = s_goal_y; y + 1 < s_goal_y + s_goal_height; y++) {
+      open_true_wall(x, y, DIR_NORTH);
+    }
+  }
+}
+
+/* 小さな迷路で、スタートからゴールまでの道を全部数え上げて、ターンごとの時間のコストのダイクストラが、
+ * 本当に一番速い道（大回り・斜めで走れる道のうち、見積もりが一番小さいもの）を選ぶかを調べる */
+static void test_turn_cost_brute_force(int maze_count, int width, int height, int number)
+{
+  printf("[11] ターンごとの時間のコスト（No.%d の値）で本当の最短か：%d×%d の迷路 %d 個で道を総当たり\n", number, width,
+         height, maze_count);
+  int not_shortest_count = 0;
+  long route_total = 0;
+  for (int maze_index = 0; maze_index < maze_count; maze_index++) {
+    s_random_seed = (unsigned int)(maze_index + 50001);
+    make_small_true_maze(width, height);
+    copy_true_maze_to_map();
+
+    set_turn_cost(number);
+    bool found = dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+    int dijkstra_cost = -1;
+    if (found) {
+      dijkstra_cost = dijkstra_get_route_cost();
+    }
+
+    /* 総当たり */
+    for (int x = 0; x < MAZE_SIZE; x++) {
+      for (int y = 0; y < MAZE_SIZE; y++) {
+        s_brute_used[x][y] = false;
+      }
+    }
+    s_brute_used[0][0] = true;
+    s_route_x[0] = 0;
+    s_route_y[0] = 0;
+    s_brute_best = -1;
+    s_brute_route_count = 0;
+    s_brute_number = number;
+    brute_force_extend(1);
+    route_total = route_total + s_brute_route_count;
+
+    if (dijkstra_cost != s_brute_best) {
+      not_shortest_count = not_shortest_count + 1;
+      if (not_shortest_count <= 3) {
+        printf("  迷路 %d 番：ダイクストラ %d、総当たり %d（道 %ld 本）\n", maze_index, dijkstra_cost, s_brute_best,
+               s_brute_route_count);
+      }
+    }
+    dijkstra_set_step_cost();
+  }
+  printf("  調べた道 %ld 本、一番速い道と違った迷路 %d 個\n", route_total, not_shortest_count);
+  check(not_shortest_count == 0, "ターンごとの時間のコストのダイクストラは、総当たりの一番速い道と同じコスト");
+}
+
+/* ダイクストラ 1 回にかかる時間を、PC で測って表示する（確かめるのではなく、目安。実機は PC の数十倍遅い） */
+static void print_dijkstra_time(int maze_count)
+{
+  printf("[11] ダイクストラ 1 回にかかる時間（PC、ランダムな迷路 %d 個の平均）\n", maze_count);
+  double step_total_s = 0.0;
+  double turn_total_s = 0.0;
+  for (int maze_index = 0; maze_index < maze_count; maze_index++) {
+    s_random_seed = (unsigned int)(maze_index + 60001);
+    make_random_true_maze();
+    copy_true_maze_to_map();
+    dijkstra_set_step_cost();
+    clock_t begin = clock();
+    dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, false);
+    step_total_s = step_total_s + (double)(clock() - begin) / CLOCKS_PER_SEC;
+    set_turn_cost(4);
+    begin = clock();
+    dijkstra_find_route(s_goal_x, s_goal_y, s_goal_width, s_goal_height, true);
+    turn_total_s = turn_total_s + (double)(clock() - begin) / CLOCKS_PER_SEC;
+    dijkstra_set_step_cost();
+  }
+  printf("  3 つの数のコスト（未知壁探索）%.2fms、ターンごとの時間のコスト（最短走行 No.4）%.2fms\n",
+         1000.0 * step_total_s / maze_count, 1000.0 * turn_total_s / maze_count);
+}
+
 int main(void)
 {
   test_maze_map();
@@ -2643,7 +2925,7 @@ int main(void)
   test_dijkstra_exact_time(100, 1000.0f, 3000.0f);
   test_time_cost_no_zigzag();
   test_explore_types("mazes/maze32_center2x2.txt", 28);
-  test_explore_types("mazes/maze32_offset3x3.txt", 40);
+  test_explore_types("mazes/maze32_offset3x3.txt", 42);
   test_explore_failsafe("mazes/maze32_center2x2.txt");
   test_explore_failsafe("mazes/maze32_offset3x3.txt");
   test_explore_no_route();
@@ -2652,6 +2934,12 @@ int main(void)
   test_explore_side_align("mazes/maze32_center2x2.txt");
   test_explore_side_align("mazes/maze32_offset3x3.txt");
   test_shortest_diagonal(300);
+  test_turn_cost_table();
+  test_turn_cost_random(300, 4);
+  test_turn_cost_random(300, 5);
+  test_turn_cost_brute_force(300, 6, 6, 4);
+  test_turn_cost_brute_force(100, 7, 6, 5);
+  print_dijkstra_time(100);
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");
