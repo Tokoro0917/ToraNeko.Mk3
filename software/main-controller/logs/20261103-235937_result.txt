@@ -1,0 +1,36 @@
+#BEGIN RESULT
+Search: longest wait between moves 8581 us
+Search: front correction 14 times, average 3.7 mm, min -2.0 mm, max 10.9 mm (applied=1)
+front 1: traveled 239 mm, correction 10.9 mm
+FL 90.9 FR 99.9 mm, side L 42.8 R 64.0 mm, overrun 2.6 mm, speed 287 mm/s, yaw -0.4 deg
+front 2: traveled 320 mm, correction 9.0 mm
+FL 88.6 FR 98.3 mm, side L 49.9 R 64.0 mm, overrun 2.6 mm, speed 307 mm/s, yaw 0.1 deg
+front 3: traveled 401 mm, correction 1.3 mm
+FL 87.4 FR 84.0 mm, side L 64.0 R 47.5 mm, overrun 2.6 mm, speed 301 mm/s, yaw 1.0 deg
+front 4: traveled 479 mm, correction 4.8 mm
+FL 97.9 FR 80.6 mm, side L 64.0 R 46.1 mm, overrun 2.6 mm, speed 279 mm/s, yaw 1.9 deg
+front 5: traveled 560 mm, correction 2.1 mm
+FL 86.0 FR 87.0 mm, side L 43.4 R 64.0 mm, overrun 2.6 mm, speed 296 mm/s, yaw 1.8 deg
+front 6: traveled 639 mm, correction 0.7 mm
+FL 84.8 FR 85.5 mm, side L 42.9 R 64.0 mm, overrun 2.6 mm, speed 316 mm/s, yaw 1.1 deg
+front 7: traveled 1063 mm, correction -1.0 mm
+FL 86.5 FR 84.9 mm, side L 64.0 R 64.0 mm, overrun 0.3 mm, speed 318 mm/s, yaw 1.4 deg
+front 8: traveled 1320 mm, correction 6.8 mm
+FL 98.2 FR 88.8 mm, side L 64.0 R 48.0 mm, overrun 0.3 mm, speed 304 mm/s, yaw 1.9 deg
+front 9: traveled 1401 mm, correction 3.6 mm
+FL 97.3 FR 83.2 mm, side L 64.0 R 48.9 mm, overrun 0.3 mm, speed 317 mm/s, yaw 2.2 deg
+front 10: traveled 1481 mm, correction -2.0 mm
+FL 85.3 FR 84.1 mm, side L 41.7 R 64.0 mm, overrun 0.3 mm, speed 307 mm/s, yaw 2.1 deg
+front 11: traveled 1556 mm, correction 1.8 mm
+FL 87.9 FR 89.1 mm, side L 43.8 R 64.0 mm, overrun 0.3 mm, speed 328 mm/s, yaw 0.9 deg
+front 12: traveled 1634 mm, correction 6.4 mm
+FL 99.5 FR 86.7 mm, side L 64.0 R 47.2 mm, overrun 0.3 mm, speed 317 mm/s, yaw 1.1 deg
+front 13: traveled 1715 mm, correction 4.9 mm
+FL 97.8 FR 85.4 mm, side L 64.0 R 49.9 mm, overrun 0.3 mm, speed 315 mm/s, yaw 2.0 deg
+front 14: traveled 1978 mm, correction 2.6 mm
+FL 89.9 FR 89.2 mm, side L 40.8 R 46.4 mm, overrun 0.0 mm, speed 297 mm/s, yaw -0.4 deg
+Search: wall edge 3 times, average 56.2 mm, min 53.4 mm, max 57.8 mm from cell entry (applied=0)
+edge 1: traveled 204 mm, position 57.5 mm
+edge 2: traveled 863 mm, position 57.8 mm
+edge 3: traveled 1283 mm, position 53.4 mm
+#END RESULT

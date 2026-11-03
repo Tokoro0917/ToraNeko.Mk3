@@ -1,0 +1,4 @@
+#BEGIN RESULT
+Accel test (suction 5.0 V): accel 12000 mm/s2, target 280.0 mm, encoder 270.1 mm, angle -0.27 deg
+position error 9.91 mm, angle error 0.27 deg
+#END RESULT

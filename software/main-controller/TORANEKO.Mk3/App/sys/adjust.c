@@ -1,11 +1,26 @@
 /*
  * adjust.c
- * 動きを 1 つずつ走らせて調整する（モード2・6。MODES.md）
+ * 動きを 1 つずつ走らせて調整する（モード2・4・6。MODES.md）
+ *
+ * ■ モード4 No.1・4〜11 加速度テスト（adjust_accel_test。2026-11-03）
+ * 決めた加速度で速くなり、同じ加速度で遅くなって止まる。タイヤが滑り始める加速度（加速度の限界）を見つける。
+ *   - No.4〜11 は吸引あり（4000〜21000mm/s²。No. が大きいほど加速度が大きい）
+ *   - No.1 は、No.4（4000mm/s²）と同じ走り方を、吸引なしで走る（吸引あり・なしで比べるため）
+ *   - スタートの区画に、お尻を後ろの壁に付けて置く。4 区画まっすぐの通路で、4 区画目のまん中で止まる（280mm）
+ *   - 吸引を上げて 0.5 秒待ち（No.1 は吸引しない）、ジャイロのゼロ点を測り直してから（約 0.5 秒）走り出す
+ *   - 走行ログ（1ms ごと）の v（エンコーダの速さ）と、acc_y（IMU の前後の加速度）を見比べる。
+ *     滑っていなければ、v の傾きと IMU の加速度が同じになる。滑ると、IMU の加速度が目標より小さくなり、
+ *     止まったあとに本当に走った距離（ものさし）が 280mm からずれる
+ *   - 速さの上限は決めず、距離の半分まで加速して、残りの半分で止まる（三角の形）。
+ *     いちばん速いときの速さは √(加速度 × 280mm)（4000mm/s² で 1058mm/s、21000mm/s² で 2425mm/s）
  *
  * ■ モード6 No.1 直進（adjust_straight）
- * ゆっくり 360mm（ハーフの 4 区画）まっすぐ走って止まる。
- *   - 止まったら、本当に走った距離をものさしで測る。360mm より短ければタイヤの直径（config/robot_params.h の
- *     TIRE_DIAMETER_MM）を小さく、長ければ大きくする（新しい直径 = 今の直径 × 測った距離 ÷ 360）
+ * ゆっくり 280mm まっすぐ走って止まる。スタート区画に、お尻を後ろの壁に付けて置き、4 区画目のまん中で止まる
+ * （10 + 3 × 90。作者の通路は 4 区画なので、2026-11-03 に 360mm から変えた。加速度テストと同じ置き方・距離）。
+ *   - 止まったら、後ろの壁からお尻までをものさしで測る（それが走った距離）。モード7 No.1 の RESULT の encoder
+ *     （エンコーダで測った距離）より短ければタイヤの直径（config/robot_params.h の TIRE_DIAMETER_MM）を小さく、
+ *     長ければ大きくする（新しい直径 = 今の直径 × ものさしの距離 ÷ encoder の距離。280mm ではなく encoder と比べる。
+ *     止まるときに摩擦でずれが残ると、encoder は 280mm より短くなるため）
  *   - 走行ログ（3ms ごと）を残すので、モード7 No.1 で PC へ出し、KOGUMA のビューアで目標の速さと
  *     測った速さを見比べて、config/ctrl_gains.h の係数を合わせる
  *   - 走り終わったら、エンコーダで測った距離と、ジャイロで測った向きのずれを覚えておく
@@ -69,15 +84,21 @@
 #include "drv/uart.h"
 #include "sys/failsafe.h"
 #include "sys/log.h"
+#include "sys/suction.h"
 #include "sys/ui.h"
 
-#define RESULT_LINE_LENGTH_MAX 80  /* RESULT の 1 行の長さの上限 [文字]。出す前に、送信待ちバッファにこれだけの空きを待つ */
+#define RESULT_LINE_LENGTH_MAX 120  /* RESULT の 1 行の長さの上限 [文字]。出す前に、送信待ちバッファにこれだけの空きを待つ */
 
-#define STRAIGHT_DISTANCE_MM  360.0f   /* 走る距離 [mm]（4 区画） */
+#define STRAIGHT_DISTANCE_MM  280.0f   /* 走る距離 [mm]（スタートから 4 区画目のまん中まで：10 + 3 × 90） */
 #define STRAIGHT_SPEED_MM_S   200.0f   /* 最高速 [mm/s] */
 #define STRAIGHT_ACCEL_MM_S2  1000.0f  /* 加速度 [mm/s²] */
-#define STRAIGHT_LOG_INTERVAL_MS 3     /* 走行ログの間隔 [ms]（約 2.3 秒走るので、1000 行に入るように） */
+#define STRAIGHT_LOG_INTERVAL_MS 3     /* 走行ログの間隔 [ms]（止まるまで約 1.9 秒なので、1000 行に入るように） */
 #define SETTLE_MS             300      /* 止まってから、制御を続けて待つ時間 [ms]（ぴたりと止めるため） */
+
+#define ACCEL_TEST_DISTANCE_MM     280.0f   /* 加速度テストで走る距離 [mm]（スタートから 4 区画目のまん中まで：10 + 3 × 90） */
+#define ACCEL_TEST_MAX_SPEED_MM_S  5000.0f  /* 速さの上限 [mm/s]（届かない大きさにして、三角の形で走る） */
+#define ACCEL_TEST_SUCTION_WAIT_MS 500      /* 吸引を上げてから、走り出す前に待つ時間 [ms]（ファンの回り方を落ち着かせる） */
+#define ACCEL_TEST_LOG_INTERVAL_MS 1        /* 走行ログの間隔 [ms]（4000mm/s² でも走るのは約 0.53 秒なので、1000 行に入る） */
 
 #define PIVOT_ANGLE_DEG       180.0f   /* 回る角度 [deg]（左回り） */
 #define PIVOT_LOG_INTERVAL_MS 1        /* 走行ログの間隔 [ms]（約 0.65 秒なので、1000 行に入る） */
@@ -93,19 +114,21 @@ typedef enum {
   RESULT_STRAIGHT,   /* 直進 */
   RESULT_PIVOT,      /* その場旋回 */
   RESULT_SLALOM,     /* スラローム */
+  RESULT_ACCEL,      /* 加速度テスト（吸引あり・なし） */
 } result_kind_t;
 
 typedef struct {
   result_kind_t kind;
-  float target;             /* 目標（直進は距離 [mm]、旋回は角度 [deg]） */
+  float target;             /* 目標（直進は距離 [mm]、旋回は角度 [deg]、加速度テストは加速度 [mm/s²]） */
   float moved_mm;           /* エンコーダで測った、進んだ距離 [mm] */
   float turned_deg;         /* ジャイロで測った、回った角度 [deg] */
   float position_error_mm;  /* 終わったときの位置のずれ [mm] */
   float angle_error_deg;    /* 終わったときの角度のずれ [deg] */
   bool failsafe;            /* フェイルセーフで止まったか */
+  float suction_v;          /* 走ったときの吸引の電圧 [V]（加速度テストだけ。吸引なしなら 0） */
 } run_result_t;
 
-static run_result_t s_result = {RESULT_NONE, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false};
+static run_result_t s_result = {RESULT_NONE, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, 0.0f};
 
 /* 今の動き（直進・スラローム）が終わるまで、休まずに待つ。止まらずに次の動きへつなぐときに使う。
  * ui_wait_ms() で 10ms ずつ待つと、そのあいだに機体が 3mm（300mm/s のとき）進んでしまい、
@@ -165,6 +188,12 @@ static void print_front_correction_list(void)
     uart_wait_free(RESULT_LINE_LENGTH_MAX);
     printf("  front %d: traveled %.0f mm, correction %.1f mm\r\n", i + 1, run_get_front_correction_list_traveled_mm(i),
            run_get_front_correction_list_mm(i));
+    /* そのときの様子：前の壁までの距離（左前・右前）、横の壁までの距離、入口から進んでいた距離、速さ、向きのずれ */
+    run_front_detail_t detail = run_get_front_correction_detail(i);
+    uart_wait_free(RESULT_LINE_LENGTH_MAX);
+    printf("    FL %.1f FR %.1f mm, side L %.1f R %.1f mm, overrun %.1f mm, speed %.0f mm/s, yaw %.1f deg\r\n",
+           detail.front_left_mm, detail.front_right_mm, detail.side_left_mm, detail.side_right_mm,
+           detail.overrun_mm, detail.speed_mm_s, detail.yaw_deg);
   }
 }
 
@@ -215,6 +244,9 @@ static void print_move_result(void)
   } else if (s_result.kind == RESULT_SLALOM) {
     printf("Slalom: target %.1f deg, gyro %.2f deg, encoder %.1f mm\r\n",
            s_result.target, s_result.turned_deg, s_result.moved_mm);
+  } else if (s_result.kind == RESULT_ACCEL) {
+    printf("Accel test (suction %.1f V): accel %.0f mm/s2, target %.1f mm, encoder %.1f mm, angle %.2f deg\r\n",
+           s_result.suction_v, s_result.target, ACCEL_TEST_DISTANCE_MM, s_result.moved_mm, s_result.turned_deg);
   } else {
     return;  /* 調整の動きは、まだ何も走らせていない */
   }
@@ -257,7 +289,7 @@ void adjust_print_last_result(void)
   printf("#END RESULT\r\n");
 }
 
-/* モード6 No.1 直進：ゆっくり 360mm まっすぐ走って止まる（流れは先頭のコメント） */
+/* モード6 No.1 直進：ゆっくり 280mm まっすぐ走って止まる（流れは先頭のコメント） */
 void adjust_straight(void)
 {
   imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒） */
@@ -406,17 +438,7 @@ void adjust_front_align(void)
  * モード6 No.3 吸引 ON（2026-10-28）
  * ------------------------------------------------------------------------- */
 
-#define SUCTION_RAMP_STEPS 10   /* 吸引を上げるときの段の数 */
 #define SUCTION_BLINK_MS   500  /* 吸っているあいだ、真ん中の 3 個を点滅させる間隔 [ms] */
-
-/* 吸引ファンを、SUCTION_RAMP_MS かけて SUCTION_VOLTAGE_V まで少しずつ上げる */
-static void ramp_up_suction(void)
-{
-  for (int i = 1; i <= SUCTION_RAMP_STEPS; i++) {
-    fan_set_voltage(SUCTION_VOLTAGE_V * i / SUCTION_RAMP_STEPS);
-    ui_wait_ms(SUCTION_RAMP_MS / SUCTION_RAMP_STEPS);
-  }
-}
 
 /* 真ん中の 3 個（LED3・4・5）を点ける・消す */
 static void show_middle_leds(bool on)
@@ -430,7 +452,7 @@ static void show_middle_leds(bool on)
  * 机に置いて吸い付くか、手で持ち上げてどれくらいの力が要るかを見て、SUCTION_VOLTAGE_V を決める */
 void adjust_suction_on(void)
 {
-  ramp_up_suction();
+  suction_ramp_up();  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
   bool lit = true;
   uint32_t next_toggle_ms = timebase_get_ms() + SUCTION_BLINK_MS;
   while (!ui_switch_pushed()) {
@@ -444,4 +466,98 @@ void adjust_suction_on(void)
   fan_stop();
   ui_all_off();
   ui_signal_ok();
+}
+
+/* ---------------------------------------------------------------------------
+ * モード4 No.1・4〜11 加速度テスト（2026-11-03。流れは先頭のコメント）
+ * ------------------------------------------------------------------------- */
+
+/* No. から、加速度テストの加速度 [mm/s²] を決める。表にない No. なら 0 を返す */
+static float accel_test_accel_mm_s2(int number)
+{
+  if (number == 1) {
+    return 4000.0f;  /* 吸引なし（No.4 と同じ加速度） */
+  }
+  if (number == 4) {
+    return 4000.0f;
+  }
+  if (number == 5) {
+    return 6000.0f;
+  }
+  if (number == 6) {
+    return 8000.0f;
+  }
+  if (number == 7) {
+    return 10000.0f;
+  }
+  if (number == 8) {
+    return 12000.0f;
+  }
+  if (number == 9) {
+    return 15000.0f;
+  }
+  if (number == 10) {
+    return 18000.0f;
+  }
+  if (number == 11) {
+    return 21000.0f;
+  }
+  return 0.0f;
+}
+
+/* No. で、吸引するかを決める。No.1 だけ吸引しない */
+static bool accel_test_uses_suction(int number)
+{
+  if (number == 1) {
+    return false;
+  }
+  return true;
+}
+
+/* 加速度テストの結果を覚える（あとでモード7 No.1 で出す） */
+static void save_accel_result(float accel_mm_s2, float suction_v, float start_distance_mm, float start_angle_deg)
+{
+  s_result.kind = RESULT_ACCEL;
+  s_result.target = accel_mm_s2;
+  s_result.moved_mm = odometry_get_distance_mm() - start_distance_mm;
+  s_result.turned_deg = imu_get_angle_deg() - start_angle_deg;
+  s_result.position_error_mm = control_get_position_error_mm();
+  s_result.angle_error_deg = control_get_angle_error_deg();
+  s_result.failsafe = failsafe_is_stopped();
+  s_result.suction_v = suction_v;
+}
+
+/* モード4 No.1・4〜11 加速度テスト：No. で決まる加速度で 280mm 走って止まる（No.1 は吸引なし、ほかは吸引あり） */
+void adjust_accel_test(int number)
+{
+  float accel_mm_s2 = accel_test_accel_mm_s2(number);
+  if (accel_mm_s2 <= 0.0f) {
+    return;  /* 表にない No.（mode.c で選べないようにしてあるので、ふつうは来ない） */
+  }
+
+  /* 1. 吸引を上げて、少し待つ（吸引なしの No.1 では、何もしない） */
+  if (accel_test_uses_suction(number)) {
+    suction_ramp_up();  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
+    ui_wait_ms(ACCEL_TEST_SUCTION_WAIT_MS);
+  }
+  float suction_v = fan_get_voltage();
+
+  /* 2. 走るときと同じ状態で、ジャイロのゼロ点を測り直す（吸引ありなら、ファンの揺れがあっても吸ったまま測る） */
+  imu_remeasure_offset();
+  float start_distance_mm = odometry_get_distance_mm();
+  float start_angle_deg = imu_get_angle_deg();
+
+  /* 3. 走る（横の壁に沿う補正は入れない） */
+  log_start(ACCEL_TEST_LOG_INTERVAL_MS);
+  control_set_wall_control(false);
+  control_start();
+  trajectory_start_straight(ACCEL_TEST_DISTANCE_MM, ACCEL_TEST_MAX_SPEED_MM_S, 0.0f, accel_mm_s2);
+  wait_until_done();
+  settle_and_stop();
+
+  /* 4. 吸引を止めて、結果を覚える（フェイルセーフで止まったときは、もう止まっている） */
+  fan_stop();
+  save_accel_result(accel_mm_s2, suction_v, start_distance_mm, start_angle_deg);
+  adjust_print_last_result();  /* ケーブルを挿したまま走らせたときのために、すぐにも出す */
+  signal_end();
 }

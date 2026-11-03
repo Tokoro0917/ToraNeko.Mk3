@@ -108,4 +108,17 @@ int run_get_wall_edge_list_count(void);
 float run_get_wall_edge_list_mm(int index);
 float run_get_wall_edge_list_traveled_mm(int index);
 
+/* 前壁補正を測ったときの、くわしい様子（1 回ごと。最初の 40 回まで）。2026-11-03 に足した。
+ * 止めて測ると合っているのに、走っていると大きくずれる場所があったので、そのとき何が起きていたかを見る */
+typedef struct {
+  float front_left_mm;   /* 左前のセンサから求めた、前の壁までの距離 [mm] */
+  float front_right_mm;  /* 右前のセンサから求めた、前の壁までの距離 [mm] */
+  float side_left_mm;    /* 左の壁までの距離 [mm]（区画のまん中で 42） */
+  float side_right_mm;   /* 右の壁までの距離 [mm] */
+  float overrun_mm;      /* 入口の辺から、もう進んでいた距離 [mm]（測った量に足している分） */
+  float speed_mm_s;      /* そのときの速さ [mm/s]（エンコーダ） */
+  float yaw_deg;         /* 区画の向き（探索を始めた向きから 90° ごと）に対する、機体の向きのずれ [deg]（左回りが +） */
+} run_front_detail_t;
+run_front_detail_t run_get_front_correction_detail(int index);
+
 #endif /* CTRL_RUN_H */

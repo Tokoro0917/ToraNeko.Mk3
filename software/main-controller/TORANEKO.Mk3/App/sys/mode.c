@@ -112,6 +112,15 @@ bool mode_has_action(int mode, int number)
     }
     return false;
   }
+  if (mode == 4) {
+    if (number == 1) {
+      return true;  /* 吸引なしの加速度テスト */
+    }
+    if (number >= 4 && number <= 11) {
+      return true;  /* 吸引ありの加速度テスト */
+    }
+    return false;
+  }
   if (mode == 5) {
     if (number == 1) {
       return true;  /* センサ値の表示 */
@@ -321,6 +330,8 @@ static void run_selected(void)
     adjust_front_align();
   } else if (s_mode == 3) {
     turn_test_run(s_number);
+  } else if (s_mode == 4) {
+    adjust_accel_test(s_number);
   } else if (s_mode == 5 && s_number == 2) {
     sensor_record_run();
   } else if (s_mode == 6 && s_number == 1) {

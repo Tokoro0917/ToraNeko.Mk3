@@ -53,6 +53,7 @@ typedef struct {
   float voltage_left_v;      /* 左のモーターにかけた電圧 [V] */
   float voltage_right_v;     /* 右のモーターにかけた電圧 [V] */
   float battery_v;           /* 電池の電圧 [V] */
+  float accel_y_mm_s2;       /* IMU の前後の加速度 Y [mm/s²]（前に速くなるときに + か - かは、加速度テストで確かめる） */
   log_phase_t phase;         /* 何の動作中か */
 } log_values_t;
 

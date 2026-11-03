@@ -4,7 +4,9 @@
  *
  * ■ 持ち方（KOGUMA の docs/log_design.md と同じ）
  * RAM を減らすため、走った距離のほかは、単位を決めた 2 バイトの整数（int16）にして持つ
- * （例：角速度は 0.1 deg/s 単位。12.34 deg/s なら 123）。出すときに元の単位に戻す。1 行 36 バイト × 1000 行。
+ * （例：角速度は 0.1 deg/s 単位。12.34 deg/s なら 123）。出すときに元の単位に戻す。1 行 38 バイト × 1000 行。
+ * KOGUMA の列のあとに、IMU の前後の加速度の列（acc_y。前後の軸は Y）を足している（2026-11-03。加速度テストで、
+ * タイヤが滑り始めるところを見るため。左右の X は使わないので残さない）。ビューアは、知らない列も 1 つずつグラフにする。
  *
  * ■ 割り込みとの受け渡し
  * log_record() は制御周期の割り込みの中から、log_start()・log_stop()・log_print() は普通の処理から呼ぶ。
@@ -34,6 +36,7 @@
 #define SCALE_PID   100.0f  /* 横壁制御の P 項・D 項：0.01 */
 #define SCALE_VOLT  10.0f   /* 電圧：0.1 V */
 #define SCALE_BATT  100.0f  /* 電池：0.01 V */
+#define SCALE_ACCEL 0.1f    /* 加速度：10 mm/s²（±327000 mm/s² まで入る） */
 
 /* 1 行の長さの上限 [文字]。出す前に、UART の送信待ちバッファにこれだけの空きができるのを待つ */
 #define LINE_LENGTH_MAX 200
@@ -56,6 +59,7 @@ typedef struct {
   int16_t voltage_left;    /* 左のモーターの電圧 [0.1 V] */
   int16_t voltage_right;   /* 右のモーターの電圧 [0.1 V] */
   int16_t battery;         /* 電池の電圧 [0.01 V] */
+  int16_t accel_y;         /* IMU の前後の加速度 Y [10 mm/s²] */
   int8_t wall_used;        /* 使った壁（1 左、2 右、3 両方、0 なし） */
   int8_t phase;            /* 何の動作中か（log_phase_t） */
 } log_row_t;
@@ -154,6 +158,7 @@ void log_record(log_values_t values)
   s_rows[row].voltage_left = to_int16(values.voltage_left_v, SCALE_VOLT);
   s_rows[row].voltage_right = to_int16(values.voltage_right_v, SCALE_VOLT);
   s_rows[row].battery = to_int16(values.battery_v, SCALE_BATT);
+  s_rows[row].accel_y = to_int16(values.accel_y_mm_s2, SCALE_ACCEL);
   s_rows[row].wall_used = (int8_t)values.wall_used;
   s_rows[row].phase = (int8_t)values.phase;
   s_count = row + 1;
@@ -191,7 +196,8 @@ static void print_row(int row, float time_s)
 {
   float wall_p = s_rows[row].wall_p / SCALE_PID;
   float wall_d = s_rows[row].wall_d / SCALE_PID;
-  printf("%.3f,%.1f,%d,%d,%.1f,%.1f,%.1f,%d,%d,%.1f,%.1f,%d,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.2f,%d\r\n",
+  float accel_y_mm_s2 = s_rows[row].accel_y / SCALE_ACCEL;
+  printf("%.3f,%.1f,%d,%d,%.1f,%.1f,%.1f,%d,%d,%.1f,%.1f,%d,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.2f,%d,%.0f\r\n",
          time_s,
          s_rows[row].distance_mm,
          s_rows[row].speed,
@@ -211,7 +217,8 @@ static void print_row(int row, float time_s)
          s_rows[row].voltage_left / SCALE_VOLT,
          s_rows[row].voltage_right / SCALE_VOLT,
          s_rows[row].battery / SCALE_BATT,
-         s_rows[row].phase);
+         s_rows[row].phase,
+         accel_y_mm_s2);
 }
 
 /* 記録したログを、KOGUMA のビューアで読める形で出す（記録していないときに呼ぶ）。
@@ -229,7 +236,7 @@ void log_print(void)
   printf("\r\n#BEGIN LOG dt=%.3f n=%d div=%d full=%d\r\n", interval_s, count, s_interval_ms, full);
   uart_wait_free(LINE_LENGTH_MAX);
   printf("t,x,v,v_target,w,w_target,angle,sensor_L,sensor_R,dist_L,dist_R,wall,"
-         "wall_err,wall_p,wall_d,wall_out,volt_L,volt_R,batt,phase\r\n");
+         "wall_err,wall_p,wall_d,wall_out,volt_L,volt_R,batt,phase,acc_y\r\n");
 
   for (int i = 0; i < count; i++) {
     uart_wait_free(LINE_LENGTH_MAX);
