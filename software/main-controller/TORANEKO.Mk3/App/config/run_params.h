@@ -51,21 +51,28 @@
 #define SHORTEST3_MAX_SPEED_MM_S 1000.0f
 #define SHORTEST3_ACCEL_MM_S2    3000.0f
 
-/* ---- 最短走行（モード1）No.4・5：大回り・斜めのターン（config/turn_params.h、今は 500mm/s）で曲がる（仮） ---- */
+/* ---- 最短走行（モード1）No.4・5：大回り・斜めのターンで、ターンごとの速さ（config/turn_params.h）で曲がる ----
+ * 吸引して走る（吸引 5.0V では 10000mm/s² まで滑らなかった。モード4 の加速度テスト）。
+ * ターンは 800mm/s（ゆるいターン）・600mm/s（きついターン）なので、最高速はそれより速くする。
+ * 2026-11-04：ターンを合わせたので、仮の値から上げた（直進の速さを実機で確かめるのは、これから）。
+ * No.4 はまず確かめる用（加速度は滑らない値の半分くらい）、No.5 はもう一段速くしたもの */
 
 /* No.4 */
-#define SHORTEST4_MAX_SPEED_MM_S      600.0f   /* 縦横の直進の最高速 [mm/s] */
-#define SHORTEST4_ACCEL_MM_S2         2000.0f  /* 縦横の直進の加速度 [mm/s²] */
-#define SHORTEST4_DIAG_MAX_SPEED_MM_S 500.0f   /* 斜めの直進の最高速 [mm/s] */
-#define SHORTEST4_DIAG_ACCEL_MM_S2    2000.0f  /* 斜めの直進の加速度 [mm/s²] */
+#define SHORTEST4_MAX_SPEED_MM_S      1000.0f  /* 縦横の直進の最高速 [mm/s] */
+#define SHORTEST4_ACCEL_MM_S2         4000.0f  /* 縦横の直進の加速度 [mm/s²] */
+#define SHORTEST4_DIAG_MAX_SPEED_MM_S 800.0f   /* 斜めの直進の最高速 [mm/s]（斜めは柱が近いので、縦横より遅くする） */
+#define SHORTEST4_DIAG_ACCEL_MM_S2    4000.0f  /* 斜めの直進の加速度 [mm/s²] */
 /* No.5 */
-#define SHORTEST5_MAX_SPEED_MM_S      1000.0f
-#define SHORTEST5_ACCEL_MM_S2         3000.0f
-#define SHORTEST5_DIAG_MAX_SPEED_MM_S 700.0f
-#define SHORTEST5_DIAG_ACCEL_MM_S2    3000.0f
+#define SHORTEST5_MAX_SPEED_MM_S      1500.0f
+#define SHORTEST5_ACCEL_MM_S2         6000.0f
+#define SHORTEST5_DIAG_MAX_SPEED_MM_S 1200.0f
+#define SHORTEST5_DIAG_ACCEL_MM_S2    6000.0f
 
-/* ゴールにターンで入って終わるときに止まる加速度 [mm/s²]。500mm/s から 42mm で止まる（ゴールの区画の残り 45mm に入る） */
-#define SHORTEST_STOP_ACCEL_MM_S2 3000.0f
+/* ゴールにターンで入って終わるときに止まる加速度 [mm/s²] と、止まるまでの距離の上限 [mm]。
+ * ゴールの区画のまん中から壁までは 45mm なので、40mm 以内で止まる。6000mm/s² で 40mm なら 693mm/s から止まれるので、
+ * ゴールに入る最後のターンは、800mm/s のターンでも 693mm/s に遅くして曲がる（sys/shortest.c） */
+#define SHORTEST_STOP_ACCEL_MM_S2  6000.0f
+#define SHORTEST_STOP_DISTANCE_MM  40.0f
 
 /* ---- 探索の前壁補正（ctrl/run.c。2026-10-28） ----
  * 区画の入口で、その区画に前の壁があるとき、前センサで測った壁までの距離が FRONT_WALL_AT_ENTRY_MM からずれていれば、
