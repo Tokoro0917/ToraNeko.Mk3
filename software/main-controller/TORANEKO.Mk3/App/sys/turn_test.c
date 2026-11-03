@@ -12,7 +12,8 @@
  *   1. 吸引を上げて（0.5 秒）、0.5 秒待つ（最短走行は吸引して走るので、ターンも吸引して合わせる。
  *      吸引なしでは 4000mm/s² で前後に滑っていて、500mm/s のターンの横向きの加速度 3000〜5800mm/s² では滑る）
  *   2. ジャイロのゼロ点を測り直す（約 0.5 秒。吸ったまま測る）
- *   3. ターンの速さ（config/turn_params.h。今は 500mm/s）まで速くしながら、ターンの始まりまで進む
+ *   3. そのターンの速さ（config/turn_params.h の *_SPEED_MM_S。ゆるいターンは 800mm/s、きついターンは 600mm/s）まで
+ *      速くしながら、ターンの始まりまで進む
  *        No.1〜4：スタート区画から、次の区画のまん中まで（START_OFFSET_MM + 1 区画 = 100mm）
  *        No.5〜7：区画の辺のまん中から、斜めに 1 つぶん（63.6mm）進んで、次の辺のまん中まで
  *   4. 調べるターンを 1 つ走る
@@ -51,7 +52,8 @@
 #include "sys/ui.h"
 
 #define TURN_TEST_LOG_INTERVAL_MS 1        /* 走行ログの間隔 [ms]（1000 行で 1 秒ぶん） */
-#define TURN_TEST_ACCEL_MM_S2     3000.0f  /* 速くする・止まるときの加速度 [mm/s²]（500mm/s まで 42mm） */
+#define TURN_TEST_ACCEL_MM_S2     6000.0f  /* 速くする・止まるときの加速度 [mm/s²]（800mm/s まで 53mm。斜め 1 つぶん 63.6mm で
+                                              800mm/s に上げて止めるため。吸引 5.0V では 10000mm/s² まで滑らない） */
 #define TURN_TEST_SUCTION_WAIT_MS 500      /* 吸引を上げてから、走り出す前に待つ時間 [ms]（ファンの回り方を落ち着かせる） */
 
 /* 吸引を上げ、制御とログを始める（まだ動かない） */
@@ -63,28 +65,34 @@ static void prepare(void)
   log_start(TURN_TEST_LOG_INTERVAL_MS);  /* ターンを細かく見たいので、ログは 1ms ごとにし直す */
 }
 
-/* No.1〜4：スタート区画から、次の区画のまん中まで進みながら、ターンの速さにする */
-static void approach_from_start(void)
+/* No.1〜4：スタート区画から、次の区画のまん中まで進みながら、速さ speed_mm_s にする */
+static void approach_from_start(float speed_mm_s)
 {
-  run_fast_straight(START_OFFSET_MM + CELL_MM, FAST_TURN_SPEED_MM_S, FAST_TURN_SPEED_MM_S, TURN_TEST_ACCEL_MM_S2);
+  run_fast_straight(START_OFFSET_MM + CELL_MM, speed_mm_s, speed_mm_s, TURN_TEST_ACCEL_MM_S2);
 }
 
-/* No.5〜7：区画の辺のまん中から、斜めに 1 つぶん進みながら、ターンの速さにする */
-static void approach_on_diag(void)
+/* No.5〜7：区画の辺のまん中から、斜めに 1 つぶん進みながら、速さ speed_mm_s にする */
+static void approach_on_diag(float speed_mm_s)
 {
-  run_fast_diag_straight(DIAG_STEP_MM, FAST_TURN_SPEED_MM_S, FAST_TURN_SPEED_MM_S, TURN_TEST_ACCEL_MM_S2);
+  run_fast_diag_straight(DIAG_STEP_MM, speed_mm_s, speed_mm_s, TURN_TEST_ACCEL_MM_S2);
 }
 
-/* 区画のまん中から、1 区画進みながら止まる */
-static void stop_after_cell(void)
+/* 区画のまん中から、1 区画進みながら止まる（速さ speed_mm_s から） */
+static void stop_after_cell(float speed_mm_s)
 {
-  run_fast_stop(CELL_MM, FAST_TURN_SPEED_MM_S, TURN_TEST_ACCEL_MM_S2);
+  run_fast_stop(CELL_MM, speed_mm_s, TURN_TEST_ACCEL_MM_S2);
 }
 
-/* 斜めの上（壁の辺のまん中）から、斜めの直進 1 つぶん進みながら止まる */
-static void stop_after_diag(void)
+/* 斜めの上（壁の辺のまん中）から、斜めの直進 1 つぶん進みながら止まる（速さ speed_mm_s から） */
+static void stop_after_diag(float speed_mm_s)
 {
-  run_fast_diag_stop(DIAG_STEP_MM, FAST_TURN_SPEED_MM_S, TURN_TEST_ACCEL_MM_S2);
+  run_fast_diag_stop(DIAG_STEP_MM, speed_mm_s, TURN_TEST_ACCEL_MM_S2);
+}
+
+/* ターン turn を、そのターンの速さで、左に 1 つ走る */
+static void run_one_turn(run_fast_turn_t turn)
+{
+  run_fast_turn(turn, true, run_fast_turn_speed_mm_s(turn));
 }
 
 /* 終わったことを LED で知らせる。フェイルセーフで止まったときは、スイッチが押されるまで待って解除する */
@@ -98,50 +106,65 @@ static void signal_end(void)
   }
 }
 
-/* No.1〜4（区画のまん中から入るターン）を走る */
-static void run_turn_from_cell(int number)
+/* No. で、調べるターンを決める（1 大回り 90°、2 大回り 180°、3 斜め入り 45°、4 斜め入り 135°、
+ * 5 斜め出 45°、6 斜め出 135°、7 V90°） */
+static run_fast_turn_t turn_of_number(int number)
 {
-  approach_from_start();
   if (number == 1) {
-    run_fast_turn(RUN_FAST_TURN_BIG90, true, FAST_TURN_SPEED_MM_S);
-    stop_after_cell();
-  } else if (number == 2) {
-    run_fast_turn(RUN_FAST_TURN_BIG180, true, FAST_TURN_SPEED_MM_S);
-    stop_after_cell();
-  } else if (number == 3) {
-    run_fast_turn(RUN_FAST_TURN_IN45, true, FAST_TURN_SPEED_MM_S);
-    stop_after_diag();
-  } else {
-    run_fast_turn(RUN_FAST_TURN_IN135, true, FAST_TURN_SPEED_MM_S);
-    stop_after_diag();
+    return RUN_FAST_TURN_BIG90;
   }
+  if (number == 2) {
+    return RUN_FAST_TURN_BIG180;
+  }
+  if (number == 3) {
+    return RUN_FAST_TURN_IN45;
+  }
+  if (number == 4) {
+    return RUN_FAST_TURN_IN135;
+  }
+  if (number == 5) {
+    return RUN_FAST_TURN_OUT45;
+  }
+  if (number == 6) {
+    return RUN_FAST_TURN_OUT135;
+  }
+  return RUN_FAST_TURN_V90;
 }
 
-/* No.5〜7（斜めから入るターン）を走る */
-static void run_turn_from_diag(int number)
+/* ターン turn が、斜めの上（壁の辺のまん中）で終わるか（斜め入り 45°・135°、V90°）。
+ * そうでなければ、区画のまん中で終わる（大回り、斜め出） */
+static bool ends_on_diag(run_fast_turn_t turn)
 {
-  approach_on_diag();
-  if (number == 5) {
-    run_fast_turn(RUN_FAST_TURN_OUT45, true, FAST_TURN_SPEED_MM_S);
-    stop_after_cell();
-  } else if (number == 6) {
-    run_fast_turn(RUN_FAST_TURN_OUT135, true, FAST_TURN_SPEED_MM_S);
-    stop_after_cell();
-  } else {
-    run_fast_turn(RUN_FAST_TURN_V90, true, FAST_TURN_SPEED_MM_S);
-    stop_after_diag();
+  if (turn == RUN_FAST_TURN_IN45 || turn == RUN_FAST_TURN_IN135 || turn == RUN_FAST_TURN_V90) {
+    return true;
   }
+  return false;
 }
 
 /* モード3 No.number のターンを走らせる（流れは先頭のコメント） */
 void turn_test_run(int number)
 {
+  run_fast_turn_t turn = turn_of_number(number);
+  float speed_mm_s = run_fast_turn_speed_mm_s(turn);
+
   prepare();
+
+  /* ターンの始まりまで進む（No.1〜4 は区画のまん中から、No.5〜7 は斜めから入る） */
   if (number <= 4) {
-    run_turn_from_cell(number);
+    approach_from_start(speed_mm_s);
   } else {
-    run_turn_from_diag(number);
+    approach_on_diag(speed_mm_s);
   }
+
+  run_one_turn(turn);
+
+  /* 止まる */
+  if (ends_on_diag(turn)) {
+    stop_after_diag(speed_mm_s);
+  } else {
+    stop_after_cell(speed_mm_s);
+  }
+
   fan_stop();  /* 吸引を止める（フェイルセーフで止まったときは、もう止まっている） */
   signal_end();
 }
