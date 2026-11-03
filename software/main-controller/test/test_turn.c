@@ -51,20 +51,21 @@ typedef struct {
   float target_forward_mm; /* 終わりの位置：始めた位置から前へ */
   float speed_mm_s;      /* そのターンを曲がる速さ（config/turn_params.h の *_SPEED_MM_S） */
   float alpha_deg_s2;    /* 角加速度（*_ALPHA_DEG_S2） */
+  float straight_min_mm; /* 前距離・後距離の短いほう（ふつうは TURN_MARGIN_MM。斜め出 45° は OUT45_STRAIGHT_MIN_MM） */
 } turn_shape_t;
 
 /* 始めた位置は、大回り・斜め入りは区画のまん中、斜め出・V90 は壁の辺のまん中（斜めの通り道の上）。
  * 終わりの位置は、大回り・斜め出は区画のまん中、斜め入り・V90 は壁の辺のまん中 */
 #define TURN_COUNT 7
 static const turn_shape_t TURNS[TURN_COUNT] = {
-  {"大回り 90°", "BIG90", 90.0f, 90.0f, 90.0f, BIG90_SPEED_MM_S, BIG90_ALPHA_DEG_S2},
+  {"大回り 90°", "BIG90", 90.0f, 90.0f, 90.0f, BIG90_SPEED_MM_S, BIG90_ALPHA_DEG_S2, TURN_MARGIN_MM},
   /* 大回り 180° の幅は、実機で内側を走る分（BIG180_WIDTH_ADJUST_MM）だけ広く計算する（config/turn_params.h） */
-  {"大回り 180°", "BIG180", 180.0f, 90.0f + BIG180_WIDTH_ADJUST_MM, 0.0f, BIG180_SPEED_MM_S, BIG180_ALPHA_DEG_S2},
-  {"斜め入り 45°", "IN45", 45.0f, 45.0f, 90.0f, IN45_SPEED_MM_S, IN45_ALPHA_DEG_S2},
-  {"斜め入り 135°", "IN135", 135.0f, 90.0f, 45.0f, IN135_SPEED_MM_S, IN135_ALPHA_DEG_S2},
-  {"斜め出 45°", "OUT45", 45.0f, 45.0f / SQRT2_F, 135.0f / SQRT2_F, OUT45_SPEED_MM_S, OUT45_ALPHA_DEG_S2},
-  {"斜め出 135°", "OUT135", 135.0f, 135.0f / SQRT2_F, 45.0f / SQRT2_F, OUT135_SPEED_MM_S, OUT135_ALPHA_DEG_S2},
-  {"V90°", "V90", 90.0f, 90.0f / SQRT2_F, 90.0f / SQRT2_F, V90_SPEED_MM_S, V90_ALPHA_DEG_S2},
+  {"大回り 180°", "BIG180", 180.0f, 90.0f + BIG180_WIDTH_ADJUST_MM, 0.0f, BIG180_SPEED_MM_S, BIG180_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"斜め入り 45°", "IN45", 45.0f, 45.0f, 90.0f, IN45_SPEED_MM_S, IN45_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"斜め入り 135°", "IN135", 135.0f, 90.0f, 45.0f, IN135_SPEED_MM_S, IN135_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"斜め出 45°", "OUT45", 45.0f, 45.0f / SQRT2_F, 135.0f / SQRT2_F, OUT45_SPEED_MM_S, OUT45_ALPHA_DEG_S2, OUT45_STRAIGHT_MIN_MM},
+  {"斜め出 135°", "OUT135", 135.0f, 135.0f / SQRT2_F, 45.0f / SQRT2_F, OUT135_SPEED_MM_S, OUT135_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"V90°", "V90", 90.0f, 90.0f / SQRT2_F, 90.0f / SQRT2_F, V90_SPEED_MM_S, V90_ALPHA_DEG_S2, TURN_MARGIN_MM},
 };
 
 /* スラロームだけで進む位置（始めた向きから見て、左へ・前へ） */
@@ -99,8 +100,8 @@ static void solve_pre_post(const turn_shape_t *turn, arc_t arc, float *pre_mm, f
   float angle_rad = turn->angle_deg * PI_F / 180.0f;
   float sin_value = sinf(angle_rad);
   if (fabsf(sin_value) < 0.01f) {
-    *pre_mm = TURN_MARGIN_MM;
-    *post_mm = TURN_MARGIN_MM;
+    *pre_mm = turn->straight_min_mm;
+    *post_mm = turn->straight_min_mm;
     return;
   }
   *post_mm = (turn->target_left_mm - arc.left_mm) / sin_value;
@@ -123,13 +124,14 @@ static float omega_criterion(const turn_shape_t *turn, float omega_deg_s)
   if (post_mm < shorter_mm) {
     shorter_mm = post_mm;
   }
-  return shorter_mm - TURN_MARGIN_MM;
+  return shorter_mm - turn->straight_min_mm;
 }
 
 /* --calc：各ターンの最高角速度・前距離・後距離を計算して、config/turn_params.h に貼る行を出す */
 static int calculate(void)
 {
-  printf("/* 前距離・後距離の短いほう %.1fmm で計算（test/test_turn.c --calc） */\n", TURN_MARGIN_MM);
+  printf("/* 前距離・後距離の短いほう %.1fmm で計算（斜め出 45° は OUT45_STRAIGHT_MIN_MM。test/test_turn.c --calc） */\n",
+         TURN_MARGIN_MM);
   for (int i = 0; i < TURN_COUNT; i++) {
     const turn_shape_t *turn = &TURNS[i];
     /* 角速度を半分ずつ狭めて、決め手の値が 0 になるところを探す（二分法） */

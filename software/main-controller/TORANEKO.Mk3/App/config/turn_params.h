@@ -72,6 +72,11 @@
  * 幅が「90mm + この値」になる最高角速度を計算し直して、BIG180_OMEGA_DEG_S に貼る。
  * 2026-11-04：600mm/s で走らせたら、8mm くらい内側を走った（幅 82mm）。98mm で計算する */
 #define BIG180_WIDTH_ADJUST_MM 8.0f
+/* 斜め出 45° の、前距離・後距離の短いほうの長さ [mm]（ほかのターンは 3mm。test/test_turn.c の TURN_MARGIN_MM）。
+ * 短くするほど、最高角速度が下がって大きく回る（旋回半径が大きくなる）。区画の形で決まる終わりの位置は同じまま。
+ * 2026-11-04：800mm/s で 4mm くらい内側を走ったので、いちばん大きく回れる 0.5mm にした
+ * （最高角速度 562.1 → 511.2deg/s、横向きの加速度 7848 → 7138mm/s²）。これより大きく回すと、後距離が 0 より短くなって作れない */
+#define OUT45_STRAIGHT_MIN_MM 0.5f
 /* 斜め入り 45°：2026-11-04 に作者が実機で合わせた（前距離 +5.5mm、後距離 +2.0mm） */
 #define IN45_PRE_ADJUST_MM    5.5f
 #define IN45_POST_ADJUST_MM   2.0f
@@ -103,10 +108,11 @@
 #define IN135_OMEGA_DEG_S 780.0f
 #define IN135_PRE_MM 10.4f
 #define IN135_POST_MM 3.1f
-/* 斜め出 45°（800mm/s、角加速度 25600deg/s²。横向きの加速度はいちばん大きいとき 7848mm/s²） */
-#define OUT45_OMEGA_DEG_S 562.1f
-#define OUT45_PRE_MM 21.4f
-#define OUT45_POST_MM 3.2f
+/* 斜め出 45°（800mm/s、角加速度 25600deg/s²。横向きの加速度はいちばん大きいとき 7138mm/s²）。
+ * 短いほうを OUT45_STRAIGHT_MIN_MM（0.5mm）で計算（2026-11-04） */
+#define OUT45_OMEGA_DEG_S 511.2f
+#define OUT45_PRE_MM 18.9f
+#define OUT45_POST_MM 0.6f
 /* 斜め出 135°（600mm/s、角加速度 14400deg/s²。横向きの加速度はいちばん大きいとき 8204mm/s²） */
 #define OUT135_OMEGA_DEG_S 783.4f
 #define OUT135_PRE_MM 3.0f
