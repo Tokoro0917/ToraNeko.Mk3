@@ -712,43 +712,43 @@ static float turn_time_s(turn_kind_t kind, float speed_mm_s)
   float design_speed_mm_s = BIG90_SPEED_MM_S;
   float omega_deg_s = BIG90_OMEGA_DEG_S;
   float alpha_deg_s2 = BIG90_ALPHA_DEG_S2;
-  float straight_mm = BIG90_PRE_MM + BIG90_POST_MM;
+  float straight_mm = BIG90_PRE_MM + BIG90_POST_MM + BIG90_PRE_ADJUST_MM + BIG90_POST_ADJUST_MM;
   if (kind == TURN_BIG180) {
     angle_deg = 180.0f;
     design_speed_mm_s = BIG180_SPEED_MM_S;
     omega_deg_s = BIG180_OMEGA_DEG_S;
     alpha_deg_s2 = BIG180_ALPHA_DEG_S2;
-    straight_mm = BIG180_PRE_MM + BIG180_POST_MM;
+    straight_mm = BIG180_PRE_MM + BIG180_POST_MM + BIG180_PRE_ADJUST_MM + BIG180_POST_ADJUST_MM;
   } else if (kind == TURN_IN45) {
     angle_deg = 45.0f;
     design_speed_mm_s = IN45_SPEED_MM_S;
     omega_deg_s = IN45_OMEGA_DEG_S;
     alpha_deg_s2 = IN45_ALPHA_DEG_S2;
-    straight_mm = IN45_PRE_MM + IN45_POST_MM;
+    straight_mm = IN45_PRE_MM + IN45_POST_MM + IN45_PRE_ADJUST_MM + IN45_POST_ADJUST_MM;
   } else if (kind == TURN_IN135) {
     angle_deg = 135.0f;
     design_speed_mm_s = IN135_SPEED_MM_S;
     omega_deg_s = IN135_OMEGA_DEG_S;
     alpha_deg_s2 = IN135_ALPHA_DEG_S2;
-    straight_mm = IN135_PRE_MM + IN135_POST_MM;
+    straight_mm = IN135_PRE_MM + IN135_POST_MM + IN135_PRE_ADJUST_MM + IN135_POST_ADJUST_MM;
   } else if (kind == TURN_OUT45) {
     angle_deg = 45.0f;
     design_speed_mm_s = OUT45_SPEED_MM_S;
     omega_deg_s = OUT45_OMEGA_DEG_S;
     alpha_deg_s2 = OUT45_ALPHA_DEG_S2;
-    straight_mm = OUT45_PRE_MM + OUT45_POST_MM;
+    straight_mm = OUT45_PRE_MM + OUT45_POST_MM + OUT45_PRE_ADJUST_MM + OUT45_POST_ADJUST_MM;
   } else if (kind == TURN_OUT135) {
     angle_deg = 135.0f;
     design_speed_mm_s = OUT135_SPEED_MM_S;
     omega_deg_s = OUT135_OMEGA_DEG_S;
     alpha_deg_s2 = OUT135_ALPHA_DEG_S2;
-    straight_mm = OUT135_PRE_MM + OUT135_POST_MM;
+    straight_mm = OUT135_PRE_MM + OUT135_POST_MM + OUT135_PRE_ADJUST_MM + OUT135_POST_ADJUST_MM;
   } else if (kind == TURN_V90) {
     angle_deg = 90.0f;
     design_speed_mm_s = V90_SPEED_MM_S;
     omega_deg_s = V90_OMEGA_DEG_S;
     alpha_deg_s2 = V90_ALPHA_DEG_S2;
-    straight_mm = V90_PRE_MM + V90_POST_MM;
+    straight_mm = V90_PRE_MM + V90_POST_MM + V90_PRE_ADJUST_MM + V90_POST_ADJUST_MM;
   }
 
   /* そのターンの速さで回る時間。最高角速度まで上がれば「角度 ÷ 最高角速度 ＋ 最高角速度 ÷ 角加速度」、

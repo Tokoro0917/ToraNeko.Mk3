@@ -601,8 +601,8 @@ typedef struct {
   float design_speed_mm_s;  /* そのターンを曲がる速さ（*_SPEED_MM_S） */
   float omega_deg_s;        /* その速さでの最高角速度（*_OMEGA_DEG_S） */
   float alpha_deg_s2;       /* その速さでの角加速度（*_ALPHA_DEG_S2） */
-  float pre_mm;             /* 前距離 */
-  float post_mm;            /* 後距離 */
+  float pre_mm;             /* 前距離（計算の値 + 実機で足す分） */
+  float post_mm;            /* 後距離（計算の値 + 実機で足す分） */
 } fast_turn_values_t;
 
 /* 速さ speed_mm_s で、前距離 → 角度 turn.angle_deg のスラローム（is_left が false なら右）→ 後距離 と走る。
@@ -638,27 +638,27 @@ static void fast_turn(float speed_mm_s, fast_turn_values_t turn, bool is_left)
   wait_until_done();
 }
 
-/* ターン turn の値を、config/turn_params.h から取り出す */
+/* ターン turn の値を、config/turn_params.h から取り出す（前距離・後距離は、計算の値に実機で足す分を足したもの） */
 static fast_turn_values_t fast_turn_values(run_fast_turn_t turn)
 {
-  fast_turn_values_t values = {90.0f, BIG90_SPEED_MM_S, BIG90_OMEGA_DEG_S, BIG90_ALPHA_DEG_S2, BIG90_PRE_MM, BIG90_POST_MM};
+  fast_turn_values_t values = {90.0f, BIG90_SPEED_MM_S, BIG90_OMEGA_DEG_S, BIG90_ALPHA_DEG_S2, BIG90_PRE_MM + BIG90_PRE_ADJUST_MM, BIG90_POST_MM + BIG90_POST_ADJUST_MM};
   if (turn == RUN_FAST_TURN_BIG180) {
-    fast_turn_values_t big180 = {180.0f, BIG180_SPEED_MM_S, BIG180_OMEGA_DEG_S, BIG180_ALPHA_DEG_S2, BIG180_PRE_MM, BIG180_POST_MM};
+    fast_turn_values_t big180 = {180.0f, BIG180_SPEED_MM_S, BIG180_OMEGA_DEG_S, BIG180_ALPHA_DEG_S2, BIG180_PRE_MM + BIG180_PRE_ADJUST_MM, BIG180_POST_MM + BIG180_POST_ADJUST_MM};
     values = big180;
   } else if (turn == RUN_FAST_TURN_IN45) {
-    fast_turn_values_t in45 = {45.0f, IN45_SPEED_MM_S, IN45_OMEGA_DEG_S, IN45_ALPHA_DEG_S2, IN45_PRE_MM, IN45_POST_MM};
+    fast_turn_values_t in45 = {45.0f, IN45_SPEED_MM_S, IN45_OMEGA_DEG_S, IN45_ALPHA_DEG_S2, IN45_PRE_MM + IN45_PRE_ADJUST_MM, IN45_POST_MM + IN45_POST_ADJUST_MM};
     values = in45;
   } else if (turn == RUN_FAST_TURN_IN135) {
-    fast_turn_values_t in135 = {135.0f, IN135_SPEED_MM_S, IN135_OMEGA_DEG_S, IN135_ALPHA_DEG_S2, IN135_PRE_MM, IN135_POST_MM};
+    fast_turn_values_t in135 = {135.0f, IN135_SPEED_MM_S, IN135_OMEGA_DEG_S, IN135_ALPHA_DEG_S2, IN135_PRE_MM + IN135_PRE_ADJUST_MM, IN135_POST_MM + IN135_POST_ADJUST_MM};
     values = in135;
   } else if (turn == RUN_FAST_TURN_OUT45) {
-    fast_turn_values_t out45 = {45.0f, OUT45_SPEED_MM_S, OUT45_OMEGA_DEG_S, OUT45_ALPHA_DEG_S2, OUT45_PRE_MM, OUT45_POST_MM};
+    fast_turn_values_t out45 = {45.0f, OUT45_SPEED_MM_S, OUT45_OMEGA_DEG_S, OUT45_ALPHA_DEG_S2, OUT45_PRE_MM + OUT45_PRE_ADJUST_MM, OUT45_POST_MM + OUT45_POST_ADJUST_MM};
     values = out45;
   } else if (turn == RUN_FAST_TURN_OUT135) {
-    fast_turn_values_t out135 = {135.0f, OUT135_SPEED_MM_S, OUT135_OMEGA_DEG_S, OUT135_ALPHA_DEG_S2, OUT135_PRE_MM, OUT135_POST_MM};
+    fast_turn_values_t out135 = {135.0f, OUT135_SPEED_MM_S, OUT135_OMEGA_DEG_S, OUT135_ALPHA_DEG_S2, OUT135_PRE_MM + OUT135_PRE_ADJUST_MM, OUT135_POST_MM + OUT135_POST_ADJUST_MM};
     values = out135;
   } else if (turn == RUN_FAST_TURN_V90) {
-    fast_turn_values_t v90 = {90.0f, V90_SPEED_MM_S, V90_OMEGA_DEG_S, V90_ALPHA_DEG_S2, V90_PRE_MM, V90_POST_MM};
+    fast_turn_values_t v90 = {90.0f, V90_SPEED_MM_S, V90_OMEGA_DEG_S, V90_ALPHA_DEG_S2, V90_PRE_MM + V90_PRE_ADJUST_MM, V90_POST_MM + V90_POST_ADJUST_MM};
     values = v90;
   }
   return values;

@@ -23,7 +23,9 @@
  *   1. ターンごとの速さと角加速度を決める
  *   2. software/main-controller/test で make test_turn && ./test_turn --calc を実行し、出た行を下に貼る
  *      （最高角速度は、前距離・後距離の短いほうが 3mm になるように計算する）
- *   3. 実機でモード3 の No. ごとに走らせて、ずれる分だけ前距離・後距離を直す
+ *   3. 実機でモード3 の No. ごとに走らせて、ずれる分を、下の「実機で足す前距離・後距離」（*_PRE_ADJUST_MM・
+ *      *_POST_ADJUST_MM）に入れる。2 の計算の値はそのままにしておく（test_turn が、計算の値でターンの形を確かめるため）。
+ *      前距離を足すと、曲がり始めが前にずれる（止まる位置が、始めの向きに進む）。後距離を足すと、曲がったあとが長くなる
  * 下の値は PC で計算しただけの「仮」の値（実機ではまだ走らせていない）。
  */
 #ifndef CONFIG_TURN_PARAMS_H
@@ -49,6 +51,25 @@
 #define OUT135_ALPHA_DEG_S2 14400.0f
 #define V90_SPEED_MM_S      600.0f
 #define V90_ALPHA_DEG_S2    14400.0f
+
+/* 実機で足す前距離・後距離 [mm]（先頭のコメントの 3。計算の値に足して走る）。
+ * 大回り 90°：2026-11-04 に 800mm/s で走らせたら、止まる位置が始めの向き（北）に 10mm、曲がったあとの向き（西）に
+ * 10mm 手前だった（エンコーダとジャイロから計算した位置は 3mm 以内に合っていたので、曲がっているあいだにタイヤが
+ * 少しずつ空回りしている。まっすぐ 6000mm/s² で加速しても滑らなかった）。前距離・後距離を 10mm ずつ足す */
+#define BIG90_PRE_ADJUST_MM   10.0f
+#define BIG90_POST_ADJUST_MM  10.0f
+#define BIG180_PRE_ADJUST_MM  0.0f
+#define BIG180_POST_ADJUST_MM 0.0f
+#define IN45_PRE_ADJUST_MM    0.0f
+#define IN45_POST_ADJUST_MM   0.0f
+#define IN135_PRE_ADJUST_MM   0.0f
+#define IN135_POST_ADJUST_MM  0.0f
+#define OUT45_PRE_ADJUST_MM   0.0f
+#define OUT45_POST_ADJUST_MM  0.0f
+#define OUT135_PRE_ADJUST_MM  0.0f
+#define OUT135_POST_ADJUST_MM 0.0f
+#define V90_PRE_ADJUST_MM     0.0f
+#define V90_POST_ADJUST_MM    0.0f
 
 /* 最高角速度・前距離・後距離（test_turn --calc の出力） */
 /* 前距離・後距離の短いほう 3.0mm で計算（test/test_turn.c --calc） */

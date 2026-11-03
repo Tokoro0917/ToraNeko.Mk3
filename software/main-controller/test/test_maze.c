@@ -2741,8 +2741,10 @@ static void test_turn_cost_table(void)
   /* 90mm：500 → 600 に上げて戻すのに 27.5mm ずつ・0.05 秒ずつ、残り 35mm を 600mm/s で 0.0583 秒。合計 0.1583 秒 = 79.2 */
   check(orth_straight_cost(2) == 79, "縦横の直線 90mm は 79（0.158 秒）");
   check(orth_straight_cost(0) == 0, "長さ 0 の直線は 0");
-  /* 大回り 90°：前後 6.2mm を 500mm/s で 0.0124 秒、スラローム 90° ÷ 367.8 ＋ 367.8 ÷ 10000 = 0.2815 秒。合計 0.2939 秒 = 147.0 */
-  check(s_turn_cost[TURN_BIG90] == 147, "大回り 90° は 147（0.294 秒）");
+  /* 大回り 90°：前後 6.2mm（計算の値）+ 20mm（実機で足した分。config/turn_params.h の BIG90_*_ADJUST_MM）を
+   * 500mm/s で 0.0524 秒。スラロームは 800mm/s の値（最高 587.2deg/s・25600deg/s²）を 500mm/s に直して
+   * 90° ÷ 367.0 ＋ 367.0 ÷ 10000 = 0.2819 秒。合計 0.3343 秒 = 167.2（2ms 単位） */
+  check(s_turn_cost[TURN_BIG90] == 167, "大回り 90° は 167（0.334 秒）");
   dijkstra_set_step_cost();
 }
 
