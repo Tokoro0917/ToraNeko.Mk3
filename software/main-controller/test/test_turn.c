@@ -58,7 +58,8 @@ typedef struct {
 #define TURN_COUNT 7
 static const turn_shape_t TURNS[TURN_COUNT] = {
   {"大回り 90°", "BIG90", 90.0f, 90.0f, 90.0f, BIG90_SPEED_MM_S, BIG90_ALPHA_DEG_S2},
-  {"大回り 180°", "BIG180", 180.0f, 90.0f, 0.0f, BIG180_SPEED_MM_S, BIG180_ALPHA_DEG_S2},
+  /* 大回り 180° の幅は、実機で内側を走る分（BIG180_WIDTH_ADJUST_MM）だけ広く計算する（config/turn_params.h） */
+  {"大回り 180°", "BIG180", 180.0f, 90.0f + BIG180_WIDTH_ADJUST_MM, 0.0f, BIG180_SPEED_MM_S, BIG180_ALPHA_DEG_S2},
   {"斜め入り 45°", "IN45", 45.0f, 45.0f, 90.0f, IN45_SPEED_MM_S, IN45_ALPHA_DEG_S2},
   {"斜め入り 135°", "IN135", 135.0f, 90.0f, 45.0f, IN135_SPEED_MM_S, IN135_ALPHA_DEG_S2},
   {"斜め出 45°", "OUT45", 45.0f, 45.0f / SQRT2_F, 135.0f / SQRT2_F, OUT45_SPEED_MM_S, OUT45_ALPHA_DEG_S2},
@@ -107,7 +108,7 @@ static void solve_pre_post(const turn_shape_t *turn, arc_t arc, float *pre_mm, f
 }
 
 /* 最高角速度 omega_deg_s で曲がったときの「決め手の値」。--calc は、これが 0 になる最高角速度を探す。
- *   大回り 180°：スラロームの左 − 90mm（角速度を上げると小さく回り、減る）
+ *   大回り 180°：スラロームの左 − 目標の幅（90mm + BIG180_WIDTH_ADJUST_MM。角速度を上げると小さく回り、減る）
  *   ほか：前距離と後距離の短いほう − TURN_MARGIN_MM（角速度を上げると増える） */
 static float omega_criterion(const turn_shape_t *turn, float omega_deg_s)
 {

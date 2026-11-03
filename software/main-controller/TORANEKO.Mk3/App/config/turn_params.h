@@ -65,6 +65,11 @@
 #define BIG90_POST_ADJUST_MM  7.0f
 #define BIG180_PRE_ADJUST_MM  0.0f
 #define BIG180_POST_ADJUST_MM 0.0f
+/* 大回り 180° の左右の幅に足す分 [mm]。大回り 180° は、前距離・後距離では前後しか動かず、左右の幅（ふつうは 90mm）は
+ * 最高角速度だけで決まる。なので、実機で幅がずれたら、ここに足す分を入れ、test_turn --calc で、
+ * 幅が「90mm + この値」になる最高角速度を計算し直して、BIG180_OMEGA_DEG_S に貼る。
+ * 2026-11-04：600mm/s で走らせたら、8mm くらい内側を走った（幅 82mm）。98mm で計算する */
+#define BIG180_WIDTH_ADJUST_MM 8.0f
 #define IN45_PRE_ADJUST_MM    0.0f
 #define IN45_POST_ADJUST_MM   0.0f
 #define IN135_PRE_ADJUST_MM   0.0f
@@ -82,8 +87,9 @@
 #define BIG90_OMEGA_DEG_S 587.2f
 #define BIG90_PRE_MM 3.0f
 #define BIG90_POST_MM 3.2f
-/* 大回り 180°（600mm/s、角加速度 14400deg/s²。横向きの加速度はいちばん大きいとき 8179mm/s²） */
-#define BIG180_OMEGA_DEG_S 781.0f
+/* 大回り 180°（600mm/s、角加速度 14400deg/s²。横向きの加速度はいちばん大きいとき 7461mm/s²）。
+ * 幅 98mm（90 + BIG180_WIDTH_ADJUST_MM）で計算（2026-11-04 に 781.0 から変えた） */
+#define BIG180_OMEGA_DEG_S 712.4f
 #define BIG180_PRE_MM 3.0f
 #define BIG180_POST_MM 3.0f
 /* 斜め入り 45°（800mm/s、角加速度 25600deg/s²。横向きの加速度はいちばん大きいとき 7915mm/s²） */
