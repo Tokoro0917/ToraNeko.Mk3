@@ -299,6 +299,7 @@ static void record_log(void)
   values.voltage_left_v = s_left_voltage_v;
   values.voltage_right_v = s_right_voltage_v;
   values.battery_v = wall_get_battery_v();
+  values.accel_y_mm_s2 = imu_get_accel_y_mps2() * 1000.0f;  /* 前後の加速度。m/s² を mm/s² に直す */
   values.wall_dist_left_mm = wall_ctrl_get_left_mm();    /* 横の壁までの距離 [mm]（区画のまん中で 42） */
   values.wall_dist_right_mm = wall_ctrl_get_right_mm();
   if (s_front_align) {

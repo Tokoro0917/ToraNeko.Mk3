@@ -486,6 +486,15 @@ void adjust_suction_on(void)
   s_suction_count = s_suction_count + 1;
 }
 
+/* 吸引ありの加速度テスト（モード4）：走らずに、呼ばれた回数と No. を覚える */
+static int s_accel_test_count = 0;
+static int s_accel_test_number = 0;
+void adjust_accel_test(int number)
+{
+  s_accel_test_count = s_accel_test_count + 1;
+  s_accel_test_number = number;
+}
+
 /* 最短走行のターン（モード3）：走らずに、呼ばれた回数と No. を覚える */
 static int s_turn_test_count = 0;
 static int s_turn_test_number = 0;
@@ -953,6 +962,20 @@ static void test_turn_test(void)
   hand_at(1500, 500);
   mode_run_once();
   check(s_suction_count == 1, "モード6 No.3 で、吸引 ON が 1 回呼ばれる");
+
+  /* 吸引ありの加速度テスト（モード4 No.4〜11）も、スタート待ちのあとに始まる */
+  reset_world();
+  mode_init();
+  s_accel_test_count = 0;
+  s_accel_test_number = 0;
+  rotate_left_at(100, 4);    /* モード4 */
+  rotate_right_at(100, 9);   /* No.9 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+  check(s_accel_test_count == 1 && s_accel_test_number == 9, "モード4 No.9 で、加速度テストが No.9 で 1 回呼ばれる");
+  check(mode_has_action(4, 4) && mode_has_action(4, 11) && !mode_has_action(4, 3) && !mode_has_action(4, 12),
+        "モード4 は No.4〜11 だけ決定できる");
 }
 
 /* 壁までの距離の表示（モード5 No.3）も、No.1 と同じくスタート待ちをしない */

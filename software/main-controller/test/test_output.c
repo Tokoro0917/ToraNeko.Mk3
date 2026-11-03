@@ -514,6 +514,7 @@ static log_values_t make_values(int i)
   values.voltage_left_v = 3.21f;
   values.voltage_right_v = -1.0f;
   values.battery_v = 8.123f;
+  values.accel_y_mm_s2 = -9806.6f;  /* 10 mm/s² 単位なので -9810 になる */
   values.phase = LOG_PHASE_TURN;
   return values;
 }
@@ -538,15 +539,15 @@ static void test_log(void)
   check(begin >= 0 && strcmp(s_lines[begin], "#BEGIN LOG dt=0.001 n=300 div=1 full=0") == 0,
         "1 行目は #BEGIN LOG dt=0.001 n=300 div=1 full=0");
   check(begin >= 0 && strcmp(s_lines[begin + 1],
-        "t,x,v,v_target,w,w_target,angle,sensor_L,sensor_R,dist_L,dist_R,wall,wall_err,wall_p,wall_d,wall_out,volt_L,volt_R,batt,phase") == 0,
-        "2 行目は KOGUMA と同じ列名");
+        "t,x,v,v_target,w,w_target,angle,sensor_L,sensor_R,dist_L,dist_R,wall,wall_err,wall_p,wall_d,wall_out,volt_L,volt_R,batt,phase,acc_y") == 0,
+        "2 行目は KOGUMA と同じ列名と、前後の加速度の列");
   int end = find_line("#END LOG");
   check(end - begin - 2 == 300, "値の行が 300 行");
 
   /* 1 行目は最初に呼んだときの値（i = 0）。11 行目は i = 20 */
-  check(strcmp(s_lines[begin + 2], "0.000,0.0,0,500,12.3,-45.7,90.0,1200,34,41.3,48.0,3,-2.5,0.12,-0.05,0.07,3.2,-1.0,8.12,4") == 0,
+  check(strcmp(s_lines[begin + 2], "0.000,0.0,0,500,12.3,-45.7,90.0,1200,34,41.3,48.0,3,-2.5,0.12,-0.05,0.07,3.2,-1.0,8.12,4,-9810") == 0,
         "1 行目：単位を戻した値（四捨五入）");
-  check(strcmp(s_lines[begin + 12], "0.010,10.0,20,500,12.3,-45.7,90.0,1200,34,41.3,48.0,3,-2.5,0.12,-0.05,0.07,3.2,-1.0,8.12,4") == 0,
+  check(strcmp(s_lines[begin + 12], "0.010,10.0,20,500,12.3,-45.7,90.0,1200,34,41.3,48.0,3,-2.5,0.12,-0.05,0.07,3.2,-1.0,8.12,4,-9810") == 0,
         "11 行目：時刻 0.010 s、走った距離 10mm（記録を始めてから）、速度 20");
   if (begin >= 0) {
     printf("  例: %s\n", s_lines[begin + 12]);

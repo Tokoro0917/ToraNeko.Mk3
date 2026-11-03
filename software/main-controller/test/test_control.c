@@ -66,6 +66,12 @@ float imu_get_gyro_z_dps(void)
   return 0.0f;
 }
 
+/* 前後の加速度（走行ログに残すだけなので、テストでは 0） */
+float imu_get_accel_y_mps2(void)
+{
+  return 0.0f;
+}
+
 void motor_set_voltage(float left_v, float right_v)
 {
   (void)left_v;  /* 使わない引数（(void) を付けると、使っていないという警告が出ない） */

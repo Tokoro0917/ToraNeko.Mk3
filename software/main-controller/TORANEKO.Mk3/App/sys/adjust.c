@@ -1,6 +1,17 @@
 /*
  * adjust.c
- * 動きを 1 つずつ走らせて調整する（モード2・6。MODES.md）
+ * 動きを 1 つずつ走らせて調整する（モード2・4・6。MODES.md）
+ *
+ * ■ モード4 No.4〜11 吸引ありの加速度テスト（adjust_accel_test。2026-11-03）
+ * 吸引しながら、決めた加速度で速くなり、同じ加速度で遅くなって止まる。No. が大きいほど加速度が大きい。
+ * タイヤが滑り始める加速度（加速度の限界）を見つける。
+ *   - スタートの区画に、お尻を後ろの壁に付けて置く。4 区画まっすぐの通路で、4 区画目のまん中で止まる（280mm）
+ *   - 吸引を上げて 0.5 秒待ち、ジャイロのゼロ点を測り直してから（約 0.5 秒）走り出す
+ *   - 走行ログ（1ms ごと）の v（エンコーダの速さ）と、acc_y（IMU の前後の加速度）を見比べる。
+ *     滑っていなければ、v の傾きと IMU の加速度が同じになる。滑ると、IMU の加速度が目標より小さくなり、
+ *     止まったあとに本当に走った距離（ものさし）が 280mm からずれる
+ *   - 速さの上限は決めず、距離の半分まで加速して、残りの半分で止まる（三角の形）。
+ *     いちばん速いときの速さは √(加速度 × 280mm)（4000mm/s² で 1058mm/s、21000mm/s² で 2425mm/s）
  *
  * ■ モード6 No.1 直進（adjust_straight）
  * ゆっくり 360mm（ハーフの 4 区画）まっすぐ走って止まる。
@@ -79,6 +90,11 @@
 #define STRAIGHT_LOG_INTERVAL_MS 3     /* 走行ログの間隔 [ms]（約 2.3 秒走るので、1000 行に入るように） */
 #define SETTLE_MS             300      /* 止まってから、制御を続けて待つ時間 [ms]（ぴたりと止めるため） */
 
+#define ACCEL_TEST_DISTANCE_MM     280.0f   /* 加速度テストで走る距離 [mm]（スタートから 4 区画目のまん中まで：10 + 3 × 90） */
+#define ACCEL_TEST_MAX_SPEED_MM_S  5000.0f  /* 速さの上限 [mm/s]（届かない大きさにして、三角の形で走る） */
+#define ACCEL_TEST_SUCTION_WAIT_MS 500      /* 吸引を上げてから、走り出す前に待つ時間 [ms]（ファンの回り方を落ち着かせる） */
+#define ACCEL_TEST_LOG_INTERVAL_MS 1        /* 走行ログの間隔 [ms]（4000mm/s² でも走るのは約 0.53 秒なので、1000 行に入る） */
+
 #define PIVOT_ANGLE_DEG       180.0f   /* 回る角度 [deg]（左回り） */
 #define PIVOT_LOG_INTERVAL_MS 1        /* 走行ログの間隔 [ms]（約 0.65 秒なので、1000 行に入る） */
 
@@ -93,6 +109,7 @@ typedef enum {
   RESULT_STRAIGHT,   /* 直進 */
   RESULT_PIVOT,      /* その場旋回 */
   RESULT_SLALOM,     /* スラローム */
+  RESULT_ACCEL,      /* 吸引ありの加速度テスト */
 } result_kind_t;
 
 typedef struct {
@@ -215,6 +232,9 @@ static void print_move_result(void)
   } else if (s_result.kind == RESULT_SLALOM) {
     printf("Slalom: target %.1f deg, gyro %.2f deg, encoder %.1f mm\r\n",
            s_result.target, s_result.turned_deg, s_result.moved_mm);
+  } else if (s_result.kind == RESULT_ACCEL) {
+    printf("Accel test (suction %.1f V): accel %.0f mm/s2, target %.1f mm, encoder %.1f mm, angle %.2f deg\r\n",
+           SUCTION_VOLTAGE_V, s_result.target, ACCEL_TEST_DISTANCE_MM, s_result.moved_mm, s_result.turned_deg);
   } else {
     return;  /* 調整の動きは、まだ何も走らせていない */
   }
@@ -444,4 +464,82 @@ void adjust_suction_on(void)
   fan_stop();
   ui_all_off();
   ui_signal_ok();
+}
+
+/* ---------------------------------------------------------------------------
+ * モード4 No.4〜11 吸引ありの加速度テスト（2026-11-03。流れは先頭のコメント）
+ * ------------------------------------------------------------------------- */
+
+/* No. から、加速度テストの加速度 [mm/s²] を決める。表にない No. なら 0 を返す */
+static float accel_test_accel_mm_s2(int number)
+{
+  if (number == 4) {
+    return 4000.0f;
+  }
+  if (number == 5) {
+    return 6000.0f;
+  }
+  if (number == 6) {
+    return 8000.0f;
+  }
+  if (number == 7) {
+    return 10000.0f;
+  }
+  if (number == 8) {
+    return 12000.0f;
+  }
+  if (number == 9) {
+    return 15000.0f;
+  }
+  if (number == 10) {
+    return 18000.0f;
+  }
+  if (number == 11) {
+    return 21000.0f;
+  }
+  return 0.0f;
+}
+
+/* 加速度テストの結果を覚える（あとでモード7 No.1 で出す） */
+static void save_accel_result(float accel_mm_s2, float start_distance_mm, float start_angle_deg)
+{
+  s_result.kind = RESULT_ACCEL;
+  s_result.target = accel_mm_s2;
+  s_result.moved_mm = odometry_get_distance_mm() - start_distance_mm;
+  s_result.turned_deg = imu_get_angle_deg() - start_angle_deg;
+  s_result.position_error_mm = control_get_position_error_mm();
+  s_result.angle_error_deg = control_get_angle_error_deg();
+  s_result.failsafe = failsafe_is_stopped();
+}
+
+/* モード4 No.4〜11 吸引ありの加速度テスト：吸引しながら、No. で決まる加速度で 280mm 走って止まる */
+void adjust_accel_test(int number)
+{
+  float accel_mm_s2 = accel_test_accel_mm_s2(number);
+  if (accel_mm_s2 <= 0.0f) {
+    return;  /* 表にない No.（mode.c で選べないようにしてあるので、ふつうは来ない） */
+  }
+
+  /* 1. 吸引を上げて、少し待つ */
+  ramp_up_suction();
+  ui_wait_ms(ACCEL_TEST_SUCTION_WAIT_MS);
+
+  /* 2. 吸っている状態で、ジャイロのゼロ点を測り直す（ファンの揺れがあっても、走るときと同じ条件で測る） */
+  imu_remeasure_offset();
+  float start_distance_mm = odometry_get_distance_mm();
+  float start_angle_deg = imu_get_angle_deg();
+
+  /* 3. 走る（横の壁に沿う補正は入れない） */
+  log_start(ACCEL_TEST_LOG_INTERVAL_MS);
+  control_set_wall_control(false);
+  control_start();
+  trajectory_start_straight(ACCEL_TEST_DISTANCE_MM, ACCEL_TEST_MAX_SPEED_MM_S, 0.0f, accel_mm_s2);
+  wait_until_done();
+  settle_and_stop();
+
+  /* 4. 吸引を止めて、結果を覚える（フェイルセーフで止まったときは、もう止まっている） */
+  fan_stop();
+  save_accel_result(accel_mm_s2, start_distance_mm, start_angle_deg);
+  adjust_print_last_result();  /* ケーブルを挿したまま走らせたときのために、すぐにも出す */
+  signal_end();
 }
