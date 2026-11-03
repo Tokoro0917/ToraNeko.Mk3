@@ -11,6 +11,8 @@ void control_start(void);
 void control_stop(void);
 void control_update(void);
 void control_set_wall_control(bool on);
+void control_set_on_diagonal(bool on);
+void control_set_diag_control(bool on);
 void control_set_front_align(bool on);
 bool control_is_running(void);
 

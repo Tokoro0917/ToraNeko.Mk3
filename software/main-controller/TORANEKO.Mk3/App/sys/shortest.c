@@ -10,17 +10,27 @@
  *   2. 直進は最高速まで速くしてから、小回りの速さ（300mm/s）まで遅くする。左・右は探索と同じスラローム 90°
  *   3. 最後の直進で、ゴールの最初の区画のまん中で止まる
  *
- * ■ No.4・5：大回り・斜めのターンで曲がる（2026-10-28 に作った。ターンの値は仮で、実機はまだ）
- *   1. 経路を作る（maze/path.c の path_make_shortest()。大回り 90°・180°、斜め入り・斜め出 45°・135°、V90°、斜めの直進）
- *   2. 直進・斜めの直進は、最高速まで速くしてから、ターンの速さ（config/turn_params.h、今は 500mm/s）まで遅くする。
- *      ただし、短くてターンの速さまで上げきれないとき（スタートの直後など）は、上げられる速さで終わり、
- *      次のターンをその速さで曲がる（同じ形のまま遅く曲がる。ctrl/run.c の fast_turn()）
- *   3. 最後が直進なら、ゴールの最初の区画のまん中で止まる。最後がターン（ゴールにターンで入る）なら、
- *      区画のまん中に着いたところから SHORTEST_STOP_ACCEL_MM_S2 で止まる（区画の中で止まる）
+ * ■ No.4・5：大回り・斜めのターンで曲がる（2026-10-28 に作った。2026-11-04 に、ターンごとの速さで曲がるようにした）
+ *   1. 吸引を上げて（0.5 秒）、0.5 秒待つ（ターンは吸引して合わせた。モード3。吸引なしでは 800mm/s のターンで滑る）
+ *   2. 経路を作る（maze/path.c の path_make_shortest()。大回り 90°・180°、斜め入り・斜め出 45°・135°、V90°、斜めの直進）
+ *   3. ターンは、そのターンの速さ（config/turn_params.h の *_SPEED_MM_S。ゆるいターンは 800mm/s、きついターンは 600mm/s）で
+ *      曲がる。直進・斜めの直進は、最高速まで速くしてから、次のターンの速さまで遅くする。
+ *      ただし、次のことがあるときは、それより遅い速さで直進を終わり、次のターンをその速さで曲がる
+ *      （同じ形のまま遅く曲がる。ctrl/run.c の fast_turn()）
+ *        - 短くて上げきれないとき（スタートの直後など）
+ *        - ターンが直進をはさまずに続くとき（ターンのあいだは速さを変えられないので、続くターンの遅いほうに合わせる）
+ *        - その先の短い直進で、次の次のターンの速さまで遅くしきれないとき
+ *      どこまで遅くしておくかは、経路の終わりまで先を見て決める（speed_limit_ahead_mm_s()）
+ *   4. 最後が直進なら、ゴールの最初の区画のまん中で止まる。最後がターン（ゴールにターンで入る）なら、
+ *      区画のまん中に着いたところから SHORTEST_STOP_ACCEL_MM_S2 で、SHORTEST_STOP_DISTANCE_MM 以内で止まる
+ *      （止まれる速さより速く、最後のターンを曲がらないようにする）
+ *   5. 吸引を止める
  *   小回り（MOTION_TURN_LEFT・RIGHT）は経路に残らない（PC で 500 個の迷路を調べて 0 個）が、残ったら走らずに「道がない」にする
  *
  * 経路は、その走り方と速さで本当にかかる時間が短いものを選ぶ（ダイクストラの走行時間のコスト。maze/dijkstra.c）。
  * No.4・5 は「直線 ＋ ターン 1 つ」ごとの時間で数える（KOGUMA の #100）ので、ターンの種類ごとの時間の違いまで比べる。
+ * 時間を数えるときは、どのターンも FAST_TURN_SPEED_MM_S（500mm/s）で曲がるとして数える（本当はターンごとに速さが違うが、
+ * 直線の時間が前後のターンの速さで変わり、ダイクストラで数えにくいため。ターンの形はどれも同じなので、選ぶ道はあまり変わらない）。
  *
  * ■ スタートの位置
  * 経路は、スタート区画 (0,0) の南の辺から始まる。機体は、お尻を後ろの壁に付けて置くので、
@@ -33,10 +43,16 @@
 #include "config/run_params.h"
 #include "config/turn_params.h"
 #include "ctrl/run.h"
+#include "drv/fan.h"
 #include "maze/dijkstra.h"
 #include "maze/path.h"
 #include "sys/failsafe.h"
 #include "sys/goal.h"
+#include "sys/suction.h"
+#include "sys/ui.h"
+
+#define SHORTEST_SUCTION_WAIT_MS 500      /* 吸引を上げてから、走り出す前に待つ時間 [ms]（ファンの回り方を落ち着かせる） */
+#define SPEED_NO_LIMIT_MM_S      100000.0f /* 「速さの上限なし」を表す、どの速さより大きい値 [mm/s] */
 
 static path_t s_path;  /* 最短経路（大きいので、関数の中ではなくここに置く） */
 
@@ -214,15 +230,66 @@ static bool is_left_turn(motion_t motion)
   return false;
 }
 
-/* 速さ start_mm_s から、distance_mm で上げられる速さ（加速度 accel_mm_s2）。ターンの速さより上にはしない。
- * 直進の終わりの速さに使う（上げきれない速さを頼むと、着いたときに速さが飛んでしまうので） */
-static float end_speed_mm_s(float start_mm_s, float distance_mm, float accel_mm_s2)
+/* 2 つの速さの、遅いほう [mm/s] */
+static float slower_mm_s(float a_mm_s, float b_mm_s)
 {
-  float reachable_mm_s = sqrtf(start_mm_s * start_mm_s + 2.0f * accel_mm_s2 * distance_mm);
-  if (reachable_mm_s > FAST_TURN_SPEED_MM_S) {
-    return FAST_TURN_SPEED_MM_S;
+  if (a_mm_s < b_mm_s) {
+    return a_mm_s;
   }
-  return reachable_mm_s;
+  return b_mm_s;
+}
+
+/* 経路の i 番目の斜めの直進の長さ [mm] */
+static float diag_distance_mm(int i)
+{
+  return s_path.steps[i].half_count * DIAG_STEP_MM;
+}
+
+/* No.4・5：経路の first 番目の動きを始めるときに、出していてよい速さの上限 [mm/s]（先頭のコメントの 3）。
+ * その先のどのターンも、そのターンの速さ以下で曲がれて、最後に止まれる速さにする。
+ * 直進で遅くできる分は「速さの 2 乗」で 2 × 加速度 × 距離（速さ v から、距離 d で遅くできるのは √(v² − 2ad) まで）。
+ * なので、あるターンの手前までに遅くできる分を slow_down とすると、今の速さは √(ターンの速さ² ＋ slow_down) までよい。
+ * これを経路の終わりまで、ターンごとに計算して、いちばん遅いものにする */
+static float speed_limit_ahead_mm_s(int first, float accel, float diag_accel)
+{
+  float limit_mm_s = SPEED_NO_LIMIT_MM_S;
+  float slow_down_mm2_s2 = 0.0f;  /* first 番目から、今見ている動きの手前までの直進で遅くできる分（速さの 2 乗） */
+
+  for (int i = first; i < s_path.count; i++) {
+    motion_t motion = s_path.steps[i].motion;
+    bool is_last = (i == s_path.count - 1);
+
+    if (motion == MOTION_STRAIGHT && is_last) {
+      /* 最後の直進：その終わり（ゴールの区画のまん中）で止まれる速さ */
+      float stop_mm2_s2 = slow_down_mm2_s2 + 2.0f * accel * straight_distance_mm(i);
+      return slower_mm_s(limit_mm_s, sqrtf(stop_mm2_s2));
+    }
+    if (motion == MOTION_STRAIGHT) {
+      slow_down_mm2_s2 = slow_down_mm2_s2 + 2.0f * accel * straight_distance_mm(i);
+    } else if (motion == MOTION_DIAG_STRAIGHT) {
+      slow_down_mm2_s2 = slow_down_mm2_s2 + 2.0f * diag_accel * diag_distance_mm(i);
+    } else {
+      /* ターン：そのターンの速さで曲がれる速さ */
+      float turn_mm_s = run_fast_turn_speed_mm_s(fast_turn_kind(motion));
+      float turn_limit_mm_s = sqrtf(turn_mm_s * turn_mm_s + slow_down_mm2_s2);
+      limit_mm_s = slower_mm_s(limit_mm_s, turn_limit_mm_s);
+    }
+  }
+
+  /* 最後がターン（ゴールにターンで入る）：区画のまん中に着いてから SHORTEST_STOP_DISTANCE_MM で止まれる速さ */
+  float stop_mm_s = sqrtf(2.0f * SHORTEST_STOP_ACCEL_MM_S2 * SHORTEST_STOP_DISTANCE_MM);
+  float stop_limit_mm_s = sqrtf(stop_mm_s * stop_mm_s + slow_down_mm2_s2);
+  return slower_mm_s(limit_mm_s, stop_limit_mm_s);
+}
+
+/* No.4・5：直進の終わりの速さ [mm/s]。速さ start_mm_s から distance_mm で上げられる速さ、最高速 max_speed、
+ * その先を見た上限 limit_mm_s の、いちばん遅いもの（上げきれない速さを頼むと、着いたときに速さが飛んでしまうので） */
+static float straight_end_speed_mm_s(float start_mm_s, float distance_mm, float accel, float max_speed, float limit_mm_s)
+{
+  float reachable_mm_s = sqrtf(start_mm_s * start_mm_s + 2.0f * accel * distance_mm);
+  float end_mm_s = slower_mm_s(reachable_mm_s, max_speed);
+  end_mm_s = slower_mm_s(end_mm_s, limit_mm_s);
+  return end_mm_s;
 }
 
 /* No.4・5：経路を前から順に走る。speed_mm_s は今の速さ（直進が終わった速さで、次のターンを曲がる） */
@@ -245,15 +312,18 @@ static void run_diagonal_path(int number)
       speed_mm_s = 0.0f;
     } else if (motion == MOTION_STRAIGHT) {
       float distance_mm = straight_distance_mm(i);
-      float end_mm_s = end_speed_mm_s(speed_mm_s, distance_mm, accel);
+      float limit_mm_s = speed_limit_ahead_mm_s(i + 1, accel, diag_accel);
+      float end_mm_s = straight_end_speed_mm_s(speed_mm_s, distance_mm, accel, max_speed, limit_mm_s);
       run_fast_straight(distance_mm, max_speed, end_mm_s, accel);
       speed_mm_s = end_mm_s;
     } else if (motion == MOTION_DIAG_STRAIGHT) {
-      float distance_mm = s_path.steps[i].half_count * DIAG_STEP_MM;
-      float end_mm_s = end_speed_mm_s(speed_mm_s, distance_mm, diag_accel);
+      float distance_mm = diag_distance_mm(i);
+      float limit_mm_s = speed_limit_ahead_mm_s(i + 1, accel, diag_accel);
+      float end_mm_s = straight_end_speed_mm_s(speed_mm_s, distance_mm, diag_accel, diag_max_speed, limit_mm_s);
       run_fast_diag_straight(distance_mm, diag_max_speed, end_mm_s, diag_accel);
       speed_mm_s = end_mm_s;
     } else {
+      /* ターン：今の速さで曲がる（speed_limit_ahead_mm_s() で、そのターンの速さ以下にしてある） */
       run_fast_turn(fast_turn_kind(motion), is_left_turn(motion), speed_mm_s);
       last_was_turn = true;
     }
@@ -263,10 +333,17 @@ static void run_diagonal_path(int number)
   }
 
   if (last_was_turn) {
-    /* ゴールにターンで入って、区画のまん中に今の速さで着いた：そこから止まる */
+    /* ゴールにターンで入って、区画のまん中に今の速さで着いた：そこから止まる（SHORTEST_STOP_DISTANCE_MM 以内） */
     float stop_mm = speed_mm_s * speed_mm_s / (2.0f * SHORTEST_STOP_ACCEL_MM_S2);
     run_fast_stop(stop_mm, speed_mm_s, SHORTEST_STOP_ACCEL_MM_S2);
   }
+}
+
+/* No.4・5：吸引を上げて、少し待つ（先頭のコメントの 1） */
+static void start_suction(void)
+{
+  suction_ramp_up();  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
+  ui_wait_ms(SHORTEST_SUCTION_WAIT_MS);
 }
 
 /* 最短走行をする（流れは先頭のコメント）。number は No.（走り方と速さを選ぶ） */
@@ -278,7 +355,10 @@ shortest_result_t shortest_run(int number, int goal_x, int goal_y)
   float max_speed = max_speed_mm_s(number);
   float accel = accel_mm_s2(number);
 
-  run_fast_start();
+  if (uses_diagonal(number)) {
+    start_suction();
+  }
+  run_fast_start();  /* ジャイロのゼロ点を測り直してから、制御を始める（No.4・5 は、吸ったまま測る） */
   if (uses_diagonal(number)) {
     run_diagonal_path(number);
   } else {
@@ -289,6 +369,8 @@ shortest_result_t shortest_run(int number, int goal_x, int goal_y)
       }
     }
   }
+
+  fan_stop();  /* 吸引を止める（No.1〜3 は回していないので、何も変わらない） */
 
   if (failsafe_is_stopped()) {
     run_fast_stop(0.0f, 0.0f, accel);  /* 制御とログを止める（フェイルセーフのときは、動かさずに止めるだけ） */

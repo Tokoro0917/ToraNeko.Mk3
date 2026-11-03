@@ -10,6 +10,8 @@
  *   2. 300mm/s で走っているときに進まなくなったら（壁を押している）、10ms 続いたところで止まる。それより前には止まらない
  *   3. 1000mm/s で走っているときに急に遅くなったら（ぶつかった）、10ms 続いたところで止まる
  *   4. 少しのあいだだけ遅くなって、すぐ戻ったら（ノイズ）、止まらない
+ *   5. 吸引しているときは、摩擦の分の電圧を足す
+ *   6. 斜めの補正：左の柱に近い（ずれ +）と右へ、右に近いと左へ曲げる。速さに比例し、上限で止まる。切ってあれば曲げない
  */
 #include <math.h>
 #include <stdbool.h>
@@ -134,6 +136,34 @@ float wall_ctrl_get_side_error(void)
 
 int wall_ctrl_get_side_walls_used(void)
 {
+  return 0;
+}
+
+int32_t wall_ctrl_get_front_left(void)
+{
+  return 0;
+}
+
+int32_t wall_ctrl_get_front_right(void)
+{
+  return 0;
+}
+
+/* 仮の斜めの補正のずれ：s_fake_diag_error を答える（テストで決める） */
+static float s_fake_diag_error = 0.0f;
+float wall_ctrl_get_diag_error(void)
+{
+  return s_fake_diag_error;
+}
+
+int wall_ctrl_get_diag_used(void)
+{
+  if (s_fake_diag_error > 0.0f) {
+    return 1;
+  }
+  if (s_fake_diag_error < 0.0f) {
+    return 2;
+  }
   return 0;
 }
 
@@ -278,6 +308,43 @@ static void test_suction_friction(void)
   check(fabsf(right_diff_v - FF_SUCTION_FRICTION_V) < 0.001f, "右も FF_SUCTION_FRICTION_V だけ大きい");
 }
 
+/* 速さ speed_mm_s で斜めに走っていて、斜めの補正のずれが diag_error のときの、右 − 左 の電圧 [V]（+ なら左へ曲げる）。
+ * use_correction は斜めの補正を入れるか */
+static float diag_turn_voltage(float speed_mm_s, float diag_error, bool use_correction)
+{
+  reset();
+  control_set_on_diagonal(true);
+  control_set_diag_control(use_correction);
+  run_up_to(speed_mm_s, 6000.0f);
+  s_fake_diag_error = diag_error;
+  tick(trajectory_get_speed_mm_s());
+  s_fake_diag_error = 0.0f;
+  control_set_on_diagonal(false);
+  control_set_diag_control(false);
+  return s_last_right_v - s_last_left_v;
+}
+
+/* 6. 斜めの補正の向き・大きさ */
+static void test_diag_control(void)
+{
+  printf("[6] 斜めの補正：柱に近い側と反対へ曲げる（速さに比例、上限あり）\n");
+  float none_v = diag_turn_voltage(800.0f, 0.0f, true);
+  float left_close_v = diag_turn_voltage(800.0f, 200.0f, true);
+  float right_close_v = diag_turn_voltage(800.0f, -200.0f, true);
+  float off_v = diag_turn_voltage(800.0f, 200.0f, false);
+  float slow_v = diag_turn_voltage(400.0f, 200.0f, true);
+  float big_v = diag_turn_voltage(800.0f, 100000.0f, true);
+  float bigger_v = diag_turn_voltage(800.0f, 200000.0f, true);
+  printf("  右 − 左 の電圧：ずれなし %.4fV、左に近い %.4fV、右に近い %.4fV、補正なし %.4fV、400mm/s %.4fV\n",
+         none_v, left_close_v, right_close_v, off_v, slow_v);
+  check(fabsf(none_v) < 0.0001f, "ずれがなければ曲げない");
+  check(left_close_v < -0.0001f, "左の柱に近ければ（ずれ +）、右へ曲げる（右 − 左 が −）");
+  check(right_close_v > 0.0001f, "右の柱に近ければ（ずれ −）、左へ曲げる");
+  check(fabsf(off_v) < 0.0001f, "斜めの補正を切ってあれば曲げない");
+  check(fabsf(slow_v - left_close_v / 2.0f) < 0.0001f, "半分の速さなら、曲げる量も半分");
+  check(fabsf(big_v - bigger_v) < 0.0001f, "大きなずれでは、上限 DIAG_OMEGA_LIMIT_DEG_S で止まる");
+}
+
 int main(void)
 {
   test_normal();
@@ -285,6 +352,7 @@ int main(void)
   test_slow();
   test_glitch();
   test_suction_friction();
+  test_diag_control();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

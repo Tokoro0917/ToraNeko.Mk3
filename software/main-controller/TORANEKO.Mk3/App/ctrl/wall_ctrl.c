@@ -57,6 +57,21 @@
 
 /* 横の壁からのずれの上限（センサの値の差。約 2mm 分）。急に大きく曲げないようにする */
 #define SIDE_ERROR_LIMIT 600.0f
+/* 斜めの直進で、柱や壁に近づいたとみなす前のセンサの値（斜めの補正。KOGUMA の calWallConrol_NANAME）。
+ * 斜めの直進では、通り道の両側に柱が並ぶ（通り道のまん中の線から、柱までは 31.8mm）。まん中を走っていれば、前のセンサは
+ * 柱を少し見るだけだが、どちらかに寄ると、寄った側の前のセンサの値が上がる。この値を超えた分だけ、反対へ曲げる。
+ * 2026-11-04 に、斜めの直進のテスト（モード3 No.8。補正なし、800mm/s、斜め 6 つ）を 2 回走らせて決めた
+ * （logs/20261104-043508_log.txt・20261104-043546_log.txt）。柱は、通り道の左右に 127mm ごとに並び、前のセンサの値は、
+ * 柱を 1 つ見るたびに山になる：
+ *   1 回目（最後まで走れた。ほぼまん中）：左前の山 1740・990、右前の山 1134・773・641
+ *   2 回目（右へずれていった）：右前の山 2876、次の柱で 3526 になって右の柱に当たった（フェイルセーフで止まった）
+ * まん中を走ったときの山より上で、ずれていったときの 1 つ目の山（2876）より十分下にした。
+ * 左前は、ずれていったときの値をまだ測っていない（右前と同じくらいの余裕にした）。
+ * そのあと、補正を入れて（モード3 No.9）右へずれていく置き方で走らせたら、右前が 1500 を超えたところで左へ曲げ、
+ * 当たらずに最後まで走れたので、この値に決めた（2026-11-04。logs/20261104-044732_log.txt） */
+#define DIAG_FRONT_LEFT_THRESHOLD  2000  /* 左前：これより大きければ、左の柱・壁に近い（まん中の山 1740 より上） */
+#define DIAG_FRONT_RIGHT_THRESHOLD 1500  /* 右前：これより大きければ、右の柱・壁に近い（まん中の山 1134 より上） */
+
 #define FRONT_LEFT_HAND_THRESHOLD  2800  /* 左前：これより大きければ手がかざされている（仮） */
 #define FRONT_RIGHT_HAND_THRESHOLD 2000  /* 右前：同じく（仮） */
 
@@ -250,6 +265,33 @@ int wall_ctrl_get_side_walls_used(void)
     used = used + 2;
   }
   return used;
+}
+
+/* 斜めの直進で、柱や壁に近づいたずれ（+ なら左の柱・壁に近い。斜めの補正で使う）。KOGUMA の calWallConrol_NANAME と同じく、
+ * 左前がしきい値を超えていれば（左前 − しきい値）、そうでなく右前が超えていれば −（右前 − しきい値）、どちらでもなければ 0 */
+float wall_ctrl_get_diag_error(void)
+{
+  int32_t front_left = wall_ctrl_get_front_left();
+  int32_t front_right = wall_ctrl_get_front_right();
+  if (front_left > DIAG_FRONT_LEFT_THRESHOLD) {
+    return front_left - DIAG_FRONT_LEFT_THRESHOLD;
+  }
+  if (front_right > DIAG_FRONT_RIGHT_THRESHOLD) {
+    return -(front_right - DIAG_FRONT_RIGHT_THRESHOLD);
+  }
+  return 0.0f;
+}
+
+/* 斜めの補正で、どちらの前のセンサがしきい値を超えたか（0 なし、1 左前、2 右前。ログに残す） */
+int wall_ctrl_get_diag_used(void)
+{
+  if (wall_ctrl_get_front_left() > DIAG_FRONT_LEFT_THRESHOLD) {
+    return 1;
+  }
+  if (wall_ctrl_get_front_right() > DIAG_FRONT_RIGHT_THRESHOLD) {
+    return 2;
+  }
+  return 0;
 }
 
 /* 前の壁との距離のずれ（+ なら近すぎる）。左前と右前の、目標との差の平均 */

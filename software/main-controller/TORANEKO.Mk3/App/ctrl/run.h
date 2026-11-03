@@ -57,12 +57,13 @@ void run_search_align_to_side(bool is_left);
 /* 最短走行（モード1 は sys/shortest.c、モード3 のターンの調整は sys/turn_test.c）の動き。
  *   run_fast_start()                                  制御とログを始める（動かない）
  *   run_fast_straight(距離, 最高速, 終わりの速さ, 加速度) 直進（止まっているところからでもよい）。横の壁に沿う補正を入れる
- *   run_fast_diag_straight(…)                         斜めの直進（同じ。横の壁に沿う補正は入れない）
+ *   run_fast_diag_straight(…)                         斜めの直進（同じ。横の壁に沿う補正のかわりに、斜めの補正を入れる）
  *   run_fast_turn_left()・_right()                     探索の速さ（300mm/s）で、小回りのスラローム 90°
  *   run_fast_turn(ターン, 左なら true, 速さ)           大回り・斜めのターン（そのターンの速さ以下。遅くても同じ形で曲がる）
  *   run_fast_turn_speed_mm_s(ターン)                  そのターンを曲がる速さ（config/turn_params.h の *_SPEED_MM_S）
  *   run_fast_stop(距離, 最高速, 加速度)                進みながら止まり、モーターの出力を 0 にして、ログを止める
- *   run_fast_diag_stop(…)                             斜めに進みながら止まる（同じ。横の壁に沿う補正は入れない）
+ *   run_fast_diag_stop(…)                             斜めに進みながら止まる（同じ。横の壁に沿う補正のかわりに、斜めの補正を入れる）
+ *   run_fast_set_diag_correction(入れるなら true)      斜めの直進で、斜めの補正を入れるか（ふつうは入れる。ターンの調整では入れない）
  * フェイルセーフで止まったときは、探索と同じく、すぐに戻る */
 
 /* 大回り・斜めのターン（始めと終わりの位置は config/turn_params.h の先頭のコメント） */
@@ -85,6 +86,7 @@ void run_fast_turn(run_fast_turn_t turn, bool is_left, float speed_mm_s);
 float run_fast_turn_speed_mm_s(run_fast_turn_t turn);
 void run_fast_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
 void run_fast_diag_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
+void run_fast_set_diag_correction(bool on);
 
 /* 走っているあいだに、動きが戻ってから次の動きを頼まれるまでの、いちばん長かった時間 [µs]（発進してから）。
  * 探索の計算が長すぎないかを確かめる（300mm/s では 1ms で 0.3mm 進む）。モード7 No.1 で出す */

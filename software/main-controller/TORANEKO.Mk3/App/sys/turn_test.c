@@ -1,6 +1,7 @@
 /*
  * turn_test.c
- * 最短走行のターン（大回り・斜め）を 1 つずつ走らせて調整する（モード3 No.1〜7。MODES.md）
+ * 最短走行のターン（大回り・斜め）を 1 つずつ走らせて調整する（モード3 No.1〜7。MODES.md）。
+ * 斜めの直進だけを走らせて、斜めの補正を調整する（モード3 No.8・9。下の「■ 斜めの直進のテスト」）
  *
  * KOGUMA のターン単体テスト（Move.c の Turn1000_Test など）と同じやり方（2026-11-03 に作り直した）：
  *   - ターンは 1 つだけ走る（ほかのターンをつなげない。つなげると、2 つのターンのずれが混ざってしまう）
@@ -36,6 +37,18 @@
  *     No.7 V90°        ：(0, 1) の東の辺のまん中で北西を向く → 斜めに 1 つ進んで (0, 1) の北の辺のまん中で止まる
  * 通るところに壁や柱があるとぶつかるので、迷路の中ではなく、柱だけ（または何もない）の広いところで走らせる。
  * 止まった位置・向きがずれていたら、そのターンの前距離・後距離（config/turn_params.h）を直す。
+ * ターンの調整（No.1〜7）では、斜めの補正（ctrl/control.c）を入れない（補正で曲がると、ターンのずれと混ざるため）。
+ *
+ * ■ 斜めの直進のテスト（No.8・9。2026-11-04 に足した）
+ * 斜めの通り道（階段のような形に壁を並べたもの）で、斜めに DIAG_TEST_STEPS つぶん（6 つ、382mm）走って止まる。
+ * 速さは最短走行 No.4 の斜めの直進と同じ 800mm/s。吸引する（1 と同じ）。
+ *   No.8：斜めの補正を入れない。走行ログに前のセンサの値が残るので、まん中を走ったときの値から、しきい値を決める
+ *   No.9：斜めの補正を入れる。柱に近づいたら離れるかを見る
+ * 置き方は No.5〜7 と同じ（(0, 0) の南の辺のまん中にタイヤの軸を置き、北東を向ける）。通り道は、
+ * (0, 0)・(1, 0)・(1, 1)・(2, 1)・(2, 2)・(3, 2)・(3, 3) の 7 区画。通り道が通る辺（(0, 0) の南（置くところ）・
+ * (0, 0) の東・(1, 0) の北・(1, 1) の東・(2, 1) の北・(2, 2) の東・(3, 2) の北）には壁を置かず、7 区画のほかの辺には
+ * 全部壁を置く。止まるのは (3, 2) の北の辺のまん中。
+ * 迷路の外の壁（南の端）にお尻が当たるので、迷路の角ではなく、まん中のあいているところに作る。
  */
 #include "sys/turn_test.h"
 
@@ -55,10 +68,13 @@
 #define TURN_TEST_ACCEL_MM_S2     6000.0f  /* 速くする・止まるときの加速度 [mm/s²]（800mm/s まで 53mm。斜め 1 つぶん 63.6mm で
                                               800mm/s に上げて止めるため。吸引 5.0V では 10000mm/s² まで滑らない） */
 #define TURN_TEST_SUCTION_WAIT_MS 500      /* 吸引を上げてから、走り出す前に待つ時間 [ms]（ファンの回り方を落ち着かせる） */
+#define DIAG_TEST_STEPS           6        /* 斜めの直進のテスト（No.8・9）で進む、斜めの直進の数（6 つで 382mm） */
+#define DIAG_TEST_SPEED_MM_S      SHORTEST4_DIAG_MAX_SPEED_MM_S  /* 同じく、速さ [mm/s]（最短走行 No.4 の斜めと同じ 800） */
 
 /* 吸引を上げ、制御とログを始める（まだ動かない） */
 static void prepare(void)
 {
+  run_fast_set_diag_correction(false);  /* ターンの調整では、斜めの補正を入れない（先頭のコメント） */
   suction_ramp_up();  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
   ui_wait_ms(TURN_TEST_SUCTION_WAIT_MS);
   run_fast_start();   /* ジャイロのゼロ点を測り直してから、制御を始める */
@@ -66,7 +82,8 @@ static void prepare(void)
 }
 
 /* No.1〜4：スタート区画から、次の区画のまん中まで進みながら、速さ speed_mm_s にする。
- * 迷路の外の広いところで走るので、横の壁に沿う補正は入れない（run_fast_diag_straight は、補正を入れない直進）。
+ * 迷路の外の広いところで走るので、横の壁に沿う補正は入れない（run_fast_diag_straight は、横の壁に沿う補正を入れない直進。
+ * 斜めの補正も、prepare() で切ってある。走行ログでは、この直進も「斜めの直線」（phase 2）になり、前のセンサの値が入る）。
  * 2026-11-04 に、補正を入れる run_fast_straight から変えた（止まるときに、横のセンサが何かを見て補正が入り、0.5° 回った） */
 static void approach_from_start(float speed_mm_s)
 {
@@ -143,9 +160,30 @@ static bool ends_on_diag(run_fast_turn_t turn)
   return false;
 }
 
-/* モード3 No.number のターンを走らせる（流れは先頭のコメント） */
+/* No.8・9：斜めの直進のテストを走らせる（先頭のコメントの「■ 斜めの直進のテスト」）。
+ * use_correction が true なら斜めの補正を入れる（No.9）、false なら入れない（No.8） */
+static void run_diag_test(bool use_correction)
+{
+  prepare();
+  run_fast_set_diag_correction(use_correction);
+  run_fast_diag_stop(DIAG_TEST_STEPS * DIAG_STEP_MM, DIAG_TEST_SPEED_MM_S, TURN_TEST_ACCEL_MM_S2);
+  run_fast_set_diag_correction(true);  /* ふつうの「入れる」に戻す（最短走行のため） */
+  fan_stop();
+  signal_end();
+}
+
+/* モード3 No.number のターンを走らせる（流れは先頭のコメント）。No.8・9 は斜めの直進のテスト */
 void turn_test_run(int number)
 {
+  if (number == 8) {
+    run_diag_test(false);
+    return;
+  }
+  if (number == 9) {
+    run_diag_test(true);
+    return;
+  }
+
   run_fast_turn_t turn = turn_of_number(number);
   float speed_mm_s = run_fast_turn_speed_mm_s(turn);
 
@@ -168,5 +206,6 @@ void turn_test_run(int number)
   }
 
   fan_stop();  /* 吸引を止める（フェイルセーフで止まったときは、もう止まっている） */
+  run_fast_set_diag_correction(true);  /* ふつうの「入れる」に戻す（最短走行のため） */
   signal_end();
 }

@@ -950,7 +950,8 @@ static void test_turn_test(void)
   mode_run_once();
 
   check(s_turn_test_count == 1 && s_turn_test_number == 7, "モード3 No.7 で、ターンのテストが No.7 で 1 回呼ばれる");
-  check(mode_has_action(3, 1) && !mode_has_action(3, 8) && !mode_has_action(3, 0), "モード3 は No.1〜7 だけ決定できる");
+  check(mode_has_action(3, 1) && mode_has_action(3, 9) && !mode_has_action(3, 10) && !mode_has_action(3, 0),
+        "モード3 は No.1〜9 だけ決定できる（No.8・9 は斜めの直進のテスト）");
 
   /* 吸引 ON（モード6 No.3）も、スタート待ちのあとに始まる */
   reset_world();

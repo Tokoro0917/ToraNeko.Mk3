@@ -2383,8 +2383,9 @@ static void test_explore_random(int maze_count)
  *
  * shortest.c が使う「最短走行の動き」（ctrl/run.h の run_fast_*）を、ここで仮に作る（仮の機体 その 2）。
  * 仮の機体は、位置 [mm] と向き [deg] と速さを覚え、次のことを調べる。
- *   - 直進・斜めの直進：頼まれた終わりの速さが、その距離で上げられる速さ以下で、ターンの速さ以下か
- *   - ターン：今の速さで曲がるように頼まれたか（0 より大きく、ターンの速さ以下）。始める位置が、迷路の形どおり
+ *   - 直進・斜めの直進：頼まれた終わりの速さが、その距離で上げられる速さ以下で、最高速以下か。
+ *     始めの速さから、その距離で遅くしきれるか
+ *   - ターン：今の速さで曲がるように頼まれたか（0 より大きく、そのターンの速さ（config/turn_params.h）以下）。始める位置が、迷路の形どおり
  *     （大回り・斜め入りは区画のまん中、斜め出・V90 は壁の辺のまん中）か
  *   - 止まる：その距離で止まれるか
  * ターンで進む位置は、test_turn.c と同じ「終わりの位置」の表（左へ・前へ [mm]）で進める。
@@ -2395,7 +2396,8 @@ static float s_fast_y_mm = 0.0f;
 static float s_fast_heading_deg = 90.0f;
 static float s_fast_speed_mm_s = 0.0f;
 static int s_fast_error_count = 0;     /* おかしな頼まれ方をした回数 */
-static int s_fast_slow_turn_count = 0; /* ターンの速さより遅く曲がった回数（スタートの直後など） */
+static int s_fast_slow_turn_count = 0; /* そのターンの速さより遅く曲がった回数（スタートの直後、ターンが続くときなど） */
+static int s_fast_full_turn_count = 0; /* そのターンの速さで曲がった回数 */
 static bool s_fast_stopped = false;    /* 最後に止まったか */
 
 /* 仮の機体 その 2 の、おかしな頼まれ方を数える（最初の数回だけ表示する） */
@@ -2415,15 +2417,20 @@ static void fast_move(float distance_mm)
   s_fast_y_mm = s_fast_y_mm + distance_mm * sinf(heading_rad);
 }
 
-/* 直進の終わりの速さが、距離で上げられる速さ以下で、ターンの速さ以下か調べ、進む */
-static void fast_straight(float distance_mm, float end_speed_mm_s, float accel_mm_s2)
+/* 直進の終わりの速さが、距離で上げられる速さ以下で、最高速以下か、始めの速さから遅くしきれるかを調べ、進む */
+static void fast_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2)
 {
-  float reachable = sqrtf(s_fast_speed_mm_s * s_fast_speed_mm_s + 2.0f * accel_mm_s2 * distance_mm);
+  float start_mm2_s2 = s_fast_speed_mm_s * s_fast_speed_mm_s;
+  float end_mm2_s2 = end_speed_mm_s * end_speed_mm_s;
+  float reachable = sqrtf(start_mm2_s2 + 2.0f * accel_mm_s2 * distance_mm);
   if (end_speed_mm_s > reachable + 0.01f) {
     fast_error("直進の終わりの速さが、その距離では上げきれない");
   }
-  if (end_speed_mm_s > FAST_TURN_SPEED_MM_S + 0.01f) {
-    fast_error("直進の終わりの速さが、ターンの速さより速い");
+  if (end_speed_mm_s > max_speed_mm_s + 0.01f) {
+    fast_error("直進の終わりの速さが、最高速より速い");
+  }
+  if (start_mm2_s2 - end_mm2_s2 > 2.0f * accel_mm_s2 * distance_mm + 1.0f) {
+    fast_error("直進の始めの速さから、その距離では遅くしきれない");
   }
   fast_move(distance_mm);
   s_fast_speed_mm_s = end_speed_mm_s;
@@ -2440,14 +2447,50 @@ void run_fast_start(void)
 
 void run_fast_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2)
 {
-  (void)max_speed_mm_s;
-  fast_straight(distance_mm, end_speed_mm_s, accel_mm_s2);
+  fast_straight(distance_mm, max_speed_mm_s, end_speed_mm_s, accel_mm_s2);
 }
 
 void run_fast_diag_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2)
 {
-  (void)max_speed_mm_s;
-  fast_straight(distance_mm, end_speed_mm_s, accel_mm_s2);
+  fast_straight(distance_mm, max_speed_mm_s, end_speed_mm_s, accel_mm_s2);
+}
+
+/* ターンごとの速さ（ctrl/run.c と同じく、config/turn_params.h の *_SPEED_MM_S） */
+float run_fast_turn_speed_mm_s(run_fast_turn_t turn)
+{
+  if (turn == RUN_FAST_TURN_BIG90) {
+    return BIG90_SPEED_MM_S;
+  }
+  if (turn == RUN_FAST_TURN_BIG180) {
+    return BIG180_SPEED_MM_S;
+  }
+  if (turn == RUN_FAST_TURN_IN45) {
+    return IN45_SPEED_MM_S;
+  }
+  if (turn == RUN_FAST_TURN_IN135) {
+    return IN135_SPEED_MM_S;
+  }
+  if (turn == RUN_FAST_TURN_OUT45) {
+    return OUT45_SPEED_MM_S;
+  }
+  if (turn == RUN_FAST_TURN_OUT135) {
+    return OUT135_SPEED_MM_S;
+  }
+  return V90_SPEED_MM_S;
+}
+
+/* 最短走行 No.4・5 の吸引（sys/suction.c・drv/fan.c）と待ち時間（sys/ui.c）。PC では何もしない */
+void suction_ramp_up(void)
+{
+}
+
+void fan_stop(void)
+{
+}
+
+void ui_wait_ms(uint32_t wait_ms)
+{
+  (void)wait_ms;
 }
 
 void run_fast_turn_left(void)
@@ -2530,14 +2573,17 @@ void run_fast_turn(run_fast_turn_t turn, bool is_left, float speed_mm_s)
   if (!starts_at_center && !at_edge_middle()) {
     fast_error("斜め出・V90 を、壁の辺のまん中でないところから始めた");
   }
-  if (speed_mm_s <= 0.0f || speed_mm_s > FAST_TURN_SPEED_MM_S + 0.01f) {
-    fast_error("ターンの速さがおかしい");
+  float turn_speed_mm_s = run_fast_turn_speed_mm_s(turn);
+  if (speed_mm_s <= 0.0f || speed_mm_s > turn_speed_mm_s + 0.01f) {
+    fast_error("ターンの速さがおかしい（0 以下か、そのターンの速さより速い）");
   }
   if (fabsf(speed_mm_s - s_fast_speed_mm_s) > 0.01f) {
     fast_error("今の速さと違う速さで曲がるように頼まれた");
   }
-  if (speed_mm_s < FAST_TURN_SPEED_MM_S - 0.01f) {
+  if (speed_mm_s < turn_speed_mm_s - 0.01f) {
     s_fast_slow_turn_count = s_fast_slow_turn_count + 1;
+  } else {
+    s_fast_full_turn_count = s_fast_full_turn_count + 1;
   }
 
   if (!is_left) {
@@ -2595,6 +2641,7 @@ static void test_shortest_diagonal(int maze_count)
   int tried = 0;
   int fail_count = 0;
   s_fast_slow_turn_count = 0;
+  s_fast_full_turn_count = 0;
   for (int maze_index = 0; maze_index < maze_count; maze_index++) {
     s_random_seed = (unsigned int)(maze_index + 50001);
     make_random_true_maze();
@@ -2610,8 +2657,9 @@ static void test_shortest_diagonal(int maze_count)
       fail_count = fail_count + 1;
     }
   }
-  printf("  走らせた迷路 %d 個、うまくいかなかった走行 %d 回、ターンの速さより遅く曲がったターン %d 回\n",
-         tried, fail_count, s_fast_slow_turn_count);
+  printf("  走らせた迷路 %d 個、うまくいかなかった走行 %d 回\n", tried, fail_count);
+  printf("  そのターンの速さで曲がったターン %d 回、遅く曲がったターン %d 回（スタートの直後・ターンが続くとき・ゴールで止まるとき）\n",
+         s_fast_full_turn_count, s_fast_slow_turn_count);
   check(tried > 0 && fail_count == 0, "No.4・5 で、ターンが迷路の形どおりに始まり、速さに無理がなく、ゴールの区画で止まる");
 
   make_open_true_maze();
@@ -2731,13 +2779,14 @@ static void test_turn_cost_random(int maze_count, int number)
   check(slower_count == 0, "ほかのコストで選んだ道より遅くない");
 }
 
-/* ターンごとの時間のコストの値を、手で計算した値と比べる（No.4 の値：ターン 500mm/s、直線 600mm/s・2000mm/s²） */
+/* ターンごとの時間のコストの値を、手で計算した値と比べる（ターン 500mm/s、直線 600mm/s・2000mm/s²、斜め 500mm/s・2000mm/s²。
+ * 手で計算しやすいように、モード1 No.4 の値ではなく、ここで決めた値を使う） */
 static void test_turn_cost_table(void)
 {
   printf("[11] ターンごとの時間のコストの値\n");
-  set_turn_cost(4);
-  /* 止まる：500mm/s から 3000mm/s² で 0.1667 秒 = 83.3（2ms 単位） */
-  check(s_turn_stop_cost == 83, "ターンのあと止まる時間は 83（0.167 秒）");
+  dijkstra_set_time_cost_diagonal(500.0f, 600.0f, 2000.0f, 500.0f, 2000.0f);
+  /* 止まる：500mm/s から 6000mm/s²（SHORTEST_STOP_ACCEL_MM_S2）で 0.0833 秒 = 41.7（2ms 単位） */
+  check(s_turn_stop_cost == 42, "ターンのあと止まる時間は 42（0.083 秒）");
   /* 90mm：500 → 600 に上げて戻すのに 27.5mm ずつ・0.05 秒ずつ、残り 35mm を 600mm/s で 0.0583 秒。合計 0.1583 秒 = 79.2 */
   check(orth_straight_cost(2) == 79, "縦横の直線 90mm は 79（0.158 秒）");
   check(orth_straight_cost(0) == 0, "長さ 0 の直線は 0");
