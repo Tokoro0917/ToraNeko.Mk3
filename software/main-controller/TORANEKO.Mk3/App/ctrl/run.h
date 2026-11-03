@@ -100,4 +100,12 @@ float run_get_wall_edge_average_mm(void);
 float run_get_wall_edge_min_mm(void);
 float run_get_wall_edge_max_mm(void);
 
+/* 前壁補正・壁切れの 1 回ごとの記録（最初の 40 回まで）。量・位置と、そのときまでに走った距離 [mm]（探索を始めてから）。モード7 No.1 で出す */
+int run_get_front_correction_list_count(void);
+float run_get_front_correction_list_mm(int index);
+float run_get_front_correction_list_traveled_mm(int index);
+int run_get_wall_edge_list_count(void);
+float run_get_wall_edge_list_mm(int index);
+float run_get_wall_edge_list_traveled_mm(int index);
+
 #endif /* CTRL_RUN_H */
