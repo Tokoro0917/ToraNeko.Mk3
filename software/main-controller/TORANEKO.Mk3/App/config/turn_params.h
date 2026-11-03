@@ -72,6 +72,7 @@
  * 幅が「90mm + この値」になる最高角速度を計算し直して、BIG180_OMEGA_DEG_S に貼る。
  * 2026-11-04：600mm/s で走らせたら、8mm くらい内側を走った（幅 82mm）。98mm で計算する */
 #define BIG180_WIDTH_ADJUST_MM 8.0f
+/* 斜め入り 45°：2026-11-04 に作者が実機で合わせた（前距離 +5.5mm、後距離 +2.0mm） */
 #define IN45_PRE_ADJUST_MM    5.5f
 #define IN45_POST_ADJUST_MM   2.0f
 #define IN135_PRE_ADJUST_MM   0.0f
