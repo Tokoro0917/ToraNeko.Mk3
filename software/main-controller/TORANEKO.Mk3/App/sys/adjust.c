@@ -14,9 +14,10 @@
  *     いちばん速いときの速さは √(加速度 × 280mm)（4000mm/s² で 1058mm/s、21000mm/s² で 2425mm/s）
  *
  * ■ モード6 No.1 直進（adjust_straight）
- * ゆっくり 360mm（ハーフの 4 区画）まっすぐ走って止まる。
- *   - 止まったら、本当に走った距離をものさしで測る。360mm より短ければタイヤの直径（config/robot_params.h の
- *     TIRE_DIAMETER_MM）を小さく、長ければ大きくする（新しい直径 = 今の直径 × 測った距離 ÷ 360）
+ * ゆっくり 280mm まっすぐ走って止まる。スタート区画に、お尻を後ろの壁に付けて置き、4 区画目のまん中で止まる
+ * （10 + 3 × 90。作者の通路は 4 区画なので、2026-11-03 に 360mm から変えた。加速度テストと同じ置き方・距離）。
+ *   - 止まったら、後ろの壁からお尻までをものさしで測る（それが走った距離）。280mm より短ければタイヤの直径
+ *     （config/robot_params.h の TIRE_DIAMETER_MM）を小さく、長ければ大きくする（新しい直径 = 今の直径 × 測った距離 ÷ 280）
  *   - 走行ログ（3ms ごと）を残すので、モード7 No.1 で PC へ出し、KOGUMA のビューアで目標の速さと
  *     測った速さを見比べて、config/ctrl_gains.h の係数を合わせる
  *   - 走り終わったら、エンコーダで測った距離と、ジャイロで測った向きのずれを覚えておく
@@ -84,10 +85,10 @@
 
 #define RESULT_LINE_LENGTH_MAX 80  /* RESULT の 1 行の長さの上限 [文字]。出す前に、送信待ちバッファにこれだけの空きを待つ */
 
-#define STRAIGHT_DISTANCE_MM  360.0f   /* 走る距離 [mm]（4 区画） */
+#define STRAIGHT_DISTANCE_MM  280.0f   /* 走る距離 [mm]（スタートから 4 区画目のまん中まで：10 + 3 × 90） */
 #define STRAIGHT_SPEED_MM_S   200.0f   /* 最高速 [mm/s] */
 #define STRAIGHT_ACCEL_MM_S2  1000.0f  /* 加速度 [mm/s²] */
-#define STRAIGHT_LOG_INTERVAL_MS 3     /* 走行ログの間隔 [ms]（約 2.3 秒走るので、1000 行に入るように） */
+#define STRAIGHT_LOG_INTERVAL_MS 3     /* 走行ログの間隔 [ms]（止まるまで約 1.9 秒なので、1000 行に入るように） */
 #define SETTLE_MS             300      /* 止まってから、制御を続けて待つ時間 [ms]（ぴたりと止めるため） */
 
 #define ACCEL_TEST_DISTANCE_MM     280.0f   /* 加速度テストで走る距離 [mm]（スタートから 4 区画目のまん中まで：10 + 3 × 90） */
@@ -277,7 +278,7 @@ void adjust_print_last_result(void)
   printf("#END RESULT\r\n");
 }
 
-/* モード6 No.1 直進：ゆっくり 360mm まっすぐ走って止まる（流れは先頭のコメント） */
+/* モード6 No.1 直進：ゆっくり 280mm まっすぐ走って止まる（流れは先頭のコメント） */
 void adjust_straight(void)
 {
   imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒） */
