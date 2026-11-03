@@ -286,6 +286,10 @@ static float turn_voltage(void)
   if (trajectory_get_kind() == TRAJECTORY_PIVOT) {
     feedforward_v = feedforward_v + friction_voltage(wheel_speed_mm_s, FF_TURN_FRICTION_V);
   }
+  /* 吸引しながらスラロームで曲がるときは、タイヤが横にこすれる分を足す（config/ctrl_gains.h の FF_SUCTION_SLALOM_V_PER_DEG_S） */
+  if (trajectory_get_kind() == TRAJECTORY_SLALOM && fan_get_voltage() > 0.0f) {
+    feedforward_v = feedforward_v + target_omega * FF_SUCTION_SLALOM_V_PER_DEG_S;
+  }
 
   float feedback_v = omega_error_deg_s * OMEGA_KP + s_angle_error_deg * ANGLE_KI;
   return feedforward_v + feedback_v;

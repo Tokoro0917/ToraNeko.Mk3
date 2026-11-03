@@ -3,7 +3,7 @@
  * 最短走行のターン（大回り・斜め）の前距離・後距離を、PC で計算して確かめる。実機がなくても動く
  *
  *   ./test_turn          config/turn_params.h の値で、どのターンも決めた位置・向きで終わるかを調べる（make で実行）
- *   ./test_turn --calc   ターンの速さ・角加速度（config/turn_params.h の値）から、各ターンの最高角速度・前距離・後距離を
+ *   ./test_turn --calc   ターンごとの速さ・角加速度（config/turn_params.h の値）から、各ターンの最高角速度・前距離・後距離を
  *                        計算して、config/turn_params.h に貼る行を出す
  *
  * ■ 計算のしかた
@@ -49,19 +49,23 @@ typedef struct {
   float angle_deg;       /* 曲がる角度 */
   float target_left_mm;  /* 終わりの位置：始めた位置から左へ */
   float target_forward_mm; /* 終わりの位置：始めた位置から前へ */
+  float speed_mm_s;      /* そのターンを曲がる速さ（config/turn_params.h の *_SPEED_MM_S） */
+  float alpha_deg_s2;    /* 角加速度（*_ALPHA_DEG_S2） */
+  float straight_min_mm; /* 前距離・後距離の短いほう（ふつうは TURN_MARGIN_MM。斜め出 45° は OUT45_STRAIGHT_MIN_MM） */
 } turn_shape_t;
 
 /* 始めた位置は、大回り・斜め入りは区画のまん中、斜め出・V90 は壁の辺のまん中（斜めの通り道の上）。
  * 終わりの位置は、大回り・斜め出は区画のまん中、斜め入り・V90 は壁の辺のまん中 */
 #define TURN_COUNT 7
 static const turn_shape_t TURNS[TURN_COUNT] = {
-  {"大回り 90°", "BIG90", 90.0f, 90.0f, 90.0f},
-  {"大回り 180°", "BIG180", 180.0f, 90.0f, 0.0f},
-  {"斜め入り 45°", "IN45", 45.0f, 45.0f, 90.0f},
-  {"斜め入り 135°", "IN135", 135.0f, 90.0f, 45.0f},
-  {"斜め出 45°", "OUT45", 45.0f, 45.0f / SQRT2_F, 135.0f / SQRT2_F},
-  {"斜め出 135°", "OUT135", 135.0f, 135.0f / SQRT2_F, 45.0f / SQRT2_F},
-  {"V90°", "V90", 90.0f, 90.0f / SQRT2_F, 90.0f / SQRT2_F},
+  {"大回り 90°", "BIG90", 90.0f, 90.0f, 90.0f, BIG90_SPEED_MM_S, BIG90_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  /* 大回り 180° の幅は、実機で内側を走る分（BIG180_WIDTH_ADJUST_MM）だけ広く計算する（config/turn_params.h） */
+  {"大回り 180°", "BIG180", 180.0f, 90.0f + BIG180_WIDTH_ADJUST_MM, 0.0f, BIG180_SPEED_MM_S, BIG180_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"斜め入り 45°", "IN45", 45.0f, 45.0f, 90.0f, IN45_SPEED_MM_S, IN45_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"斜め入り 135°", "IN135", 135.0f, 90.0f, 45.0f, IN135_SPEED_MM_S, IN135_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"斜め出 45°", "OUT45", 45.0f, 45.0f / SQRT2_F, 135.0f / SQRT2_F, OUT45_SPEED_MM_S, OUT45_ALPHA_DEG_S2, OUT45_STRAIGHT_MIN_MM},
+  {"斜め出 135°", "OUT135", 135.0f, 135.0f / SQRT2_F, 45.0f / SQRT2_F, OUT135_SPEED_MM_S, OUT135_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"V90°", "V90", 90.0f, 90.0f / SQRT2_F, 90.0f / SQRT2_F, V90_SPEED_MM_S, V90_ALPHA_DEG_S2, TURN_MARGIN_MM},
 };
 
 /* スラロームだけで進む位置（始めた向きから見て、左へ・前へ） */
@@ -96,8 +100,8 @@ static void solve_pre_post(const turn_shape_t *turn, arc_t arc, float *pre_mm, f
   float angle_rad = turn->angle_deg * PI_F / 180.0f;
   float sin_value = sinf(angle_rad);
   if (fabsf(sin_value) < 0.01f) {
-    *pre_mm = TURN_MARGIN_MM;
-    *post_mm = TURN_MARGIN_MM;
+    *pre_mm = turn->straight_min_mm;
+    *post_mm = turn->straight_min_mm;
     return;
   }
   *post_mm = (turn->target_left_mm - arc.left_mm) / sin_value;
@@ -105,11 +109,11 @@ static void solve_pre_post(const turn_shape_t *turn, arc_t arc, float *pre_mm, f
 }
 
 /* 最高角速度 omega_deg_s で曲がったときの「決め手の値」。--calc は、これが 0 になる最高角速度を探す。
- *   大回り 180°：スラロームの左 − 90mm（角速度を上げると小さく回り、減る）
+ *   大回り 180°：スラロームの左 − 目標の幅（90mm + BIG180_WIDTH_ADJUST_MM。角速度を上げると小さく回り、減る）
  *   ほか：前距離と後距離の短いほう − TURN_MARGIN_MM（角速度を上げると増える） */
 static float omega_criterion(const turn_shape_t *turn, float omega_deg_s)
 {
-  arc_t arc = simulate_arc(turn->angle_deg, FAST_TURN_SPEED_MM_S, omega_deg_s, FAST_TURN_ALPHA_DEG_S2);
+  arc_t arc = simulate_arc(turn->angle_deg, turn->speed_mm_s, omega_deg_s, turn->alpha_deg_s2);
   if (turn->angle_deg > 179.0f) {
     return turn->target_left_mm - arc.left_mm;  /* 角速度を上げると増えるように、引く順を逆にする */
   }
@@ -120,14 +124,14 @@ static float omega_criterion(const turn_shape_t *turn, float omega_deg_s)
   if (post_mm < shorter_mm) {
     shorter_mm = post_mm;
   }
-  return shorter_mm - TURN_MARGIN_MM;
+  return shorter_mm - turn->straight_min_mm;
 }
 
 /* --calc：各ターンの最高角速度・前距離・後距離を計算して、config/turn_params.h に貼る行を出す */
 static int calculate(void)
 {
-  printf("/* ターンの速さ %.0fmm/s、角加速度 %.0fdeg/s²、前距離・後距離の短いほう %.1fmm で計算（test/test_turn.c --calc） */\n",
-         FAST_TURN_SPEED_MM_S, FAST_TURN_ALPHA_DEG_S2, TURN_MARGIN_MM);
+  printf("/* 前距離・後距離の短いほう %.1fmm で計算（斜め出 45° は OUT45_STRAIGHT_MIN_MM。test/test_turn.c --calc） */\n",
+         TURN_MARGIN_MM);
   for (int i = 0; i < TURN_COUNT; i++) {
     const turn_shape_t *turn = &TURNS[i];
     /* 角速度を半分ずつ狭めて、決め手の値が 0 になるところを探す（二分法） */
@@ -146,11 +150,12 @@ static int calculate(void)
       }
     }
     float omega_deg_s = high_deg_s;
-    arc_t arc = simulate_arc(turn->angle_deg, FAST_TURN_SPEED_MM_S, omega_deg_s, FAST_TURN_ALPHA_DEG_S2);
+    arc_t arc = simulate_arc(turn->angle_deg, turn->speed_mm_s, omega_deg_s, turn->alpha_deg_s2);
     float pre_mm;
     float post_mm;
     solve_pre_post(turn, arc, &pre_mm, &post_mm);
-    printf("/* %s */\n", turn->name);
+    printf("/* %s（%.0fmm/s、角加速度 %.0fdeg/s²。横向きの加速度はいちばん大きいとき %.0fmm/s²） */\n", turn->name,
+           turn->speed_mm_s, turn->alpha_deg_s2, turn->speed_mm_s * omega_deg_s * PI_F / 180.0f);
     printf("#define %s_OMEGA_DEG_S %.1ff\n", turn->prefix, omega_deg_s);
     printf("#define %s_PRE_MM %.1ff\n", turn->prefix, pre_mm);
     printf("#define %s_POST_MM %.1ff\n", turn->prefix, post_mm);
@@ -161,7 +166,7 @@ static int calculate(void)
 /* config/turn_params.h の値で、ターンが決めた位置・向きで終わるかを調べる（ずれ 0.5mm まで） */
 static void check_turn(const turn_shape_t *turn, float omega_deg_s, float pre_mm, float post_mm)
 {
-  arc_t arc = simulate_arc(turn->angle_deg, FAST_TURN_SPEED_MM_S, omega_deg_s, FAST_TURN_ALPHA_DEG_S2);
+  arc_t arc = simulate_arc(turn->angle_deg, turn->speed_mm_s, omega_deg_s, turn->alpha_deg_s2);
   float angle_rad = turn->angle_deg * PI_F / 180.0f;
   float end_left_mm = arc.left_mm + post_mm * sinf(angle_rad);
   float end_forward_mm = pre_mm + arc.forward_mm + post_mm * cosf(angle_rad);
@@ -178,13 +183,15 @@ static void check_turn(const turn_shape_t *turn, float omega_deg_s, float pre_mm
 /* 速さを k 倍、最高角速度を k 倍、角加速度を k² 倍にしても、同じ位置で終わるか（遅く入ったターン。ctrl/run.c の fast_turn()） */
 static void check_slow_turn(const turn_shape_t *turn, float omega_deg_s, float ratio)
 {
-  arc_t normal = simulate_arc(turn->angle_deg, FAST_TURN_SPEED_MM_S, omega_deg_s, FAST_TURN_ALPHA_DEG_S2);
-  arc_t slow = simulate_arc(turn->angle_deg, FAST_TURN_SPEED_MM_S * ratio, omega_deg_s * ratio,
-                            FAST_TURN_ALPHA_DEG_S2 * ratio * ratio);
+  arc_t normal = simulate_arc(turn->angle_deg, turn->speed_mm_s, omega_deg_s, turn->alpha_deg_s2);
+  arc_t slow = simulate_arc(turn->angle_deg, turn->speed_mm_s * ratio, omega_deg_s * ratio,
+                            turn->alpha_deg_s2 * ratio * ratio);
   printf("  %-16s 速さ %.1f 倍：左 %6.2f → %6.2f、前 %6.2f → %6.2f mm\n", turn->name, ratio,
          normal.left_mm, slow.left_mm, normal.forward_mm, slow.forward_mm);
-  check(fabsf(normal.left_mm - slow.left_mm) < 0.3f && fabsf(normal.forward_mm - slow.forward_mm) < 0.3f,
-        "遅く曲がっても、スラロームで進む位置が同じ（±0.3mm）");
+  /* 0.5ms ごとに足していくので、速いほど 1 回で進む量が大きく、少しずれる（800mm/s では 1 回 0.4mm）。
+   * 2026-11-03 にターンごとの速さ（最高 800mm/s）にしたので、±0.3mm から ±0.5mm にした */
+  check(fabsf(normal.left_mm - slow.left_mm) < 0.5f && fabsf(normal.forward_mm - slow.forward_mm) < 0.5f,
+        "遅く曲がっても、スラロームで進む位置が同じ（±0.5mm）");
 }
 
 int main(int argc, char *argv[])
@@ -193,7 +200,7 @@ int main(int argc, char *argv[])
     return calculate();
   }
 
-  printf("[1] 最短走行のターン（config/turn_params.h の値。速さ %.0fmm/s）\n", FAST_TURN_SPEED_MM_S);
+  printf("[1] 最短走行のターン（config/turn_params.h の値。ターンごとの速さで）\n");
   check_turn(&TURNS[0], BIG90_OMEGA_DEG_S, BIG90_PRE_MM, BIG90_POST_MM);
   check_turn(&TURNS[1], BIG180_OMEGA_DEG_S, BIG180_PRE_MM, BIG180_POST_MM);
   check_turn(&TURNS[2], IN45_OMEGA_DEG_S, IN45_PRE_MM, IN45_POST_MM);

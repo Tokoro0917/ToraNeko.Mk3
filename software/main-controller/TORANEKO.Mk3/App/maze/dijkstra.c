@@ -704,49 +704,63 @@ static uint16_t s_turn_stop_cost;                         /* ターンでゴー�
 
 /* ターン kind を、速さ speed_mm_s で走る時間 [s]。
  * ターンは「前距離 → スラローム（角速度は台形）→ 後距離」（config/turn_params.h）。
- * ターンの速さより遅いときは、同じ形のまま時間だけが（ターンの速さ ÷ 速さ）倍になる（ctrl/run.c の fast_turn()） */
+ * 値は、そのターンの速さ（*_SPEED_MM_S）でのもの。それより遅いときは、同じ形のまま時間だけが
+ *（そのターンの速さ ÷ 速さ）倍になる（ctrl/run.c の fast_turn()） */
 static float turn_time_s(turn_kind_t kind, float speed_mm_s)
 {
   float angle_deg = 90.0f;
+  float design_speed_mm_s = BIG90_SPEED_MM_S;
   float omega_deg_s = BIG90_OMEGA_DEG_S;
-  float straight_mm = BIG90_PRE_MM + BIG90_POST_MM;
+  float alpha_deg_s2 = BIG90_ALPHA_DEG_S2;
+  float straight_mm = BIG90_PRE_MM + BIG90_POST_MM + BIG90_PRE_ADJUST_MM + BIG90_POST_ADJUST_MM;
   if (kind == TURN_BIG180) {
     angle_deg = 180.0f;
+    design_speed_mm_s = BIG180_SPEED_MM_S;
     omega_deg_s = BIG180_OMEGA_DEG_S;
-    straight_mm = BIG180_PRE_MM + BIG180_POST_MM;
+    alpha_deg_s2 = BIG180_ALPHA_DEG_S2;
+    straight_mm = BIG180_PRE_MM + BIG180_POST_MM + BIG180_PRE_ADJUST_MM + BIG180_POST_ADJUST_MM;
   } else if (kind == TURN_IN45) {
     angle_deg = 45.0f;
+    design_speed_mm_s = IN45_SPEED_MM_S;
     omega_deg_s = IN45_OMEGA_DEG_S;
-    straight_mm = IN45_PRE_MM + IN45_POST_MM;
+    alpha_deg_s2 = IN45_ALPHA_DEG_S2;
+    straight_mm = IN45_PRE_MM + IN45_POST_MM + IN45_PRE_ADJUST_MM + IN45_POST_ADJUST_MM;
   } else if (kind == TURN_IN135) {
     angle_deg = 135.0f;
+    design_speed_mm_s = IN135_SPEED_MM_S;
     omega_deg_s = IN135_OMEGA_DEG_S;
-    straight_mm = IN135_PRE_MM + IN135_POST_MM;
+    alpha_deg_s2 = IN135_ALPHA_DEG_S2;
+    straight_mm = IN135_PRE_MM + IN135_POST_MM + IN135_PRE_ADJUST_MM + IN135_POST_ADJUST_MM;
   } else if (kind == TURN_OUT45) {
     angle_deg = 45.0f;
+    design_speed_mm_s = OUT45_SPEED_MM_S;
     omega_deg_s = OUT45_OMEGA_DEG_S;
-    straight_mm = OUT45_PRE_MM + OUT45_POST_MM;
+    alpha_deg_s2 = OUT45_ALPHA_DEG_S2;
+    straight_mm = OUT45_PRE_MM + OUT45_POST_MM + OUT45_PRE_ADJUST_MM + OUT45_POST_ADJUST_MM;
   } else if (kind == TURN_OUT135) {
     angle_deg = 135.0f;
+    design_speed_mm_s = OUT135_SPEED_MM_S;
     omega_deg_s = OUT135_OMEGA_DEG_S;
-    straight_mm = OUT135_PRE_MM + OUT135_POST_MM;
+    alpha_deg_s2 = OUT135_ALPHA_DEG_S2;
+    straight_mm = OUT135_PRE_MM + OUT135_POST_MM + OUT135_PRE_ADJUST_MM + OUT135_POST_ADJUST_MM;
   } else if (kind == TURN_V90) {
     angle_deg = 90.0f;
+    design_speed_mm_s = V90_SPEED_MM_S;
     omega_deg_s = V90_OMEGA_DEG_S;
-    straight_mm = V90_PRE_MM + V90_POST_MM;
+    alpha_deg_s2 = V90_ALPHA_DEG_S2;
+    straight_mm = V90_PRE_MM + V90_POST_MM + V90_PRE_ADJUST_MM + V90_POST_ADJUST_MM;
   }
 
-  /* ターンの速さで回る時間。最高角速度まで上がれば「角度 ÷ 最高角速度 ＋ 最高角速度 ÷ 角加速度」、
+  /* そのターンの速さで回る時間。最高角速度まで上がれば「角度 ÷ 最高角速度 ＋ 最高角速度 ÷ 角加速度」、
    * 上がりきらなければ（三角形）「2 × √(角度 ÷ 角加速度)」 */
-  float alpha_deg_s2 = FAST_TURN_ALPHA_DEG_S2;
   float slalom_s;
   if (angle_deg >= omega_deg_s * omega_deg_s / alpha_deg_s2) {
     slalom_s = angle_deg / omega_deg_s + omega_deg_s / alpha_deg_s2;
   } else {
     slalom_s = 2.0f * sqrtf(angle_deg / alpha_deg_s2);
   }
-  float time_at_turn_speed_s = straight_mm / FAST_TURN_SPEED_MM_S + slalom_s;
-  return time_at_turn_speed_s * FAST_TURN_SPEED_MM_S / speed_mm_s;
+  float time_at_design_speed_s = straight_mm / design_speed_mm_s + slalom_s;
+  return time_at_design_speed_s * design_speed_mm_s / speed_mm_s;
 }
 
 /* 縦横の直線 half_count [半区画] のコスト（ターンの速さから上げて、またターンの速さに戻す） */
@@ -1418,7 +1432,7 @@ void dijkstra_set_time_cost_small_turn(float turn_speed_mm_s, float max_speed_mm
 /* (B) ターンごとの時間を使う。大回り・斜めのターン（ターンの速さ turn_speed_mm_s）で走る最短走行用。
  *   縦横の直線：ターンの速さから max_speed_mm_s まで上げて戻す（加速度 accel_mm_s2）
  *   斜めの直線：1 つ DIAG_STEP_MM（63.6mm）を、ターンの速さから diag_max_speed_mm_s まで上げて戻す（diag_accel_mm_s2）
- *   ターン    ：config/turn_params.h の前距離・後距離・最高角速度と、角加速度 FAST_TURN_ALPHA_DEG_S2 から計算する
+ *   ターン    ：config/turn_params.h のターンごとの速さ・前距離・後距離・最高角速度・角加速度から計算する（turn_time_s()）
  *   止まる    ：縦横の直線ならゴールの区画のまん中で止まるように、ターンでゴールに入ったら SHORTEST_STOP_ACCEL_MM_S2 で
  * 表を作る時間はほとんどかからない（PC で 1ms もかからない） */
 void dijkstra_set_time_cost_diagonal(float turn_speed_mm_s, float max_speed_mm_s, float accel_mm_s2,
