@@ -57,12 +57,12 @@
  * 10mm 手前だった（エンコーダとジャイロから計算した位置は 3mm 以内に合っていたので、曲がっているあいだにタイヤが
  * 少しずつ空回りしている。まっすぐ 6000mm/s² で加速しても滑らなかった）。前距離・後距離を 10mm ずつ足す。
  * そのあと、向きの制御を直して（ctrl_gains.h の FF_SUCTION_SLALOM_V_PER_DEG_S・ANGLE_KI）走らせたら、止まる位置のずれは
- * 北・西とも 1mm、向きは 90° ちょうどになった（2026-11-04。大回り 90° は合わせ終わり） */
-#define BIG90_PRE_ADJUST_MM   10.0f
-#define BIG90_POST_ADJUST_MM  10.0f
-/* 大回り 180°：2026-11-04 に 600mm/s で走らせて、作者が前距離 −1mm・後距離 −2mm に決めた */
-#define BIG180_PRE_ADJUST_MM  -1.0f
-#define BIG180_POST_ADJUST_MM -2.0f
+ * 北・西とも 1mm、向きは 90° ちょうどになった（2026-11-04）。作者が、その 1mm も直すため、前距離を 1mm・後距離を
+ * 2mm 減らした（+10 → +9、+10 → +8） */
+#define BIG90_PRE_ADJUST_MM   9.0f
+#define BIG90_POST_ADJUST_MM  8.0f
+#define BIG180_PRE_ADJUST_MM  0.0f
+#define BIG180_POST_ADJUST_MM 0.0f
 #define IN45_PRE_ADJUST_MM    0.0f
 #define IN45_POST_ADJUST_MM   0.0f
 #define IN135_PRE_ADJUST_MM   0.0f
