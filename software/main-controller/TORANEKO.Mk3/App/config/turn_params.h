@@ -63,8 +63,8 @@
  * 計算の値を変えると、test_turn がターンの形がずれたと判断して失敗するため）。走る前距離は 11.0mm、後距離は 10.2mm */
 #define BIG90_PRE_ADJUST_MM   8.0f
 #define BIG90_POST_ADJUST_MM  7.0f
-#define BIG180_PRE_ADJUST_MM  0.0f
-#define BIG180_POST_ADJUST_MM 0.0f
+#define BIG180_PRE_ADJUST_MM  20.0f
+#define BIG180_POST_ADJUST_MM 20.0f
 /* 大回り 180° の左右の幅に足す分 [mm]。大回り 180° は、前距離・後距離では前後しか動かず、左右の幅（ふつうは 90mm）は
  * 最高角速度だけで決まる。なので、実機で幅がずれたら、ここに足す分を入れ、test_turn --calc で、
  * 幅が「90mm + この値」になる最高角速度を計算し直して、BIG180_OMEGA_DEG_S に貼る。
