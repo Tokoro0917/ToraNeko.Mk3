@@ -27,6 +27,7 @@
  * ■ 前壁補正（config/run_params.h の FRONT_CORRECTION_*）
  * 区画の入口で曲がる・止まるとき、その区画に前の壁があれば、前センサで壁までの距離を測る。
  * 入口の辺なら FRONT_WALL_AT_ENTRY_MM（87mm）のはずなので、ずれた分だけ、前距離と止まる距離を直す。
+ * 前の壁までの距離は、左前と右前が 6mm 以上違うときは近いほう、そうでなければ平均を使う（front_wall_distance_mm()）。
  * センサを読んだときには、入口の辺から少し進んでいる（探索の計算のあいだも進む）ので、その分を足して比べる。
  * かけた量（かけないときは、かけるはずだった量）は数えておき、モード7 No.1 で出す（run_get_front_correction_*）。
  *
@@ -174,6 +175,22 @@ static void record_front_correction(float measured_mm)
   s_front_correction_count = s_front_correction_count + 1;
 }
 
+/* 前壁補正に使う、前の壁までの距離 [mm]。左前と右前が FRONT_CORRECTION_SENSOR_GAP_MM より違うときは近いほう、
+ * そうでなければ 2 つの平均（わけは config/run_params.h の FRONT_CORRECTION_SENSOR_GAP_MM） */
+static float front_wall_distance_mm(void)
+{
+  float left_mm = wall_ctrl_get_front_left_mm();
+  float right_mm = wall_ctrl_get_front_right_mm();
+  float gap_mm = fabsf(left_mm - right_mm);  /* fabsf は、- を取った大きさ（math.h） */
+  if (gap_mm < FRONT_CORRECTION_SENSOR_GAP_MM) {
+    return (left_mm + right_mm) / 2.0f;
+  }
+  if (left_mm < right_mm) {
+    return left_mm;
+  }
+  return right_mm;
+}
+
 /* 前壁補正の量 [mm] を決めて記録する（+ なら、壁が思ったより遠い＝まだ手前にいるので、そのぶん長く進む）。
  * 前に壁がないときは 0。FRONT_CORRECTION_ENABLE が 0 なら、記録だけして 0 を返す。
  * 記録するのは上限をかける前の量（2026-11-03 に変えた。上限で止めた値だと、本当はいくつずれていたかわからないため） */
@@ -183,7 +200,7 @@ static float front_correction_mm(void)
     return 0.0f;
   }
   /* 今いる位置は、入口の辺から、まだ頼んでいない分（trajectory_get_overrun_mm()）だけ進んだところ */
-  float measured_mm = wall_ctrl_get_front_distance_mm() + trajectory_get_overrun_mm() - FRONT_WALL_AT_ENTRY_MM;
+  float measured_mm = front_wall_distance_mm() + trajectory_get_overrun_mm() - FRONT_WALL_AT_ENTRY_MM;
   record_front_correction(measured_mm);
 
   float correction_mm = measured_mm;
