@@ -5,6 +5,8 @@
  *   ./test_turn          config/turn_params.h の値で、どのターンも決めた位置・向きで終わるかを調べる（make で実行）
  *   ./test_turn --calc   ターンごとの速さ・角加速度（config/turn_params.h の値）から、各ターンの最高角速度・前距離・後距離を
  *                        計算して、config/turn_params.h に貼る行を出す
+ *   ./test_turn --slip   実機で合わせた前距離・後距離（*_ADJUST_MM）が、「曲がっているあいだタイヤが空回りする」という
+ *                        係数 1 つの式で説明できるかを調べる（下の「■ 空回りの式」）
  *
  * ■ 計算のしかた
  * ターンは「前距離（まっすぐ）→ スラローム（前に進む速さは一定、角速度は台形）→ 後距離（まっすぐ）」。
@@ -16,6 +18,15 @@
  *   - 前距離 + スラローム + 後距離（後距離は曲がったあとの向き）で、ちょうどその位置になるように、前距離と後距離を決める
  *   - 最高角速度は、前距離と後距離の短いほうが TURN_MARGIN_MM になるように決める（大きいほど小さく回り、まっすぐが長くなる）
  *   - 大回り 180° だけは、横の位置がスラロームだけで決まるので、横がちょうど 90mm になる最高角速度にする
+ *
+ * ■ 空回りの式（--slip。2026-11-04。KOGUMA の Turn-Sim_KOGUMA の「滑りの式」と同じ考え方）
+ * 実機は計算より内側を走り、前距離・後距離を足す必要があった（config/turn_params.h）。曲がっているあいだ、タイヤが床の上で
+ * 少しずつ空回りして、機体が床の上を進む速さが、エンコーダで測った速さより遅くなる、と考える。角速度はジャイロで制御して
+ * いるので計算どおり。速さだけ遅いので、小さく回る（半径 ＝ 速さ ÷ 角速度）。空回りの割合は、横向きの加速度
+ * （速さ × 角速度）に比例するとする：
+ *     床の上の速さ ＝ 速さ ×（1 − 係数 × 横向きの加速度）
+ * 係数を少しずつ変えて、7 つのターンで実機で足した分に、いちばん合う係数を探す。
+ * （KOGUMA の式は「外へ横すべりする」角度で、ToraNeko は内側を走るので合わない。--slip で KOGUMA の式は使わない）
  */
 #include <math.h>
 #include <stdbool.h>
@@ -74,8 +85,10 @@ typedef struct {
   float forward_mm;
 } arc_t;
 
-/* trajectory.c でスラロームを 1 回走らせて、進んだ位置を足していく */
-static arc_t simulate_arc(float angle_deg, float speed_mm_s, float omega_deg_s, float alpha_deg_s2)
+/* trajectory.c でスラロームを 1 回走らせて、進んだ位置を足していく。
+ * creep_per_mm_s2 は空回りの係数（先頭のコメントの「■ 空回りの式」。0 なら空回りしない） */
+static arc_t simulate_arc_with_creep(float angle_deg, float speed_mm_s, float omega_deg_s, float alpha_deg_s2,
+                                     float creep_per_mm_s2)
 {
   arc_t arc = {0.0f, 0.0f};
   trajectory_reset();
@@ -84,11 +97,20 @@ static arc_t simulate_arc(float angle_deg, float speed_mm_s, float omega_deg_s, 
   do {
     trajectory_update();
     float angle_rad = trajectory_get_angle_deg() * PI_F / 180.0f;
-    arc.forward_mm = arc.forward_mm + trajectory_get_speed_mm_s() * cosf(angle_rad) * CTRL_PERIOD_S;
-    arc.left_mm = arc.left_mm + trajectory_get_speed_mm_s() * sinf(angle_rad) * CTRL_PERIOD_S;
+    float omega_rad_s = fabsf(trajectory_get_omega_deg_s()) * PI_F / 180.0f;
+    float lateral_accel_mm_s2 = trajectory_get_speed_mm_s() * omega_rad_s;  /* 横向きの加速度 = 速さ × 角速度 */
+    float ground_speed_mm_s = trajectory_get_speed_mm_s() * (1.0f - creep_per_mm_s2 * lateral_accel_mm_s2);
+    arc.forward_mm = arc.forward_mm + ground_speed_mm_s * cosf(angle_rad) * CTRL_PERIOD_S;
+    arc.left_mm = arc.left_mm + ground_speed_mm_s * sinf(angle_rad) * CTRL_PERIOD_S;
     steps = steps + 1;
   } while (!trajectory_is_done() && steps < MAX_STEPS);
   return arc;
+}
+
+/* 空回りしないとして、スラロームで進む位置を求める（--calc と、ふつうのテストで使う） */
+static arc_t simulate_arc(float angle_deg, float speed_mm_s, float omega_deg_s, float alpha_deg_s2)
+{
+  return simulate_arc_with_creep(angle_deg, speed_mm_s, omega_deg_s, alpha_deg_s2, 0.0f);
 }
 
 /* スラロームで進む位置から、前距離と後距離を決める。
@@ -194,10 +216,141 @@ static void check_slow_turn(const turn_shape_t *turn, float omega_deg_s, float r
         "遅く曲がっても、スラロームで進む位置が同じ（±0.5mm）");
 }
 
+/* ---------------------------------------------------------------------------
+ * --slip：空回りの式（先頭のコメントの「■ 空回りの式」）
+ * ------------------------------------------------------------------------- */
+
+/* 実機で合わせたターン（大回り 180° のほか）の、config/turn_params.h の値 */
+typedef struct {
+  const turn_shape_t *shape;  /* ターンの形（TURNS の 1 つ） */
+  float omega_deg_s;          /* 最高角速度（*_OMEGA_DEG_S） */
+  float pre_mm;               /* 計算の前距離（*_PRE_MM） */
+  float post_mm;              /* 計算の後距離（*_POST_MM） */
+  float pre_adjust_mm;        /* 実機で足した前距離（*_PRE_ADJUST_MM） */
+  float post_adjust_mm;       /* 実機で足した後距離（*_POST_ADJUST_MM） */
+} tuned_turn_t;
+
+#define TUNED_COUNT 6
+static const tuned_turn_t TUNED[TUNED_COUNT] = {
+  {&TURNS[0], BIG90_OMEGA_DEG_S, BIG90_PRE_MM, BIG90_POST_MM, BIG90_PRE_ADJUST_MM, BIG90_POST_ADJUST_MM},
+  {&TURNS[2], IN45_OMEGA_DEG_S, IN45_PRE_MM, IN45_POST_MM, IN45_PRE_ADJUST_MM, IN45_POST_ADJUST_MM},
+  {&TURNS[3], IN135_OMEGA_DEG_S, IN135_PRE_MM, IN135_POST_MM, IN135_PRE_ADJUST_MM, IN135_POST_ADJUST_MM},
+  {&TURNS[4], OUT45_OMEGA_DEG_S, OUT45_PRE_MM, OUT45_POST_MM, OUT45_PRE_ADJUST_MM, OUT45_POST_ADJUST_MM},
+  {&TURNS[5], OUT135_OMEGA_DEG_S, OUT135_PRE_MM, OUT135_POST_MM, OUT135_PRE_ADJUST_MM, OUT135_POST_ADJUST_MM},
+  {&TURNS[6], V90_OMEGA_DEG_S, V90_PRE_MM, V90_POST_MM, V90_PRE_ADJUST_MM, V90_POST_ADJUST_MM},
+};
+
+/* 大回り 180° の実測（2026-11-04）：最高角速度 781.0deg/s・600mm/s で曲がったら、幅が 90mm ではなく 82mm だった */
+#define BIG180_MEASURED_OMEGA_DEG_S 781.0f
+#define BIG180_MEASURED_WIDTH_MM    82.0f
+
+/* 空回りの係数 creep_per_mm_s2 で、速さ ratio 倍（最高角速度 ratio 倍、角加速度 ratio² 倍）で曲がるとき、
+ * 決めた位置で終わるために、計算の前距離・後距離に足す分 [mm] を求める */
+static void predicted_adjust(const tuned_turn_t *tuned, float creep_per_mm_s2, float ratio,
+                             float *pre_adjust_mm, float *post_adjust_mm)
+{
+  const turn_shape_t *shape = tuned->shape;
+  arc_t arc = simulate_arc_with_creep(shape->angle_deg, shape->speed_mm_s * ratio, tuned->omega_deg_s * ratio,
+                                      shape->alpha_deg_s2 * ratio * ratio, creep_per_mm_s2);
+  float pre_mm;
+  float post_mm;
+  solve_pre_post(shape, arc, &pre_mm, &post_mm);
+  *pre_adjust_mm = pre_mm - tuned->pre_mm;
+  *post_adjust_mm = post_mm - tuned->post_mm;
+}
+
+/* 空回りの係数 creep_per_mm_s2 で計算した値が、実機の値からどれだけずれるか（ずれ [mm] の 2 乗の合計）。
+ * 6 つのターンの前距離・後距離に足した分と、大回り 180° の幅 */
+static float slip_error(float creep_per_mm_s2)
+{
+  float total = 0.0f;
+  for (int i = 0; i < TUNED_COUNT; i++) {
+    float pre_adjust_mm;
+    float post_adjust_mm;
+    predicted_adjust(&TUNED[i], creep_per_mm_s2, 1.0f, &pre_adjust_mm, &post_adjust_mm);
+    float pre_error_mm = pre_adjust_mm - TUNED[i].pre_adjust_mm;
+    float post_error_mm = post_adjust_mm - TUNED[i].post_adjust_mm;
+    total = total + pre_error_mm * pre_error_mm + post_error_mm * post_error_mm;
+  }
+  arc_t arc = simulate_arc_with_creep(180.0f, BIG180_SPEED_MM_S, BIG180_MEASURED_OMEGA_DEG_S, BIG180_ALPHA_DEG_S2,
+                                      creep_per_mm_s2);
+  float width_error_mm = arc.left_mm - BIG180_MEASURED_WIDTH_MM;
+  total = total + width_error_mm * width_error_mm;
+  return total;
+}
+
+/* 13 個の実測値（6 つのターンの前・後と、大回り 180° の幅）に対する、ずれの大きさの目安 [mm]（2 乗平均の平方根） */
+static float slip_rms_mm(float creep_per_mm_s2)
+{
+  return sqrtf(slip_error(creep_per_mm_s2) / 13.0f);
+}
+
+/* 係数を 0 から少しずつ増やして、実機の値にいちばん合う係数を探す */
+static float find_best_creep(void)
+{
+  float best_creep = 0.0f;
+  float best_error = slip_error(0.0f);
+  for (int i = 1; i <= 250; i++) {
+    float creep = i * 0.0000002f;  /* 1000mm/s² あたり 0.02% ずつ */
+    float error = slip_error(creep);
+    if (error < best_error) {
+      best_error = error;
+      best_creep = creep;
+    }
+  }
+  return best_creep;
+}
+
+/* 速さごとに、決めた位置で終わるために足す分を表にして出す（最短走行で、決めた速さより遅く曲がるとき用） */
+static void print_adjust_by_speed(float creep_per_mm_s2)
+{
+  printf("[3] 速さごとの、足す分の計算 [mm]（前／後。決めた速さの 1.0・0.87・0.75・0.5 倍）\n");
+  for (int i = 0; i < TUNED_COUNT; i++) {
+    printf("  %-16s", TUNED[i].shape->name);
+    float ratios[4] = {1.0f, 0.866f, 0.75f, 0.5f};
+    for (int j = 0; j < 4; j++) {
+      float pre_adjust_mm;
+      float post_adjust_mm;
+      predicted_adjust(&TUNED[i], creep_per_mm_s2, ratios[j], &pre_adjust_mm, &post_adjust_mm);
+      printf("  %4.0fmm/s %4.1f／%4.1f", TUNED[i].shape->speed_mm_s * ratios[j], pre_adjust_mm, post_adjust_mm);
+    }
+    printf("\n");
+  }
+}
+
+/* --slip：空回りの式で、実機で合わせた値を説明できるかを調べて、表を出す */
+static int slip(void)
+{
+  float creep = find_best_creep();
+  printf("[1] いちばん合う空回りの係数：%.2e（横向きの加速度 1000mm/s² あたり、速さが %.2f%% 遅くなる）\n",
+         creep, creep * 1000.0f * 100.0f);
+  printf("    ずれの目安（2 乗平均）：空回りなし %.1fmm → この係数 %.1fmm\n", slip_rms_mm(0.0f), slip_rms_mm(creep));
+
+  printf("[2] 実機で足した分と、式で計算した足す分 [mm]\n");
+  for (int i = 0; i < TUNED_COUNT; i++) {
+    float pre_adjust_mm;
+    float post_adjust_mm;
+    predicted_adjust(&TUNED[i], creep, 1.0f, &pre_adjust_mm, &post_adjust_mm);
+    printf("  %-16s %4.0fmm/s  前：実機 %4.1f・式 %4.1f   後：実機 %4.1f・式 %4.1f\n", TUNED[i].shape->name,
+           TUNED[i].shape->speed_mm_s, TUNED[i].pre_adjust_mm, pre_adjust_mm, TUNED[i].post_adjust_mm, post_adjust_mm);
+  }
+  arc_t measured = simulate_arc_with_creep(180.0f, BIG180_SPEED_MM_S, BIG180_MEASURED_OMEGA_DEG_S, BIG180_ALPHA_DEG_S2,
+                                           creep);
+  arc_t now = simulate_arc_with_creep(180.0f, BIG180_SPEED_MM_S, BIG180_OMEGA_DEG_S, BIG180_ALPHA_DEG_S2, creep);
+  printf("  大回り 180°      幅：最高 %.1fdeg/s のとき 実機 %.0f・式 %.1f、今の最高 %.1fdeg/s では式 %.1f（目標 90）\n",
+         BIG180_MEASURED_OMEGA_DEG_S, BIG180_MEASURED_WIDTH_MM, measured.left_mm, BIG180_OMEGA_DEG_S, now.left_mm);
+
+  print_adjust_by_speed(creep);
+  return 0;
+}
+
 int main(int argc, char *argv[])
 {
   if (argc >= 2 && strcmp(argv[1], "--calc") == 0) {
     return calculate();
+  }
+  if (argc >= 2 && strcmp(argv[1], "--slip") == 0) {
+    return slip();
   }
 
   printf("[1] 最短走行のターン（config/turn_params.h の値。ターンごとの速さで）\n");
