@@ -85,8 +85,8 @@
 #define OUT45_POST_ADJUST_MM  1.0f
 #define OUT135_PRE_ADJUST_MM  7.0f
 #define OUT135_POST_ADJUST_MM 8.0f
-#define V90_PRE_ADJUST_MM     0.0f
-#define V90_POST_ADJUST_MM    0.0f
+#define V90_PRE_ADJUST_MM     5.0f
+#define V90_POST_ADJUST_MM    3.0f
 
 /* 最高角速度・前距離・後距離（test_turn --calc の出力） */
 /* 前距離・後距離の短いほう 3.0mm で計算（test/test_turn.c --calc） */
