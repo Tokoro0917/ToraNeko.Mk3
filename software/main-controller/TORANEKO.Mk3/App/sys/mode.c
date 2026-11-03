@@ -113,6 +113,9 @@ bool mode_has_action(int mode, int number)
     return false;
   }
   if (mode == 4) {
+    if (number == 1) {
+      return true;  /* 吸引なしの加速度テスト */
+    }
     if (number >= 4 && number <= 11) {
       return true;  /* 吸引ありの加速度テスト */
     }

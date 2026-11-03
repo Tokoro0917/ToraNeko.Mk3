@@ -2,7 +2,9 @@
  * adjust.c
  * 動きを 1 つずつ走らせて調整する（モード2・4・6。MODES.md）
  *
- * ■ モード4 No.4〜11 吸引ありの加速度テスト（adjust_accel_test。2026-11-03）
+ * ■ モード4 No.1 吸引なしの加速度テスト、No.4〜11 吸引ありの加速度テスト（adjust_accel_test。2026-11-03）
+ * No.1 は、No.4（4000mm/s²）と同じ走り方を、吸引なしで走る。吸引あり・なしで、ものさしで測った距離を比べる
+ * （吸引ありでは、吸引なしより 2.5% ほど多く進んでいたので、そのわけが吸引か、走り方かを見分ける）。
  * 吸引しながら、決めた加速度で速くなり、同じ加速度で遅くなって止まる。No. が大きいほど加速度が大きい。
  * タイヤが滑り始める加速度（加速度の限界）を見つける。
  *   - スタートの区画に、お尻を後ろの壁に付けて置く。4 区画まっすぐの通路で、4 区画目のまん中で止まる（280mm）
@@ -110,7 +112,7 @@ typedef enum {
   RESULT_STRAIGHT,   /* 直進 */
   RESULT_PIVOT,      /* その場旋回 */
   RESULT_SLALOM,     /* スラローム */
-  RESULT_ACCEL,      /* 吸引ありの加速度テスト */
+  RESULT_ACCEL,      /* 加速度テスト（吸引あり・なし） */
 } result_kind_t;
 
 typedef struct {
@@ -121,9 +123,10 @@ typedef struct {
   float position_error_mm;  /* 終わったときの位置のずれ [mm] */
   float angle_error_deg;    /* 終わったときの角度のずれ [deg] */
   bool failsafe;            /* フェイルセーフで止まったか */
+  float suction_v;          /* 走ったときの吸引の電圧 [V]（加速度テストだけ。吸引なしなら 0） */
 } run_result_t;
 
-static run_result_t s_result = {RESULT_NONE, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false};
+static run_result_t s_result = {RESULT_NONE, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, 0.0f};
 
 /* 今の動き（直進・スラローム）が終わるまで、休まずに待つ。止まらずに次の動きへつなぐときに使う。
  * ui_wait_ms() で 10ms ずつ待つと、そのあいだに機体が 3mm（300mm/s のとき）進んでしまい、
@@ -235,7 +238,7 @@ static void print_move_result(void)
            s_result.target, s_result.turned_deg, s_result.moved_mm);
   } else if (s_result.kind == RESULT_ACCEL) {
     printf("Accel test (suction %.1f V): accel %.0f mm/s2, target %.1f mm, encoder %.1f mm, angle %.2f deg\r\n",
-           SUCTION_VOLTAGE_V, s_result.target, ACCEL_TEST_DISTANCE_MM, s_result.moved_mm, s_result.turned_deg);
+           s_result.suction_v, s_result.target, ACCEL_TEST_DISTANCE_MM, s_result.moved_mm, s_result.turned_deg);
   } else {
     return;  /* 調整の動きは、まだ何も走らせていない */
   }
@@ -474,6 +477,9 @@ void adjust_suction_on(void)
 /* No. から、加速度テストの加速度 [mm/s²] を決める。表にない No. なら 0 を返す */
 static float accel_test_accel_mm_s2(int number)
 {
+  if (number == 1) {
+    return 4000.0f;  /* 吸引なし（No.4 と同じ加速度） */
+  }
   if (number == 4) {
     return 4000.0f;
   }
@@ -501,8 +507,17 @@ static float accel_test_accel_mm_s2(int number)
   return 0.0f;
 }
 
+/* No. で、吸引するかを決める。No.1 だけ吸引しない */
+static bool accel_test_uses_suction(int number)
+{
+  if (number == 1) {
+    return false;
+  }
+  return true;
+}
+
 /* 加速度テストの結果を覚える（あとでモード7 No.1 で出す） */
-static void save_accel_result(float accel_mm_s2, float start_distance_mm, float start_angle_deg)
+static void save_accel_result(float accel_mm_s2, float suction_v, float start_distance_mm, float start_angle_deg)
 {
   s_result.kind = RESULT_ACCEL;
   s_result.target = accel_mm_s2;
@@ -511,9 +526,10 @@ static void save_accel_result(float accel_mm_s2, float start_distance_mm, float 
   s_result.position_error_mm = control_get_position_error_mm();
   s_result.angle_error_deg = control_get_angle_error_deg();
   s_result.failsafe = failsafe_is_stopped();
+  s_result.suction_v = suction_v;
 }
 
-/* モード4 No.4〜11 吸引ありの加速度テスト：吸引しながら、No. で決まる加速度で 280mm 走って止まる */
+/* モード4 No.1・4〜11 加速度テスト：No. で決まる加速度で 280mm 走って止まる（No.1 は吸引なし、ほかは吸引あり） */
 void adjust_accel_test(int number)
 {
   float accel_mm_s2 = accel_test_accel_mm_s2(number);
@@ -521,11 +537,14 @@ void adjust_accel_test(int number)
     return;  /* 表にない No.（mode.c で選べないようにしてあるので、ふつうは来ない） */
   }
 
-  /* 1. 吸引を上げて、少し待つ */
-  ramp_up_suction();
-  ui_wait_ms(ACCEL_TEST_SUCTION_WAIT_MS);
+  /* 1. 吸引を上げて、少し待つ（吸引なしの No.1 では、何もしない） */
+  if (accel_test_uses_suction(number)) {
+    ramp_up_suction();
+    ui_wait_ms(ACCEL_TEST_SUCTION_WAIT_MS);
+  }
+  float suction_v = fan_get_voltage();
 
-  /* 2. 吸っている状態で、ジャイロのゼロ点を測り直す（ファンの揺れがあっても、走るときと同じ条件で測る） */
+  /* 2. 走るときと同じ状態で、ジャイロのゼロ点を測り直す（吸引ありなら、ファンの揺れがあっても吸ったまま測る） */
   imu_remeasure_offset();
   float start_distance_mm = odometry_get_distance_mm();
   float start_angle_deg = imu_get_angle_deg();
@@ -540,7 +559,7 @@ void adjust_accel_test(int number)
 
   /* 4. 吸引を止めて、結果を覚える（フェイルセーフで止まったときは、もう止まっている） */
   fan_stop();
-  save_accel_result(accel_mm_s2, start_distance_mm, start_angle_deg);
+  save_accel_result(accel_mm_s2, suction_v, start_distance_mm, start_angle_deg);
   adjust_print_last_result();  /* ケーブルを挿したまま走らせたときのために、すぐにも出す */
   signal_end();
 }
