@@ -58,9 +58,11 @@
  * 少しずつ空回りしている。まっすぐ 6000mm/s² で加速しても滑らなかった）。前距離・後距離を 10mm ずつ足す。
  * そのあと、向きの制御を直して（ctrl_gains.h の FF_SUCTION_SLALOM_V_PER_DEG_S・ANGLE_KI）走らせたら、止まる位置のずれは
  * 北・西とも 1mm、向きは 90° ちょうどになった（2026-11-04）。作者が、その 1mm も直すため、前距離を 1mm・後距離を
- * 2mm 減らした（+10 → +9、+10 → +8） */
-#define BIG90_PRE_ADJUST_MM   9.0f
-#define BIG90_POST_ADJUST_MM  8.0f
+ * 2mm 減らし（+10 → +9、+10 → +8）、さらに実機で前距離・後距離を 1mm ずつ減らした（+9 → +8、+8 → +7。
+ * 作者は計算の値のほうを 3.0 → 2.0・3.2 → 2.2 に変えていたので、走る距離は同じまま、こちらに移した。
+ * 計算の値を変えると、test_turn がターンの形がずれたと判断して失敗するため）。走る前距離は 11.0mm、後距離は 10.2mm */
+#define BIG90_PRE_ADJUST_MM   8.0f
+#define BIG90_POST_ADJUST_MM  7.0f
 #define BIG180_PRE_ADJUST_MM  0.0f
 #define BIG180_POST_ADJUST_MM 0.0f
 #define IN45_PRE_ADJUST_MM    0.0f
@@ -78,8 +80,8 @@
 /* 前距離・後距離の短いほう 3.0mm で計算（test/test_turn.c --calc） */
 /* 大回り 90°（800mm/s、角加速度 25600deg/s²。横向きの加速度はいちばん大きいとき 8199mm/s²） */
 #define BIG90_OMEGA_DEG_S 587.2f
-#define BIG90_PRE_MM 2.0f
-#define BIG90_POST_MM 2.2f
+#define BIG90_PRE_MM 3.0f
+#define BIG90_POST_MM 3.2f
 /* 大回り 180°（600mm/s、角加速度 14400deg/s²。横向きの加速度はいちばん大きいとき 8179mm/s²） */
 #define BIG180_OMEGA_DEG_S 781.0f
 #define BIG180_PRE_MM 3.0f
