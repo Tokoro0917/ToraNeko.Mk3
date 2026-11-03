@@ -5,7 +5,7 @@
  * ビルドと実行（このフォルダで）:  make
  *
  * ■ テストの内容（表の中身が測った値に変わっても通るように、表の形だけを使って調べる）
- *   1. 区画のまん中の値（今の仮の表では 左前 3244 など）で 42mm になる
+ *   1. 表の点の値で、その点の距離になる（2026-11-03 に測った表の 40mm の点）
  *   2. 表の 2 点のまん中の値で、2 点の距離のまん中になる（直線でつないでいる）
  *   3. 表よりも大きい値（近い）・小さい値（遠い）では、表の端の距離になる
  *   4. 値を 0〜4095 まで変えたとき、値が大きいほど距離は短い（遠くなる向きに戻らない）。距離は表の範囲の中
@@ -33,22 +33,22 @@ static bool near_mm(float a_mm, float b_mm)
   return fabsf(a_mm - b_mm) < 0.05f;
 }
 
-/* 1. 区画のまん中の値で 42mm（仮の表は、区画のまん中で測った値を 42mm の点にしている） */
+/* 1. 表の点の値で、その点の距離（40mm の点で調べる） */
 static void test_center(void)
 {
-  printf("[1] 区画のまん中の値で 42mm\n");
-  check(near_mm(wall_dist_front_left_mm(3244), WALL_DIST_CENTER_MM), "左前 3244 → 42mm");
+  printf("[1] 表の点の値で、その点の距離\n");
+  check(near_mm(wall_dist_front_left_mm(3367), 40.0f), "左前 3367 → 40mm（表の点。2026-11-03 に測った表）");
   check(near_mm(wall_dist_left_mm(1600), 40.0f), "左 1600 → 40mm（表の点。2026-11-03 に測った表）");
   check(near_mm(wall_dist_right_mm(975), 40.0f), "右 975 → 40mm（表の点。2026-11-03 に測った表）");
-  check(near_mm(wall_dist_front_right_mm(3240), WALL_DIST_CENTER_MM), "右前 3240 → 42mm");
+  check(near_mm(wall_dist_front_right_mm(3398), 40.0f), "右前 3398 → 40mm（表の点）");
 }
 
 /* 2. 表の 2 点のまん中の値で、距離もまん中 */
 static void test_between(void)
 {
   printf("[2] 表の点のあいだは直線でつなぐ\n");
-  /* 左前の表の 42mm（3244）と 52mm（2116）のまん中の値 2680 → 47mm */
-  check(near_mm(wall_dist_front_left_mm(2680), 47.0f), "左前 2680 → 47mm");
+  /* 左前の表の 52mm（2941）と 58mm（2361）のまん中の値 2651 → 55mm */
+  check(near_mm(wall_dist_front_left_mm(2651), 55.0f), "左前 2651 → 55mm");
   /* 左の表の 46mm（1270）と 52mm（1070）の、46mm から 1/2 進んだ値 1170 → 49mm */
   check(near_mm(wall_dist_left_mm(1170), 49.0f), "左 1170 → 49mm");
 }

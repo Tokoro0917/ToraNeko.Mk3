@@ -23,15 +23,19 @@
  *     0〜6 枚はさんで反対側へずらし、**板を抜いてから**測った（板が機体にくっついていると、もれた光が跳ね返って値が上がるため）。
  *     22mm（7 枚）は測っていないので、28mm より近いときは 28mm を返す。42mm は 46mm と 40mm のあいだ（右 約 950、左 約 1490）になり、
  *     区画のまん中で測った値（右 863〜961、左 1426〜1495）と合う
- *   左前・右前：まだ「仮」。2026-10-24 に区画のまん中で測った値（左前 3244、右前 3240）を 42mm とし、
- *     「値は距離の 2 乗に反比例する」として計算で作った値。測ったら、測った値に書きかえる。
+ *   左前・右前：2026-11-03 に作者が測った値。**左右の壁なし**で、お尻を後ろの壁に付けたところ（52mm）から、
+ *     後ろに板をはさんで近づけた（46・40・34mm、板は抜いて測る）・板 1 枚ずつ遠ざけた（58〜82mm）。
+ *     42mm は 約 3325・3350 になり、区画のまん中で測った値（3334・3392）と合う。
+ *     左右に壁があると、横の壁の光も入って値が上がる（入口の位置 87mm で 左前 881・右前 1390。この表では 80mm くらいになる）。
+ *     探索で前の壁を見るときは、たいてい左右にも壁があるので、前の壁で位置を直す仕組みを使う前に、左右の壁ありで測り直す。
+ *     82mm より遠い点はまだ測っていないので、それより小さい値は 82mm を返す
  */
 #include "ctrl/wall_dist.h"
 
-/* ---- 左前（FL）の表（仮） ---- */
+/* ---- 左前（FL）の表（2026-11-03 に測った。左右の壁なし） ---- */
 #define FRONT_LEFT_POINT_COUNT 9
-static const float FRONT_LEFT_MM[FRONT_LEFT_POINT_COUNT] = {37, 42, 52, 62, 72, 87, 102, 122, 142};
-static const int32_t FRONT_LEFT_VALUE[FRONT_LEFT_POINT_COUNT] = {4000, 3244, 2116, 1489, 1104, 756, 550, 384, 284};
+static const float FRONT_LEFT_MM[FRONT_LEFT_POINT_COUNT] = {34, 40, 46, 52, 58, 64, 70, 76, 82};
+static const int32_t FRONT_LEFT_VALUE[FRONT_LEFT_POINT_COUNT] = {3460, 3367, 3240, 2941, 2361, 1861, 1335, 1120, 790};
 
 /* ---- 左（L）の表（2026-11-03 に測った） ---- */
 #define LEFT_POINT_COUNT 7
@@ -43,10 +47,10 @@ static const int32_t LEFT_VALUE[LEFT_POINT_COUNT] = {2560, 2020, 1600, 1270, 107
 static const float RIGHT_MM[RIGHT_POINT_COUNT] = {28, 34, 40, 46, 52, 58, 64};
 static const int32_t RIGHT_VALUE[RIGHT_POINT_COUNT] = {1775, 1255, 975, 905, 645, 530, 362};
 
-/* ---- 右前（FR）の表（仮） ---- */
+/* ---- 右前（FR）の表（2026-11-03 に測った。左右の壁なし） ---- */
 #define FRONT_RIGHT_POINT_COUNT 9
-static const float FRONT_RIGHT_MM[FRONT_RIGHT_POINT_COUNT] = {37, 42, 52, 62, 72, 87, 102, 122, 142};
-static const int32_t FRONT_RIGHT_VALUE[FRONT_RIGHT_POINT_COUNT] = {4000, 3240, 2114, 1487, 1103, 755, 549, 384, 283};
+static const float FRONT_RIGHT_MM[FRONT_RIGHT_POINT_COUNT] = {34, 40, 46, 52, 58, 64, 70, 76, 82};
+static const int32_t FRONT_RIGHT_VALUE[FRONT_RIGHT_POINT_COUNT] = {3490, 3398, 3287, 3138, 2612, 2034, 1635, 1300, 1165};
 
 /* センサの値 value を、表（距離 mm_table と値 value_table、point_count 点）で距離 [mm] に直す。
  * 表の i 番目と i+1 番目のあいだに value があれば、その 2 点を直線でつないだところの距離を返す */
