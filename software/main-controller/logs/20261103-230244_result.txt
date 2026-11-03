@@ -1,0 +1,4 @@
+#BEGIN RESULT
+Straight: target 280.0 mm, encoder 273.3 mm, angle -0.24 deg
+position error 6.68 mm, angle error 0.24 deg
+#END RESULT
