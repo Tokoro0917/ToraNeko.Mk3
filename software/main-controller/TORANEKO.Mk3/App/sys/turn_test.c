@@ -3,11 +3,14 @@
  * 最短走行のターン（大回り・斜め）を 1 つずつ走らせて調整する（モード3 No.1〜7。MODES.md）
  *
  * どの No. も、区画のまん中に北向きに置いて始める（曲がるのは左だけ。KOGUMA と同じ）。
- *   1. ジャイロのゼロ点を測り直す（約 0.5 秒）
+ *   0. 吸引を上げて（0.5 秒）、0.5 秒待つ（2026-11-03 に足した。最短走行は吸引して走るので、ターンも吸引して合わせる。
+ *      吸引なしでは 4000mm/s² で前後に滑っていて、500mm/s のターンの横向きの加速度 3000〜5800mm/s² では滑る）
+ *   1. ジャイロのゼロ点を測り直す（約 0.5 秒。吸ったまま測る）
  *   2. 1 区画（90mm）走って、ターンの速さ（config/turn_params.h。今は 500mm/s）まで速くする。次の区画のまん中に着く
  *   3. 調べるターンを走る（斜め出・V90 は、その前に右の斜め入り 45° で斜めに入る）
  *   4. 止まる：区画のまん中で終わるターンのあとは 1 区画（90mm）、斜めで終わるターンのあとは
  *      斜めの直進 1 つぶん（63.6mm）進みながら止まる
+ *   5. 吸引を止める
  * 走行ログは 1ms ごと（1 秒ぶん）。モード7 No.1 で出す。
  *
  * ■ どこで止まれば合っているか（始めた区画を (0, 0)、北を前、東を x の + とする。単位は区画。PC で計算した位置）
@@ -28,13 +31,16 @@
 #include "config/run_params.h"
 #include "config/turn_params.h"
 #include "ctrl/run.h"
+#include "drv/fan.h"
 #include "drv/timebase.h"
 #include "sys/failsafe.h"
 #include "sys/log.h"
+#include "sys/suction.h"
 #include "sys/ui.h"
 
 #define TURN_TEST_LOG_INTERVAL_MS 1     /* 走行ログの間隔 [ms]（1000 行で 1 秒ぶん） */
 #define TURN_TEST_ACCEL_MM_S2     3000.0f  /* 速くする・止まるときの加速度 [mm/s²]（500mm/s まで 42mm） */
+#define TURN_TEST_SUCTION_WAIT_MS 500      /* 吸引を上げてから、走り出す前に待つ時間 [ms]（ファンの回り方を落ち着かせる） */
 
 /* 始める：制御とログを始めて、1 区画走ってターンの速さにする（次の区画のまん中に着く） */
 static void approach(void)
@@ -70,6 +76,8 @@ static void signal_end(void)
 /* モード3 No.number のターンを走らせる（流れは先頭のコメント） */
 void turn_test_run(int number)
 {
+  suction_ramp_up();
+  ui_wait_ms(TURN_TEST_SUCTION_WAIT_MS);
   approach();
   if (number == 1) {
     run_fast_turn(RUN_FAST_TURN_BIG90, true, FAST_TURN_SPEED_MM_S);
@@ -97,5 +105,6 @@ void turn_test_run(int number)
     run_fast_turn(RUN_FAST_TURN_OUT45, false, FAST_TURN_SPEED_MM_S);
     stop_after_cell();
   }
+  fan_stop();  /* 吸引を止める（フェイルセーフで止まったときは、もう止まっている） */
   signal_end();
 }

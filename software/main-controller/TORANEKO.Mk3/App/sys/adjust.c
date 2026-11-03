@@ -84,6 +84,7 @@
 #include "drv/uart.h"
 #include "sys/failsafe.h"
 #include "sys/log.h"
+#include "sys/suction.h"
 #include "sys/ui.h"
 
 #define RESULT_LINE_LENGTH_MAX 120  /* RESULT の 1 行の長さの上限 [文字]。出す前に、送信待ちバッファにこれだけの空きを待つ */
@@ -437,17 +438,7 @@ void adjust_front_align(void)
  * モード6 No.3 吸引 ON（2026-10-28）
  * ------------------------------------------------------------------------- */
 
-#define SUCTION_RAMP_STEPS 10   /* 吸引を上げるときの段の数 */
 #define SUCTION_BLINK_MS   500  /* 吸っているあいだ、真ん中の 3 個を点滅させる間隔 [ms] */
-
-/* 吸引ファンを、SUCTION_RAMP_MS かけて SUCTION_VOLTAGE_V まで少しずつ上げる */
-static void ramp_up_suction(void)
-{
-  for (int i = 1; i <= SUCTION_RAMP_STEPS; i++) {
-    fan_set_voltage(SUCTION_VOLTAGE_V * i / SUCTION_RAMP_STEPS);
-    ui_wait_ms(SUCTION_RAMP_MS / SUCTION_RAMP_STEPS);
-  }
-}
 
 /* 真ん中の 3 個（LED3・4・5）を点ける・消す */
 static void show_middle_leds(bool on)
@@ -461,7 +452,7 @@ static void show_middle_leds(bool on)
  * 机に置いて吸い付くか、手で持ち上げてどれくらいの力が要るかを見て、SUCTION_VOLTAGE_V を決める */
 void adjust_suction_on(void)
 {
-  ramp_up_suction();
+  suction_ramp_up();  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
   bool lit = true;
   uint32_t next_toggle_ms = timebase_get_ms() + SUCTION_BLINK_MS;
   while (!ui_switch_pushed()) {
@@ -546,7 +537,7 @@ void adjust_accel_test(int number)
 
   /* 1. 吸引を上げて、少し待つ（吸引なしの No.1 では、何もしない） */
   if (accel_test_uses_suction(number)) {
-    ramp_up_suction();
+    suction_ramp_up();  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
     ui_wait_ms(ACCEL_TEST_SUCTION_WAIT_MS);
   }
   float suction_v = fan_get_voltage();
