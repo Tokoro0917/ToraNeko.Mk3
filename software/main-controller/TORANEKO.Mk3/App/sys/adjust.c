@@ -87,7 +87,7 @@
 #include "sys/log.h"
 #include "sys/ui.h"
 
-#define RESULT_LINE_LENGTH_MAX 80  /* RESULT の 1 行の長さの上限 [文字]。出す前に、送信待ちバッファにこれだけの空きを待つ */
+#define RESULT_LINE_LENGTH_MAX 120  /* RESULT の 1 行の長さの上限 [文字]。出す前に、送信待ちバッファにこれだけの空きを待つ */
 
 #define STRAIGHT_DISTANCE_MM  280.0f   /* 走る距離 [mm]（スタートから 4 区画目のまん中まで：10 + 3 × 90） */
 #define STRAIGHT_SPEED_MM_S   200.0f   /* 最高速 [mm/s] */
@@ -188,6 +188,12 @@ static void print_front_correction_list(void)
     uart_wait_free(RESULT_LINE_LENGTH_MAX);
     printf("  front %d: traveled %.0f mm, correction %.1f mm\r\n", i + 1, run_get_front_correction_list_traveled_mm(i),
            run_get_front_correction_list_mm(i));
+    /* そのときの様子：前の壁までの距離（左前・右前）、横の壁までの距離、入口から進んでいた距離、速さ、向きのずれ */
+    run_front_detail_t detail = run_get_front_correction_detail(i);
+    uart_wait_free(RESULT_LINE_LENGTH_MAX);
+    printf("    FL %.1f FR %.1f mm, side L %.1f R %.1f mm, overrun %.1f mm, speed %.0f mm/s, yaw %.1f deg\r\n",
+           detail.front_left_mm, detail.front_right_mm, detail.side_left_mm, detail.side_right_mm,
+           detail.overrun_mm, detail.speed_mm_s, detail.yaw_deg);
   }
 }
 
