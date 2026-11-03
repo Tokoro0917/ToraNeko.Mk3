@@ -1,0 +1,22 @@
+#BEGIN RESULT
+Search: longest wait between moves 8533 us
+Search: front correction 14 times, average 3.5 mm, min -2.0 mm, max 11.0 mm (applied=1)
+front 1: traveled 239 mm, correction 11.0 mm
+front 2: traveled 320 mm, correction 8.6 mm
+front 3: traveled 401 mm, correction 1.0 mm
+front 4: traveled 479 mm, correction 4.6 mm
+front 5: traveled 560 mm, correction 1.9 mm
+front 6: traveled 638 mm, correction 0.2 mm
+front 7: traveled 1061 mm, correction -1.2 mm
+front 8: traveled 1319 mm, correction 6.4 mm
+front 9: traveled 1400 mm, correction 3.7 mm
+front 10: traveled 1480 mm, correction -2.0 mm
+front 11: traveled 1554 mm, correction 1.3 mm
+front 12: traveled 1632 mm, correction 7.0 mm
+front 13: traveled 1714 mm, correction 4.9 mm
+front 14: traveled 1976 mm, correction 2.2 mm
+Search: wall edge 3 times, average 56.3 mm, min 53.3 mm, max 57.9 mm from cell entry (applied=0)
+edge 1: traveled 204 mm, position 57.9 mm
+edge 2: traveled 862 mm, position 57.6 mm
+edge 3: traveled 1282 mm, position 53.3 mm
+#END RESULT
