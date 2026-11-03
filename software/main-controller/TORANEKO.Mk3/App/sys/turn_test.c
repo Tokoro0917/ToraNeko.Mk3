@@ -65,10 +65,12 @@ static void prepare(void)
   log_start(TURN_TEST_LOG_INTERVAL_MS);  /* ターンを細かく見たいので、ログは 1ms ごとにし直す */
 }
 
-/* No.1〜4：スタート区画から、次の区画のまん中まで進みながら、速さ speed_mm_s にする */
+/* No.1〜4：スタート区画から、次の区画のまん中まで進みながら、速さ speed_mm_s にする。
+ * 迷路の外の広いところで走るので、横の壁に沿う補正は入れない（run_fast_diag_straight は、補正を入れない直進）。
+ * 2026-11-04 に、補正を入れる run_fast_straight から変えた（止まるときに、横のセンサが何かを見て補正が入り、0.5° 回った） */
 static void approach_from_start(float speed_mm_s)
 {
-  run_fast_straight(START_OFFSET_MM + CELL_MM, speed_mm_s, speed_mm_s, TURN_TEST_ACCEL_MM_S2);
+  run_fast_diag_straight(START_OFFSET_MM + CELL_MM, speed_mm_s, speed_mm_s, TURN_TEST_ACCEL_MM_S2);
 }
 
 /* No.5〜7：区画の辺のまん中から、斜めに 1 つぶん進みながら、速さ speed_mm_s にする */
@@ -77,10 +79,10 @@ static void approach_on_diag(float speed_mm_s)
   run_fast_diag_straight(DIAG_STEP_MM, speed_mm_s, speed_mm_s, TURN_TEST_ACCEL_MM_S2);
 }
 
-/* 区画のまん中から、1 区画進みながら止まる（速さ speed_mm_s から） */
+/* 区画のまん中から、1 区画進みながら止まる（速さ speed_mm_s から）。横の壁に沿う補正は入れない（approach_from_start と同じ） */
 static void stop_after_cell(float speed_mm_s)
 {
-  run_fast_stop(CELL_MM, speed_mm_s, TURN_TEST_ACCEL_MM_S2);
+  run_fast_diag_stop(CELL_MM, speed_mm_s, TURN_TEST_ACCEL_MM_S2);
 }
 
 /* 斜めの上（壁の辺のまん中）から、斜めの直進 1 つぶん進みながら止まる（速さ speed_mm_s から） */
