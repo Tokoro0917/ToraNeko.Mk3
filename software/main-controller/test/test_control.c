@@ -16,11 +16,13 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "config/ctrl_gains.h"
 #include "config/robot_params.h"
 #include "ctrl/control.h"
 #include "ctrl/odometry.h"
 #include "ctrl/trajectory.h"
 #include "ctrl/wall_ctrl.h"
+#include "drv/fan.h"
 #include "drv/imu.h"
 #include "drv/motor.h"
 #include "drv/wall.h"
@@ -72,10 +74,19 @@ float imu_get_accel_y_mps2(void)
   return 0.0f;
 }
 
+static float s_last_left_v = 0.0f;   /* 最後にモーターにかけた電圧（左） */
+static float s_last_right_v = 0.0f;  /* 最後にモーターにかけた電圧（右） */
 void motor_set_voltage(float left_v, float right_v)
 {
-  (void)left_v;  /* 使わない引数（(void) を付けると、使っていないという警告が出ない） */
-  (void)right_v;
+  s_last_left_v = left_v;
+  s_last_right_v = right_v;
+}
+
+/* 仮の吸引ファン：s_fake_fan_v を答える（テストで吸引あり・なしを切り替える） */
+static float s_fake_fan_v = 0.0f;
+float fan_get_voltage(void)
+{
+  return s_fake_fan_v;
 }
 
 void motor_stop(void)
@@ -243,12 +254,37 @@ static void test_glitch(void)
   check(!s_failsafe, "10ms より短い遅れでは止まらない");
 }
 
+/* 5. 吸引しているときは、前に進む分に、吸引で増えた摩擦の分の電圧を足す */
+static void test_suction_friction(void)
+{
+  printf("[5] 吸引しているときは、摩擦の分 FF_SUCTION_FRICTION_V を足す\n");
+  s_fake_fan_v = 0.0f;
+  reset();
+  run_up_to(300.0f, 1000.0f);
+  tick(trajectory_get_speed_mm_s());
+  float left_without_v = s_last_left_v;
+  float right_without_v = s_last_right_v;
+
+  s_fake_fan_v = 5.0f;
+  reset();
+  run_up_to(300.0f, 1000.0f);
+  tick(trajectory_get_speed_mm_s());
+  float left_diff_v = s_last_left_v - left_without_v;
+  float right_diff_v = s_last_right_v - right_without_v;
+  s_fake_fan_v = 0.0f;
+
+  printf("  吸引ありとなしの電圧の差：左 %.3fV、右 %.3fV\n", left_diff_v, right_diff_v);
+  check(fabsf(left_diff_v - FF_SUCTION_FRICTION_V) < 0.001f, "左は FF_SUCTION_FRICTION_V だけ大きい");
+  check(fabsf(right_diff_v - FF_SUCTION_FRICTION_V) < 0.001f, "右も FF_SUCTION_FRICTION_V だけ大きい");
+}
+
 int main(void)
 {
   test_normal();
   test_stall();
   test_slow();
   test_glitch();
+  test_suction_friction();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

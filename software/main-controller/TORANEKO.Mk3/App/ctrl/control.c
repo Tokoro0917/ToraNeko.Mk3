@@ -49,6 +49,7 @@
 #include "ctrl/odometry.h"
 #include "ctrl/trajectory.h"
 #include "ctrl/wall_ctrl.h"
+#include "drv/fan.h"
 #include "drv/imu.h"
 #include "drv/motor.h"
 #include "drv/wall.h"
@@ -205,6 +206,16 @@ static float friction_voltage(float target_speed, float friction_v)
   return 0.0f;
 }
 
+/* 前に進むときの、摩擦の分の電圧の大きさ [V]。吸引しているときは、吸引で増えた摩擦の分を足す */
+static float forward_friction_v(void)
+{
+  float friction_v = FF_FRICTION_V;
+  if (fan_get_voltage() > 0.0f) {
+    friction_v = friction_v + FF_SUCTION_FRICTION_V;
+  }
+  return friction_v;
+}
+
 /* 前に進む分の電圧 [V] を決める */
 static float forward_voltage(void)
 {
@@ -214,7 +225,7 @@ static float forward_voltage(void)
 
   float feedforward_v = target_speed * FF_SPEED_V_PER_MM_S
                       + target_accel_mm_s2() * FF_ACCEL_V_PER_MM_S2
-                      + friction_voltage(target_speed, FF_FRICTION_V);
+                      + friction_voltage(target_speed, forward_friction_v());
 
   float feedback_v = speed_error_mm_s * SPEED_KP + s_position_error_mm * SPEED_KI;
   return feedforward_v + feedback_v;

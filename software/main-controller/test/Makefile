@@ -9,7 +9,7 @@
 #   test_trajectory  目標の速さを作る処理（App/ctrl/trajectory.c）
 #   test_wall_dist  壁センサの値を距離 [mm] に直す処理（App/ctrl/wall_dist.c）
 #   test_turn  最短走行のターンが決めた位置で終わるか（App/config/turn_params.h）。./test_turn --calc で値を計算する
-#   test_control  制御のフェイルセーフの見つけ方（App/ctrl/control.c。センサ・モーターは仮）
+#   test_control  制御のフェイルセーフの見つけ方と、吸引中の摩擦の分の電圧（App/ctrl/control.c。センサ・モーターは仮）
 
 APP_DIR = ../TORANEKO.Mk3/App
 
