@@ -39,7 +39,7 @@ static void test_center(void)
   printf("[1] 区画のまん中の値で 42mm\n");
   check(near_mm(wall_dist_front_left_mm(3244), WALL_DIST_CENTER_MM), "左前 3244 → 42mm");
   check(near_mm(wall_dist_left_mm(1864), 40.0f), "左 1864 → 40mm（表の点）");
-  check(near_mm(wall_dist_right_mm(1747), 40.0f), "右 1747 → 40mm（表の点）");
+  check(near_mm(wall_dist_right_mm(975), 40.0f), "右 975 → 40mm（表の点。2026-11-03 に測った表）");
   check(near_mm(wall_dist_front_right_mm(3240), WALL_DIST_CENTER_MM), "右前 3240 → 42mm");
 }
 
