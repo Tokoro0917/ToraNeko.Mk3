@@ -60,6 +60,7 @@
 #include "config/run_params.h"
 #include "config/turn_params.h"
 #include "ctrl/control.h"
+#include "ctrl/odometry.h"
 #include "ctrl/trajectory.h"
 #include "ctrl/wall_ctrl.h"
 #include "drv/imu.h"
@@ -96,14 +97,25 @@ static void measure_wait(void)
 
 /* 前壁補正の記録（探索を始めるたびに 0 に戻す） */
 static int s_front_correction_count = 0;            /* 測った回数 */
+static float s_front_correction_sum_mm = 0.0f;      /* 測った量の合計（平均を出すため） [mm] */
 static float s_front_correction_min_mm = 0.0f;      /* いちばん小さかった量 [mm] */
 static float s_front_correction_max_mm = 0.0f;      /* いちばん大きかった量 [mm] */
+
+/* 前壁補正と壁切れを 1 回ごとに覚えておく数（それより多いときは、最初のこれだけを覚える） */
+#define EVENT_LIST_MAX 40
+
+/* 前壁補正の 1 回ごとの記録（2026-11-03 に足した。ずれがいつも同じか、走るほど増えるかを見るため） */
+static float s_front_list_mm[EVENT_LIST_MAX];         /* 測った量 [mm] */
+static float s_front_list_traveled_mm[EVENT_LIST_MAX];  /* そのときまでに走った距離 [mm]（探索を始めてから） */
+static float s_search_start_mm = 0.0f;                 /* 探索を始めたときの、走った距離の合計（odometry） [mm] */
 
 /* 壁切れの記録（探索を始めるたびに 0 に戻す。位置は区画の入口の辺から [mm]） */
 static int s_wall_edge_count = 0;          /* 切れ目を見つけた回数 */
 static float s_wall_edge_sum_mm = 0.0f;    /* 見つけた位置の合計（平均を出すため） */
 static float s_wall_edge_min_mm = 0.0f;    /* いちばん手前で見つけた位置 */
 static float s_wall_edge_max_mm = 0.0f;    /* いちばん先で見つけた位置 */
+static float s_edge_list_mm[EVENT_LIST_MAX];          /* 1 回ごとの、見つけた位置 [mm] */
+static float s_edge_list_traveled_mm[EVENT_LIST_MAX];   /* そのときまでに走った距離 [mm]（探索を始めてから） */
 
 /* いちばん長かった待ち時間 [µs] */
 uint32_t run_get_longest_wait_us(void)
@@ -120,15 +132,36 @@ static void wait_until_done(void)
   }
 }
 
+/* 前壁補正の量（上限をかける前の、測ったままの量）を記録する。平均・いちばん小さい・大きいをモード7 No.1 で出す */
+static void record_front_correction(float measured_mm)
+{
+  if (s_front_correction_count == 0 || measured_mm < s_front_correction_min_mm) {
+    s_front_correction_min_mm = measured_mm;
+  }
+  if (s_front_correction_count == 0 || measured_mm > s_front_correction_max_mm) {
+    s_front_correction_max_mm = measured_mm;
+  }
+  s_front_correction_sum_mm = s_front_correction_sum_mm + measured_mm;
+  if (s_front_correction_count < EVENT_LIST_MAX) {
+    s_front_list_mm[s_front_correction_count] = measured_mm;
+    s_front_list_traveled_mm[s_front_correction_count] = odometry_get_distance_mm() - s_search_start_mm;
+  }
+  s_front_correction_count = s_front_correction_count + 1;
+}
+
 /* 前壁補正の量 [mm] を決めて記録する（+ なら、壁が思ったより遠い＝まだ手前にいるので、そのぶん長く進む）。
- * 前に壁がないときは 0。FRONT_CORRECTION_ENABLE が 0 なら、記録だけして 0 を返す */
+ * 前に壁がないときは 0。FRONT_CORRECTION_ENABLE が 0 なら、記録だけして 0 を返す。
+ * 記録するのは上限をかける前の量（2026-11-03 に変えた。上限で止めた値だと、本当はいくつずれていたかわからないため） */
 static float front_correction_mm(void)
 {
   if (!wall_ctrl_has_wall_front()) {
     return 0.0f;
   }
   /* 今いる位置は、入口の辺から、まだ頼んでいない分（trajectory_get_overrun_mm()）だけ進んだところ */
-  float correction_mm = wall_ctrl_get_front_distance_mm() + trajectory_get_overrun_mm() - FRONT_WALL_AT_ENTRY_MM;
+  float measured_mm = wall_ctrl_get_front_distance_mm() + trajectory_get_overrun_mm() - FRONT_WALL_AT_ENTRY_MM;
+  record_front_correction(measured_mm);
+
+  float correction_mm = measured_mm;
   if (correction_mm > FRONT_CORRECTION_LIMIT_MM) {
     correction_mm = FRONT_CORRECTION_LIMIT_MM;
   }
@@ -136,24 +169,24 @@ static float front_correction_mm(void)
     correction_mm = -FRONT_CORRECTION_LIMIT_MM;
   }
 
-  if (s_front_correction_count == 0 || correction_mm < s_front_correction_min_mm) {
-    s_front_correction_min_mm = correction_mm;
-  }
-  if (s_front_correction_count == 0 || correction_mm > s_front_correction_max_mm) {
-    s_front_correction_max_mm = correction_mm;
-  }
-  s_front_correction_count = s_front_correction_count + 1;
-
   if (FRONT_CORRECTION_ENABLE == 0) {
     return 0.0f;
   }
   return correction_mm;
 }
 
-/* 前壁補正を測った回数・いちばん小さかった量・いちばん大きかった量 [mm]（モード7 No.1 で出す） */
+/* 前壁補正を測った回数・平均・いちばん小さかった量・いちばん大きかった量 [mm]（モード7 No.1 で出す） */
 int run_get_front_correction_count(void)
 {
   return s_front_correction_count;
+}
+
+float run_get_front_correction_average_mm(void)
+{
+  if (s_front_correction_count == 0) {
+    return 0.0f;
+  }
+  return s_front_correction_sum_mm / s_front_correction_count;
 }
 
 float run_get_front_correction_min_mm(void)
@@ -176,7 +209,52 @@ static void record_wall_edge(float position_mm)
     s_wall_edge_max_mm = position_mm;
   }
   s_wall_edge_sum_mm = s_wall_edge_sum_mm + position_mm;
+  if (s_wall_edge_count < EVENT_LIST_MAX) {
+    s_edge_list_mm[s_wall_edge_count] = position_mm;
+    s_edge_list_traveled_mm[s_wall_edge_count] = odometry_get_distance_mm() - s_search_start_mm;
+  }
   s_wall_edge_count = s_wall_edge_count + 1;
+}
+
+/* 1 回ごとの記録の数（EVENT_LIST_MAX より多くは覚えない） */
+static int list_count(int count)
+{
+  if (count > EVENT_LIST_MAX) {
+    return EVENT_LIST_MAX;
+  }
+  return count;
+}
+
+/* 前壁補正の 1 回ごとの記録：覚えている数と、index 番目の量・そのときまでに走った距離 [mm]（モード7 No.1 で出す） */
+int run_get_front_correction_list_count(void)
+{
+  return list_count(s_front_correction_count);
+}
+
+float run_get_front_correction_list_mm(int index)
+{
+  return s_front_list_mm[index];
+}
+
+float run_get_front_correction_list_traveled_mm(int index)
+{
+  return s_front_list_traveled_mm[index];
+}
+
+/* 壁切れの 1 回ごとの記録：覚えている数と、index 番目の位置・そのときまでに走った距離 [mm]（モード7 No.1 で出す） */
+int run_get_wall_edge_list_count(void)
+{
+  return list_count(s_wall_edge_count);
+}
+
+float run_get_wall_edge_list_mm(int index)
+{
+  return s_edge_list_mm[index];
+}
+
+float run_get_wall_edge_list_traveled_mm(int index)
+{
+  return s_edge_list_traveled_mm[index];
 }
 
 /* 壁切れを見つけた回数・平均・いちばん手前・いちばん先の位置 [mm]（モード7 No.1 で出す） */
@@ -311,6 +389,8 @@ static void start_control(void)
   s_waiting = false;
   s_longest_wait_us = 0;
   s_front_correction_count = 0;
+  s_front_correction_sum_mm = 0.0f;
+  s_search_start_mm = odometry_get_distance_mm();
   wall_ctrl_clear_too_close();
   s_wall_edge_count = 0;
   s_wall_edge_sum_mm = 0.0f;

@@ -88,8 +88,9 @@ void run_fast_diag_stop(float distance_mm, float max_speed_mm_s, float accel_mm_
  * 探索の計算が長すぎないかを確かめる（300mm/s では 1ms で 0.3mm 進む）。モード7 No.1 で出す */
 uint32_t run_get_longest_wait_us(void);
 
-/* 探索の前壁補正（run.c の先頭のコメント）を測った回数と、量のいちばん小さい・大きい値 [mm]。モード7 No.1 で出す */
+/* 探索の前壁補正（run.c の先頭のコメント）を測った回数と、量の平均・いちばん小さい・大きい値 [mm]（上限をかける前の量）。モード7 No.1 で出す */
 int run_get_front_correction_count(void);
+float run_get_front_correction_average_mm(void);
 float run_get_front_correction_min_mm(void);
 float run_get_front_correction_max_mm(void);
 
@@ -98,5 +99,13 @@ int run_get_wall_edge_count(void);
 float run_get_wall_edge_average_mm(void);
 float run_get_wall_edge_min_mm(void);
 float run_get_wall_edge_max_mm(void);
+
+/* 前壁補正・壁切れの 1 回ごとの記録（最初の 40 回まで）。量・位置と、そのときまでに走った距離 [mm]（探索を始めてから）。モード7 No.1 で出す */
+int run_get_front_correction_list_count(void);
+float run_get_front_correction_list_mm(int index);
+float run_get_front_correction_list_traveled_mm(int index);
+int run_get_wall_edge_list_count(void);
+float run_get_wall_edge_list_mm(int index);
+float run_get_wall_edge_list_traveled_mm(int index);
 
 #endif /* CTRL_RUN_H */

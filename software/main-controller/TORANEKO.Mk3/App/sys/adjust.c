@@ -66,9 +66,12 @@
 #include "drv/imu.h"
 #include "drv/led.h"
 #include "drv/timebase.h"
+#include "drv/uart.h"
 #include "sys/failsafe.h"
 #include "sys/log.h"
 #include "sys/ui.h"
+
+#define RESULT_LINE_LENGTH_MAX 80  /* RESULT の 1 行の長さの上限 [文字]。出す前に、送信待ちバッファにこれだけの空きを待つ */
 
 #define STRAIGHT_DISTANCE_MM  360.0f   /* 走る距離 [mm]（4 区画） */
 #define STRAIGHT_SPEED_MM_S   200.0f   /* 最高速 [mm/s] */
@@ -155,6 +158,26 @@ static void save_straight_result(float start_distance_mm, float start_angle_deg)
   s_result.failsafe = failsafe_is_stopped();
 }
 
+/* 前壁補正の 1 回ごとの量を、走った距離といっしょに 1 行ずつ出す（ずれがいつも同じか、走るほど増えるかを見る） */
+static void print_front_correction_list(void)
+{
+  for (int i = 0; i < run_get_front_correction_list_count(); i++) {
+    uart_wait_free(RESULT_LINE_LENGTH_MAX);
+    printf("  front %d: traveled %.0f mm, correction %.1f mm\r\n", i + 1, run_get_front_correction_list_traveled_mm(i),
+           run_get_front_correction_list_mm(i));
+  }
+}
+
+/* 壁切れの 1 回ごとの位置を、走った距離といっしょに 1 行ずつ出す */
+static void print_wall_edge_list(void)
+{
+  for (int i = 0; i < run_get_wall_edge_list_count(); i++) {
+    uart_wait_free(RESULT_LINE_LENGTH_MAX);
+    printf("  edge %d: traveled %.0f mm, position %.1f mm\r\n", i + 1, run_get_wall_edge_list_traveled_mm(i),
+           run_get_wall_edge_list_mm(i));
+  }
+}
+
 /* 探索で、区画の入口に着いてから次の動きを頼まれるまでの、いちばん長かった時間と、前壁補正の量・壁切れの位置を出す（探索を走らせていれば） */
 static void print_search_wait(void)
 {
@@ -163,9 +186,10 @@ static void print_search_wait(void)
     printf("Search: longest wait between moves %lu us\r\n", wait_us);
   }
   if (run_get_front_correction_count() > 0) {
-    printf("Search: front correction %d times, min %.1f mm, max %.1f mm (applied=%d)\r\n",
-           run_get_front_correction_count(), run_get_front_correction_min_mm(),
+    printf("Search: front correction %d times, average %.1f mm, min %.1f mm, max %.1f mm (applied=%d)\r\n",
+           run_get_front_correction_count(), run_get_front_correction_average_mm(), run_get_front_correction_min_mm(),
            run_get_front_correction_max_mm(), FRONT_CORRECTION_ENABLE);
+    print_front_correction_list();
   }
   if (wall_ctrl_get_too_close_count() > 0) {
     printf("Search: side wall too close %d times, nearest %.1f mm (aligned=%d)\r\n",
@@ -175,6 +199,7 @@ static void print_search_wait(void)
     printf("Search: wall edge %d times, average %.1f mm, min %.1f mm, max %.1f mm from cell entry (applied=%d)\r\n",
            run_get_wall_edge_count(), run_get_wall_edge_average_mm(), run_get_wall_edge_min_mm(),
            run_get_wall_edge_max_mm(), WALL_EDGE_ENABLE);
+    print_wall_edge_list();
   }
 }
 
