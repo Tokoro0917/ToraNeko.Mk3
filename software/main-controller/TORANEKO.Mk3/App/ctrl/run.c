@@ -283,7 +283,7 @@ float run_get_front_correction_list_traveled_mm(int index)
   return s_front_list_traveled_mm[index];
 }
 
-/* 前壁補正を測ったときの、くわしい様子（index 番目） */
+/* 前壁補正を測ったときの、くわしい様子（index 番目。index は 0 から run_get_front_correction_list_count() − 1 まで） */
 run_front_detail_t run_get_front_correction_detail(int index)
 {
   return s_front_details[index];
