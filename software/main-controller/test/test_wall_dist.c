@@ -38,7 +38,7 @@ static void test_center(void)
 {
   printf("[1] 区画のまん中の値で 42mm\n");
   check(near_mm(wall_dist_front_left_mm(3244), WALL_DIST_CENTER_MM), "左前 3244 → 42mm");
-  check(near_mm(wall_dist_left_mm(1864), 40.0f), "左 1864 → 40mm（表の点）");
+  check(near_mm(wall_dist_left_mm(1600), 40.0f), "左 1600 → 40mm（表の点。2026-11-03 に測った表）");
   check(near_mm(wall_dist_right_mm(975), 40.0f), "右 975 → 40mm（表の点。2026-11-03 に測った表）");
   check(near_mm(wall_dist_front_right_mm(3240), WALL_DIST_CENTER_MM), "右前 3240 → 42mm");
 }
@@ -49,9 +49,8 @@ static void test_between(void)
   printf("[2] 表の点のあいだは直線でつなぐ\n");
   /* 左前の表の 42mm（3244）と 52mm（2116）のまん中の値 2680 → 47mm */
   check(near_mm(wall_dist_front_left_mm(2680), 47.0f), "左前 2680 → 47mm");
-  /* 左の表の 46mm（1410）と 52mm（1103）の、46mm から 1/3 進んだ値 → 48mm */
-  float value = 1410.0f - (1410.0f - 1103.0f) / 3.0f;
-  check(near_mm(wall_dist_left_mm((int32_t)lroundf(value)), 48.0f), "左 1308 → 約 48mm");
+  /* 左の表の 46mm（1270）と 52mm（1070）の、46mm から 1/2 進んだ値 1170 → 49mm */
+  check(near_mm(wall_dist_left_mm(1170), 49.0f), "左 1170 → 49mm");
 }
 
 /* 3. 表の外は、表の端の距離 */
