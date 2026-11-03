@@ -60,8 +60,9 @@
  * 北・西とも 1mm、向きは 90° ちょうどになった（2026-11-04。大回り 90° は合わせ終わり） */
 #define BIG90_PRE_ADJUST_MM   10.0f
 #define BIG90_POST_ADJUST_MM  10.0f
-#define BIG180_PRE_ADJUST_MM  0.0f
-#define BIG180_POST_ADJUST_MM 0.0f
+/* 大回り 180°：2026-11-04 に 600mm/s で走らせて、作者が前距離 −1mm・後距離 −2mm に決めた */
+#define BIG180_PRE_ADJUST_MM  -1.0f
+#define BIG180_POST_ADJUST_MM -2.0f
 #define IN45_PRE_ADJUST_MM    0.0f
 #define IN45_POST_ADJUST_MM   0.0f
 #define IN135_PRE_ADJUST_MM   0.0f
