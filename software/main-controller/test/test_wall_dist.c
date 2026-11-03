@@ -47,8 +47,8 @@ static void test_center(void)
 static void test_between(void)
 {
   printf("[2] 表の点のあいだは直線でつなぐ\n");
-  /* 左前の表の 52mm（2941）と 58mm（2361）のまん中の値 2651 → 55mm */
-  check(near_mm(wall_dist_front_left_mm(2651), 55.0f), "左前 2651 → 55mm");
+  /* 左前の表の 64mm（1417）と 70mm（1084）のまん中の値 1250（1250.5 を切り捨て）→ ほぼ 67mm */
+  check(fabsf(wall_dist_front_left_mm(1250) - 67.0f) < 0.1f, "左前 1250 → 約 67mm");
   /* 左の表の 46mm（1270）と 52mm（1070）の、46mm から 1/2 進んだ値 1170 → 49mm */
   check(near_mm(wall_dist_left_mm(1170), 49.0f), "左 1170 → 49mm");
 }
