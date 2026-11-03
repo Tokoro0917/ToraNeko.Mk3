@@ -78,8 +78,8 @@
 /* 前距離・後距離の短いほう 3.0mm で計算（test/test_turn.c --calc） */
 /* 大回り 90°（800mm/s、角加速度 25600deg/s²。横向きの加速度はいちばん大きいとき 8199mm/s²） */
 #define BIG90_OMEGA_DEG_S 587.2f
-#define BIG90_PRE_MM 3.0f
-#define BIG90_POST_MM 3.2f
+#define BIG90_PRE_MM 2.0f
+#define BIG90_POST_MM 2.2f
 /* 大回り 180°（600mm/s、角加速度 14400deg/s²。横向きの加速度はいちばん大きいとき 8179mm/s²） */
 #define BIG180_OMEGA_DEG_S 781.0f
 #define BIG180_PRE_MM 3.0f
