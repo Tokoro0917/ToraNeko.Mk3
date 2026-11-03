@@ -13,6 +13,8 @@
  *        フィードバック    ：角速度のずれ × OMEGA_KP + 角度のずれ × ANGLE_KI
  *      横の壁に沿って走る補正が入っているときは、直進中の目標の角速度に、横の壁からのずれで決めた分を足す
  *      （ずれ × WALL_KP + ずれの変わる速さ × WALL_KD。左の壁に近ければ右へ曲げる）
+ *      斜めの補正が入っているときは（斜めの直進。KOGUMA の calWallConrol_NANAME）、前のセンサがしきい値を超えた分で決めた分を足す
+ *      （ずれ × DIAG_KP ×（目標の速さ ÷ 1000）。左の柱・壁に近ければ右へ曲げる。下の「斜めの直進」）
  *   4. 左 = 前に進む分 − 向きの分、右 = 前に進む分 + 向きの分 をモーターにかける
  *      （左回りが + なので、左に向けたいときは右を速く、左を遅くする）
  *   5. 走行ログに 1 行渡す（sys/log.c が、決めた間隔ごとに残す）
@@ -21,6 +23,12 @@
  *      - 目標の速さより、ずっと遅い（ぶつかった）、または、走っているはずなのにほとんど進んでいない（壁を押している）。
  *        この 2 つは、FAILSAFE_HOLD_MS 続いたら止める（KOGUMA_PORTING.md の F2〜F4）
  * 係数は config/ctrl_gains.h にある。
+ *
+ * ■ 斜めの直進（control_set_on_diagonal(true) のあいだ）
+ * 横のセンサは斜めの直進では使えない（壁が斜めに並ぶので、まん中の値が決まらない）。そのかわり、前のセンサで柱や壁に
+ * 近づいたことを見て、離れるように曲げる（control_set_diag_control(true) のときだけ）。
+ * 速さに比例させる（KOGUMA と同じ）のは、同じ角度だけ向きを変えても、速いほど早く横にずれるため。
+ * 走行ログには、横のセンサのかわりに前のセンサの値を残す（logs/README.md）。斜めの補正の値を決めるため
  *
  * ■ 前壁合わせ（control_set_front_align(true) のあいだ）
  * 目標の速さ・角速度を、ctrl/trajectory.c ではなく、前の壁からのずれで決める（ctrl/wall_ctrl.c）。
@@ -74,6 +82,11 @@ static volatile float s_wall_error = 0.0f;          /* 横の壁からのずれ�
 static volatile float s_wall_error_rate = 0.0f;     /* ずれの変わる速さ [1/s] */
 static volatile float s_wall_omega_deg_s = 0.0f;    /* 補正で曲げた角速度（ログ用） */
 static volatile int s_wall_used = 0;                /* 使った壁（ログ用） */
+static volatile bool s_on_diagonal = false;         /* 斜めの直進をしているか（ログに前のセンサの値を残す） */
+static volatile bool s_diag_control = false;        /* 斜めの補正を入れるか */
+static volatile float s_diag_error = 0.0f;          /* 斜めの補正のずれ（+ なら左の柱・壁に近い。ログ用） */
+static volatile float s_diag_omega_deg_s = 0.0f;    /* 斜めの補正で曲げた角速度（ログ用） */
+static volatile int s_diag_used = 0;                /* しきい値を超えた前のセンサ（0 なし、1 左前、2 右前。ログ用） */
 static volatile int s_slow_ticks = 0;               /* 「目標よりずっと遅い」が続いた制御周期の数 */
 static volatile int s_stall_ticks = 0;              /* 「ほとんど進んでいない」が続いた制御周期の数 */
 static volatile control_failsafe_reason_t s_failsafe_reason = CONTROL_FAILSAFE_NONE;  /* 最後に止めたわけ */
@@ -101,6 +114,18 @@ void control_start(void)
 void control_set_wall_control(bool on)
 {
   s_wall_control = on;
+}
+
+/* 斜めの直進をしている（true）・していない（false）。ログに、横のセンサのかわりに前のセンサの値を残す（ctrl/run.c） */
+void control_set_on_diagonal(bool on)
+{
+  s_on_diagonal = on;
+}
+
+/* 斜めの補正を入れる（true）・入れない（false）。最短走行の斜めの直進（ctrl/run.c）で入れる */
+void control_set_diag_control(bool on)
+{
+  s_diag_control = on;
 }
 
 /* 前壁合わせを始める（true）・やめる（false）。止まっているときに使う（ctrl/run.c） */
@@ -269,11 +294,34 @@ static float wall_omega_deg_s(void)
   return omega;
 }
 
+/* 斜めの補正で、目標の角速度に足す分 [deg/s]（+ なら左へ曲げる）。
+ * 補正を入れていないとき、直進でないとき、遅いときは 0 */
+static float diag_omega_deg_s(void)
+{
+  s_diag_error = wall_ctrl_get_diag_error();
+  s_diag_used = wall_ctrl_get_diag_used();
+  float speed_mm_s = trajectory_get_speed_mm_s();
+  if (!s_diag_control || trajectory_get_kind() != TRAJECTORY_STRAIGHT || speed_mm_s < WALL_CONTROL_MIN_SPEED_MM_S) {
+    s_diag_omega_deg_s = 0.0f;
+    return 0.0f;
+  }
+  float omega = -s_diag_error * DIAG_KP * (speed_mm_s / 1000.0f);  /* 左の柱・壁に近い（+）なら右（-）へ */
+  if (omega > DIAG_OMEGA_LIMIT_DEG_S) {
+    omega = DIAG_OMEGA_LIMIT_DEG_S;
+  }
+  if (omega < -DIAG_OMEGA_LIMIT_DEG_S) {
+    omega = -DIAG_OMEGA_LIMIT_DEG_S;
+  }
+  s_diag_omega_deg_s = omega;
+  return omega;
+}
+
 /* 向きの分の電圧 [V] を決める（+ なら左に向ける。右のタイヤに +、左のタイヤに - でかける） */
 static float turn_voltage(void)
 {
   float target_omega = target_omega_deg_s();
-  float omega_error_deg_s = target_omega + wall_omega_deg_s() - imu_get_gyro_z_dps();
+  float correction_deg_s = wall_omega_deg_s() + diag_omega_deg_s();  /* 横の壁の補正と斜めの補正（同時には入れない） */
+  float omega_error_deg_s = target_omega + correction_deg_s - imu_get_gyro_z_dps();
   s_angle_error_deg = s_angle_error_deg + omega_error_deg_s * CTRL_PERIOD_S;
 
   /* 目標の角速度・角加速度で回るときの、タイヤ 1 つの速さ [mm/s]・加速度 [mm/s²] */
@@ -303,7 +351,7 @@ static void record_log(void)
   values.speed_mm_s = odometry_get_speed_mm_s();
   values.speed_target_mm_s = target_speed_mm_s();
   values.omega_deg_s = imu_get_gyro_z_dps();
-  values.omega_target_deg_s = target_omega_deg_s() + s_wall_omega_deg_s;
+  values.omega_target_deg_s = target_omega_deg_s() + s_wall_omega_deg_s + s_diag_omega_deg_s;
   values.wall_used = s_wall_used;
   values.wall_error = s_wall_error;
   values.wall_p = s_wall_error * WALL_KP;
@@ -321,6 +369,17 @@ static void record_log(void)
     values.phase = LOG_PHASE_ALIGN;
     values.wall_dist_left_mm = wall_ctrl_get_front_left_mm();    /* 前壁合わせのあいだは、dist_L の列に左前から求めた前の壁までの距離 */
     values.wall_dist_right_mm = wall_ctrl_get_front_right_mm();  /* dist_R の列に右前から求めた前の壁までの距離 */
+  } else if (s_on_diagonal) {
+    /* 斜めの直進のあいだは、横の壁の列に、斜めの補正の値を入れる（logs/README.md） */
+    values.phase = LOG_PHASE_DIAG;
+    values.sensor_left = wall_ctrl_get_front_left();     /* sensor_L の列に左前の値 */
+    values.sensor_right = wall_ctrl_get_front_right();   /* sensor_R の列に右前の値 */
+    values.wall_dist_left_mm = wall_ctrl_get_front_left_mm();
+    values.wall_dist_right_mm = wall_ctrl_get_front_right_mm();
+    values.wall_used = s_diag_used;
+    values.wall_error = s_diag_error;
+    values.wall_p = -s_diag_omega_deg_s;  /* 曲げた角速度（横の壁の補正の P 項と同じ向き。+ なら右へ曲げた） */
+    values.wall_d = 0.0f;
   } else if (trajectory_get_kind() == TRAJECTORY_PIVOT) {
     values.phase = LOG_PHASE_PIVOT;
   } else if (trajectory_get_kind() == TRAJECTORY_SLALOM) {

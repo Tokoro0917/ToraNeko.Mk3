@@ -94,6 +94,16 @@
  * 壁に当たったので、45deg/s に下げた */
 #define WALL_OMEGA_LIMIT_DEG_S 45.0f
 
+/* ---- 斜めの補正（斜めの直進のとき。ctrl/control.c、しきい値は ctrl/wall_ctrl.c の DIAG_FRONT_*_THRESHOLD） ---- */
+
+/* 前のセンサがしきい値を超えた分 1 あたり、1000mm/s のときに目標の角速度をどれだけ曲げるか [deg/s]。
+ * 速さに比例させる（800mm/s なら 0.8 倍）。KOGUMA（Kp_Na）は電圧で曲げているので、値はそのまま持ってこられない。
+ * 仮の値（2026-11-04）：横の壁の補正（WALL_KP）と同じにした。しきい値を 900 超えると、800mm/s で 36deg/s 曲げる（上限は下の 45deg/s） */
+#define DIAG_KP 0.05f
+
+/* 斜めの補正で曲げる角速度の上限 [deg/s]（横の壁の補正と同じ） */
+#define DIAG_OMEGA_LIMIT_DEG_S 45.0f
+
 /* これより遅いときは補正しない [mm/s]（止まる直前・走り出しは、センサの値が目標から離れていても気にしない） */
 #define WALL_CONTROL_MIN_SPEED_MM_S 100.0f
 

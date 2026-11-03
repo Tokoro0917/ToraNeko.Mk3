@@ -563,6 +563,27 @@ void run_search_go_from_center(run_turn_t turn)
  * 最短走行の動き（モード1。sys/shortest.c が使う）
  * ------------------------------------------------------------------------- */
 
+static bool s_diag_correction = true;  /* 斜めの直進で、斜めの補正を入れるか（run_fast_set_diag_correction()） */
+
+/* 斜めの直進（run_fast_diag_straight・run_fast_diag_stop）で、斜めの補正を入れる（true。ふつうはこちら）・入れない（false）。
+ * ターンの調整（sys/turn_test.c）では、補正が混ざらないように入れない。斜めの補正の値を測るとき（モード3 No.8）も入れない */
+void run_fast_set_diag_correction(bool on)
+{
+  s_diag_correction = on;
+}
+
+/* 斜めの直進を始める前・終わったあとに、斜めの直進のしるしと、斜めの補正を入れる・切る（ctrl/control.c） */
+static void set_on_diagonal(bool on)
+{
+  control_set_wall_control(false);  /* 横の壁に沿う補正は、斜めでは使えない */
+  control_set_on_diagonal(on);
+  if (on) {
+    control_set_diag_control(s_diag_correction);
+  } else {
+    control_set_diag_control(false);
+  }
+}
+
 /* 最短走行を始める。ジャイロのゼロ点を測り直して、制御とログを始める（機体はまだ動かない） */
 void run_fast_start(void)
 {
@@ -584,15 +605,17 @@ void run_fast_straight(float distance_mm, float max_speed_mm_s, float end_speed_
   wait_until_done();
 }
 
-/* 斜めに distance_mm まっすぐ進む（run_fast_straight と同じ。横の壁に沿って走る補正は入れない） */
+/* 斜めに distance_mm まっすぐ進む（run_fast_straight と同じ。横の壁に沿って走る補正のかわりに、斜めの補正を入れる。
+ * 斜めの補正は、柱や壁に近づいたら離れるように曲げる。ctrl/control.c の先頭のコメント） */
 void run_fast_diag_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2)
 {
   if (failsafe_is_stopped()) {
     return;
   }
-  control_set_wall_control(false);
+  set_on_diagonal(true);
   trajectory_start_straight(distance_mm, max_speed_mm_s, end_speed_mm_s, accel_mm_s2);
   wait_until_done();
+  set_on_diagonal(false);
 }
 
 /* ターン 1 つぶんの値（config/turn_params.h の、そのターンの行） */
@@ -713,9 +736,10 @@ void run_fast_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2)
   stop_after(distance_mm, max_speed_mm_s, accel_mm_s2);
 }
 
-/* 斜めに distance_mm 進みながら止まる（run_fast_stop と同じ。横の壁に沿って走る補正は入れない） */
+/* 斜めに distance_mm 進みながら止まる（run_fast_stop と同じ。横の壁に沿って走る補正のかわりに、斜めの補正を入れる） */
 void run_fast_diag_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2)
 {
-  control_set_wall_control(false);
+  set_on_diagonal(true);
   stop_after(distance_mm, max_speed_mm_s, accel_mm_s2);
+  set_on_diagonal(false);
 }

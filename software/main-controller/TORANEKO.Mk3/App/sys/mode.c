@@ -92,8 +92,8 @@ bool mode_has_action(int mode, int number)
     return false;
   }
   if (mode == 3) {
-    if (number >= 1 && number <= 7) {
-      return true;  /* 最短走行のターン */
+    if (number >= 1 && number <= 9) {
+      return true;  /* 最短走行のターン（No.1〜7）、斜めの直進のテスト（No.8・9） */
     }
     return false;
   }

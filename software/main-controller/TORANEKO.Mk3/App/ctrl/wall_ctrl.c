@@ -57,6 +57,14 @@
 
 /* 横の壁からのずれの上限（センサの値の差。約 2mm 分）。急に大きく曲げないようにする */
 #define SIDE_ERROR_LIMIT 600.0f
+/* 斜めの直進で、柱や壁に近づいたとみなす前のセンサの値（斜めの補正。KOGUMA の calWallConrol_NANAME）。
+ * 斜めの直進では、通り道の両側に柱が並ぶ（通り道のまん中の線から、柱までは 31.8mm）。まん中を走っていれば、前のセンサは
+ * 柱を少し見るだけだが、どちらかに寄ると、寄った側の前のセンサの値が上がる。この値を超えた分だけ、反対へ曲げる。
+ * 仮の値（2026-11-04）：入口の位置で前の壁を見たときの値（左前 881・右前 1390。上の「しきい値」）にした。
+ * 斜めの直進のテスト（モード3 No.8。補正なしで走って、前のセンサの値をログに残す）で、まん中を走ったときの値を測って決め直す */
+#define DIAG_FRONT_LEFT_THRESHOLD  880   /* 左前：これより大きければ、左の柱・壁に近い（仮） */
+#define DIAG_FRONT_RIGHT_THRESHOLD 1390  /* 右前：これより大きければ、右の柱・壁に近い（仮） */
+
 #define FRONT_LEFT_HAND_THRESHOLD  2800  /* 左前：これより大きければ手がかざされている（仮） */
 #define FRONT_RIGHT_HAND_THRESHOLD 2000  /* 右前：同じく（仮） */
 
@@ -250,6 +258,33 @@ int wall_ctrl_get_side_walls_used(void)
     used = used + 2;
   }
   return used;
+}
+
+/* 斜めの直進で、柱や壁に近づいたずれ（+ なら左の柱・壁に近い。斜めの補正で使う）。KOGUMA の calWallConrol_NANAME と同じく、
+ * 左前がしきい値を超えていれば（左前 − しきい値）、そうでなく右前が超えていれば −（右前 − しきい値）、どちらでもなければ 0 */
+float wall_ctrl_get_diag_error(void)
+{
+  int32_t front_left = wall_ctrl_get_front_left();
+  int32_t front_right = wall_ctrl_get_front_right();
+  if (front_left > DIAG_FRONT_LEFT_THRESHOLD) {
+    return front_left - DIAG_FRONT_LEFT_THRESHOLD;
+  }
+  if (front_right > DIAG_FRONT_RIGHT_THRESHOLD) {
+    return -(front_right - DIAG_FRONT_RIGHT_THRESHOLD);
+  }
+  return 0.0f;
+}
+
+/* 斜めの補正で、どちらの前のセンサがしきい値を超えたか（0 なし、1 左前、2 右前。ログに残す） */
+int wall_ctrl_get_diag_used(void)
+{
+  if (wall_ctrl_get_front_left() > DIAG_FRONT_LEFT_THRESHOLD) {
+    return 1;
+  }
+  if (wall_ctrl_get_front_right() > DIAG_FRONT_RIGHT_THRESHOLD) {
+    return 2;
+  }
+  return 0;
 }
 
 /* 前の壁との距離のずれ（+ なら近すぎる）。左前と右前の、目標との差の平均 */

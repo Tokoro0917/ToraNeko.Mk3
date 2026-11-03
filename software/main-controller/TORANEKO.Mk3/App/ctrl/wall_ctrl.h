@@ -28,6 +28,10 @@ bool wall_ctrl_is_hand_front(void);
 float wall_ctrl_get_side_error(void);
 int wall_ctrl_get_side_walls_used(void);
 
+/* 斜めの補正（斜めの直進で、柱や壁に近づいたら離れる。ctrl/control.c） */
+float wall_ctrl_get_diag_error(void);
+int wall_ctrl_get_diag_used(void);
+
 /* 前の壁からのずれ（前壁合わせに使う。区画のまん中にいるときの値との差）。
  *   距離のずれ：+ なら前の壁に近すぎる（下がるとよい）
  *   向きのずれ：+ なら左前のほうが近い＝右を向いている（左へ回すとよい） */
