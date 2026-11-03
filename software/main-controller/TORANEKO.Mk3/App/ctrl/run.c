@@ -96,6 +96,7 @@ static void measure_wait(void)
 
 /* 前壁補正の記録（探索を始めるたびに 0 に戻す） */
 static int s_front_correction_count = 0;            /* 測った回数 */
+static float s_front_correction_sum_mm = 0.0f;      /* 測った量の合計（平均を出すため） [mm] */
 static float s_front_correction_min_mm = 0.0f;      /* いちばん小さかった量 [mm] */
 static float s_front_correction_max_mm = 0.0f;      /* いちばん大きかった量 [mm] */
 
@@ -120,15 +121,32 @@ static void wait_until_done(void)
   }
 }
 
+/* 前壁補正の量（上限をかける前の、測ったままの量）を記録する。平均・いちばん小さい・大きいをモード7 No.1 で出す */
+static void record_front_correction(float measured_mm)
+{
+  if (s_front_correction_count == 0 || measured_mm < s_front_correction_min_mm) {
+    s_front_correction_min_mm = measured_mm;
+  }
+  if (s_front_correction_count == 0 || measured_mm > s_front_correction_max_mm) {
+    s_front_correction_max_mm = measured_mm;
+  }
+  s_front_correction_sum_mm = s_front_correction_sum_mm + measured_mm;
+  s_front_correction_count = s_front_correction_count + 1;
+}
+
 /* 前壁補正の量 [mm] を決めて記録する（+ なら、壁が思ったより遠い＝まだ手前にいるので、そのぶん長く進む）。
- * 前に壁がないときは 0。FRONT_CORRECTION_ENABLE が 0 なら、記録だけして 0 を返す */
+ * 前に壁がないときは 0。FRONT_CORRECTION_ENABLE が 0 なら、記録だけして 0 を返す。
+ * 記録するのは上限をかける前の量（2026-11-03 に変えた。上限で止めた値だと、本当はいくつずれていたかわからないため） */
 static float front_correction_mm(void)
 {
   if (!wall_ctrl_has_wall_front()) {
     return 0.0f;
   }
   /* 今いる位置は、入口の辺から、まだ頼んでいない分（trajectory_get_overrun_mm()）だけ進んだところ */
-  float correction_mm = wall_ctrl_get_front_distance_mm() + trajectory_get_overrun_mm() - FRONT_WALL_AT_ENTRY_MM;
+  float measured_mm = wall_ctrl_get_front_distance_mm() + trajectory_get_overrun_mm() - FRONT_WALL_AT_ENTRY_MM;
+  record_front_correction(measured_mm);
+
+  float correction_mm = measured_mm;
   if (correction_mm > FRONT_CORRECTION_LIMIT_MM) {
     correction_mm = FRONT_CORRECTION_LIMIT_MM;
   }
@@ -136,24 +154,24 @@ static float front_correction_mm(void)
     correction_mm = -FRONT_CORRECTION_LIMIT_MM;
   }
 
-  if (s_front_correction_count == 0 || correction_mm < s_front_correction_min_mm) {
-    s_front_correction_min_mm = correction_mm;
-  }
-  if (s_front_correction_count == 0 || correction_mm > s_front_correction_max_mm) {
-    s_front_correction_max_mm = correction_mm;
-  }
-  s_front_correction_count = s_front_correction_count + 1;
-
   if (FRONT_CORRECTION_ENABLE == 0) {
     return 0.0f;
   }
   return correction_mm;
 }
 
-/* 前壁補正を測った回数・いちばん小さかった量・いちばん大きかった量 [mm]（モード7 No.1 で出す） */
+/* 前壁補正を測った回数・平均・いちばん小さかった量・いちばん大きかった量 [mm]（モード7 No.1 で出す） */
 int run_get_front_correction_count(void)
 {
   return s_front_correction_count;
+}
+
+float run_get_front_correction_average_mm(void)
+{
+  if (s_front_correction_count == 0) {
+    return 0.0f;
+  }
+  return s_front_correction_sum_mm / s_front_correction_count;
 }
 
 float run_get_front_correction_min_mm(void)
@@ -311,6 +329,7 @@ static void start_control(void)
   s_waiting = false;
   s_longest_wait_us = 0;
   s_front_correction_count = 0;
+  s_front_correction_sum_mm = 0.0f;
   wall_ctrl_clear_too_close();
   s_wall_edge_count = 0;
   s_wall_edge_sum_mm = 0.0f;

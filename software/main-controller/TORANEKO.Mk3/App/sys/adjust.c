@@ -163,8 +163,8 @@ static void print_search_wait(void)
     printf("Search: longest wait between moves %lu us\r\n", wait_us);
   }
   if (run_get_front_correction_count() > 0) {
-    printf("Search: front correction %d times, min %.1f mm, max %.1f mm (applied=%d)\r\n",
-           run_get_front_correction_count(), run_get_front_correction_min_mm(),
+    printf("Search: front correction %d times, average %.1f mm, min %.1f mm, max %.1f mm (applied=%d)\r\n",
+           run_get_front_correction_count(), run_get_front_correction_average_mm(), run_get_front_correction_min_mm(),
            run_get_front_correction_max_mm(), FRONT_CORRECTION_ENABLE);
   }
   if (wall_ctrl_get_too_close_count() > 0) {

@@ -88,7 +88,8 @@
 /* 切れ目を見つける位置 [mm]（区画の入口の辺から。横センサは少し前を見るので、出口の辺 90mm より手前で見つかる）。
  * 今の値は見積もり（仮）。WALL_EDGE_ENABLE を 0 のまま探索し、モード7 No.1 の Search: wall edge … の
  * average（平均）をここに入れてから、WALL_EDGE_ENABLE を 1 にする */
-#define WALL_EDGE_POSITION_MM 70.0f
+/* 2026-11-03：探索 1 回で 2 回見つかり、平均 54.9mm（53.6〜56.3mm）だったので 70 → 55 にした（まだ ENABLE 0 のまま、回数を集める） */
+#define WALL_EDGE_POSITION_MM 55.0f
 #define WALL_EDGE_WINDOW_MM   20.0f  /* WALL_EDGE_POSITION_MM からこれ以上ずれて見つかったら、読み違いとして使わない [mm] */
 
 /* ---- 探索の横壁合わせ（sys/explore.c・ctrl/run.c。2026-11-02） ----
