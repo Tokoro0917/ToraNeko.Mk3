@@ -1,0 +1,4 @@
+#BEGIN RESULT
+Shortest: wall edge 1 times (applied=0)
+fedge 1: right, traveled 110 mm, speed 944 mm/s, error 0.6 mm
+#END RESULT
