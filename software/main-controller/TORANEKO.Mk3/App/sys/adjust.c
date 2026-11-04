@@ -197,12 +197,16 @@ static void print_front_correction_list(void)
   }
 }
 
-/* 壁切れの 1 回ごとの位置を、走った距離といっしょに 1 行ずつ出す */
+/* 壁切れの 1 回ごとの位置を、走った距離・どちらの壁で見つけたかといっしょに 1 行ずつ出す */
 static void print_wall_edge_list(void)
 {
   for (int i = 0; i < run_get_wall_edge_list_count(); i++) {
+    const char *side = "right";
+    if (run_get_wall_edge_list_is_left(i)) {
+      side = "left";
+    }
     uart_wait_free(RESULT_LINE_LENGTH_MAX);
-    printf("  edge %d: traveled %.0f mm, position %.1f mm\r\n", i + 1, run_get_wall_edge_list_traveled_mm(i),
+    printf("  edge %d: %s, traveled %.0f mm, position %.1f mm\r\n", i + 1, side, run_get_wall_edge_list_traveled_mm(i),
            run_get_wall_edge_list_mm(i));
   }
 }

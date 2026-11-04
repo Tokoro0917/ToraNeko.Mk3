@@ -120,6 +120,7 @@ static float s_wall_edge_min_mm = 0.0f;    /* いちばん手前で見つけた�
 static float s_wall_edge_max_mm = 0.0f;    /* いちばん先で見つけた位置 */
 static float s_edge_list_mm[EVENT_LIST_MAX];          /* 1 回ごとの、見つけた位置 [mm] */
 static float s_edge_list_traveled_mm[EVENT_LIST_MAX];   /* そのときまでに走った距離 [mm]（探索を始めてから） */
+static bool s_edge_list_is_left[EVENT_LIST_MAX];        /* 左の壁で見つけたか（false なら右の壁） */
 
 /* いちばん長かった待ち時間 [µs] */
 uint32_t run_get_longest_wait_us(void)
@@ -241,8 +242,8 @@ float run_get_front_correction_max_mm(void)
   return s_front_correction_max_mm;
 }
 
-/* 壁切れの位置 position_mm（区画の入口から）を記録する */
-static void record_wall_edge(float position_mm)
+/* 壁切れの位置 position_mm（区画の入口から）を記録する。is_left は左の壁で見つけたか */
+static void record_wall_edge(float position_mm, bool is_left)
 {
   if (s_wall_edge_count == 0 || position_mm < s_wall_edge_min_mm) {
     s_wall_edge_min_mm = position_mm;
@@ -254,6 +255,7 @@ static void record_wall_edge(float position_mm)
   if (s_wall_edge_count < EVENT_LIST_MAX) {
     s_edge_list_mm[s_wall_edge_count] = position_mm;
     s_edge_list_traveled_mm[s_wall_edge_count] = odometry_get_distance_mm() - s_search_start_mm;
+    s_edge_list_is_left[s_wall_edge_count] = is_left;
   }
   s_wall_edge_count = s_wall_edge_count + 1;
 }
@@ -305,6 +307,11 @@ float run_get_wall_edge_list_traveled_mm(int index)
   return s_edge_list_traveled_mm[index];
 }
 
+bool run_get_wall_edge_list_is_left(int index)
+{
+  return s_edge_list_is_left[index];
+}
+
 /* 壁切れを見つけた回数・平均・いちばん手前・いちばん先の位置 [mm]（モード7 No.1 で出す） */
 int run_get_wall_edge_count(void)
 {
@@ -329,15 +336,15 @@ float run_get_wall_edge_max_mm(void)
   return s_wall_edge_max_mm;
 }
 
-/* 壁の切れ目を見つけたときに呼ぶ。position_mm は、思っている今の位置（区画の入口から）。
+/* 壁の切れ目を見つけたときに呼ぶ。position_mm は、思っている今の位置（区画の入口から）。is_left は左の壁で見つけたか。
  * 決めた範囲の中なら記録し、WALL_EDGE_ENABLE が 1 なら、ずれた分だけ今の直進の残りを直す */
-static void on_wall_edge(float position_mm)
+static void on_wall_edge(float position_mm, bool is_left)
 {
   float error_mm = position_mm - WALL_EDGE_POSITION_MM;  /* + なら、思っているより手前にいる */
   if (error_mm > WALL_EDGE_WINDOW_MM || error_mm < -WALL_EDGE_WINDOW_MM) {
     return;  /* 離れすぎている：読み違いとして使わない */
   }
-  record_wall_edge(position_mm);
+  record_wall_edge(position_mm, is_left);
   if (WALL_EDGE_ENABLE == 1) {
     trajectory_add_distance(error_mm);
   }
@@ -363,8 +370,11 @@ static void go_straight_one_cell(void)
     }
     bool left_is_wall = wall_ctrl_has_wall_left();
     bool right_is_wall = wall_ctrl_has_wall_right();
-    if ((left_was_wall && !left_is_wall) || (right_was_wall && !right_is_wall)) {
-      on_wall_edge(start_mm + trajectory_get_distance_mm());
+    if (left_was_wall && !left_is_wall) {
+      on_wall_edge(start_mm + trajectory_get_distance_mm(), true);
+      edge_found = true;
+    } else if (right_was_wall && !right_is_wall) {
+      on_wall_edge(start_mm + trajectory_get_distance_mm(), false);
       edge_found = true;
     }
     left_was_wall = left_is_wall;
