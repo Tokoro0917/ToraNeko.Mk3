@@ -47,6 +47,7 @@
 #include "sys/sensor_record.h"
 #include "sys/shortest.h"
 #include "sys/turn_test.h"
+#include "sys/edge_test.h"
 #include "sys/sensor_view.h"
 #include "sys/ui.h"
 
@@ -130,6 +131,9 @@ bool mode_has_action(int mode, int number)
     }
     if (number == 3) {
       return true;  /* 壁までの距離の表示 */
+    }
+    if (number >= 4 && number <= 6) {
+      return true;  /* 壁切れ・柱の見え方テスト */
     }
     return false;
   }
@@ -334,6 +338,8 @@ static void run_selected(void)
     adjust_accel_test(s_number);
   } else if (s_mode == 5 && s_number == 2) {
     sensor_record_run();
+  } else if (s_mode == 5 && s_number >= 4 && s_number <= 6) {
+    edge_test_run(s_number);
   } else if (s_mode == 6 && s_number == 1) {
     adjust_straight();
   } else if (s_mode == 6 && s_number == 3) {

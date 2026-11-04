@@ -79,6 +79,7 @@ set(APP_SOURCES
     App/sys/shortest.c
     App/sys/suction.c
     App/sys/turn_test.c
+    App/sys/edge_test.c
     App/sys/sensor_view.c
     App/sys/ui.c
 )
