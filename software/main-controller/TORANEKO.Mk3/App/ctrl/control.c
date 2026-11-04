@@ -15,6 +15,7 @@
  *      （ずれ × WALL_KP + ずれの変わる速さ × WALL_KD。左の壁に近ければ右へ曲げる）
  *      斜めの補正が入っているときは（斜めの直進。KOGUMA の calWallConrol_NANAME）、前のセンサがしきい値を超えた分で決めた分を足す
  *      （ずれ × DIAG_KP ×（目標の速さ ÷ 1000）。左の柱・壁に近ければ右へ曲げる。下の「斜めの直進」）
+ *      横の壁の補正が入っているのに、左右とも使える壁がないときは、向きを迷路の向きに戻す分を足す（下の「向きを戻す」）
  *   4. 左 = 前に進む分 − 向きの分、右 = 前に進む分 + 向きの分 をモーターにかける
  *      （左回りが + なので、左に向けたいときは右を速く、左を遅くする）
  *   5. 走行ログに 1 行渡す（sys/log.c が、決めた間隔ごとに残す）
@@ -23,6 +24,21 @@
  *      - 目標の速さより、ずっと遅い（ぶつかった）、または、走っているはずなのにほとんど進んでいない（壁を押している）。
  *        この 2 つは、FAILSAFE_HOLD_MS 続いたら止める（KOGUMA_PORTING.md の F2〜F4）
  * 係数は config/ctrl_gains.h にある。
+ *
+ * ■ 向きを戻す（2026-11-04）
+ * 横の壁の補正は、横の位置を直すために向きを少し変える。壁がなくなると、変えた向きがそのまま残り、斜めに進んでしまう
+ * （柱のテストで、壁のない区間を 2〜4° 向いたまま走り、壁や柱に当たった）。そこで、縦横の直進で、横の壁の補正を入れて
+ * いるのに左右とも使える壁がないときは、ジャイロで測った向きを「迷路の向き」（基準の向きから 90° ごと）に戻す：
+ *     戻す角速度 ＝ −（向き − いちばん近い迷路の向き）× HEADING_HOLD_GAIN ×（目標の速さ ÷ 1000）（上限 HEADING_HOLD_LIMIT_DEG_S）
+ * 速さに比例させるのは、向きが戻るまでに進む距離を、速さによらずそろえるため（1000 ÷ HEADING_HOLD_GAIN mm で戻る）。
+ * 基準の向き：
+ *   - 制御を始めたときの向き（control_start()。最短走行は、これだけ）
+ *   - 壁で姿勢を合わせたとき（前壁合わせ・横壁合わせのあと。ctrl/run.c が control_reset_heading_reference() を呼ぶ）
+ *   - 両側の壁が使えて、まん中に近く、横に動いていない状態が HEADING_RESET_DISTANCE_MM 続いたとき
+ *     （control_set_heading_auto_reset(true) のときだけ。探索と最短走行で入れる。ジャイロの角度は、たくさん曲がるうちに
+ *      誤差がたまり（探索の 8 秒で 2〜3°）、吸引していると止まっていても 1 秒に約 0.14° 流れる（2026-11-04、モード6 No.3）
+ *      ので、壁に平行に走れているときの向きを、迷路の向きとみなす）
+ * ジャイロの角度は足し合わせた値なので、角速度の細かいゆれ（吸引ファンなど）はほとんど効かない。
  *
  * ■ 斜めの直進（control_set_on_diagonal(true) のあいだ）
  * 横のセンサは斜めの直進では使えない（壁が斜めに並ぶので、まん中の値が決まらない）。そのかわり、前のセンサで柱や壁に
@@ -52,9 +68,12 @@
  */
 #include "ctrl/control.h"
 
+#include <math.h>
+
 #include "config/ctrl_gains.h"
 #include "config/robot_params.h"
 #include "ctrl/odometry.h"
+#include "ctrl/side_edge.h"
 #include "ctrl/trajectory.h"
 #include "ctrl/wall_ctrl.h"
 #include "drv/fan.h"
@@ -87,6 +106,13 @@ static volatile bool s_diag_control = false;        /* 斜めの補正を入れ�
 static volatile float s_diag_error = 0.0f;          /* 斜めの補正のずれ（+ なら左の柱・壁に近い。ログ用） */
 static volatile float s_diag_omega_deg_s = 0.0f;    /* 斜めの補正で曲げた角速度（ログ用） */
 static volatile int s_diag_used = 0;                /* しきい値を超えた前のセンサ（0 なし、1 左前、2 右前。ログ用） */
+static volatile float s_heading_reference_deg = 0.0f;  /* 迷路の向きの基準（ジャイロの角度。ここから 90° ごとが迷路の向き） */
+static volatile bool s_heading_hold_enabled = false;   /* 向きを戻すのを入れるか（探索と最短走行で入れる） */
+static volatile bool s_heading_auto_reset = false;     /* 両側の壁が続いたら、基準の向きをリセットするか（探索と最短走行で入れる） */
+static volatile float s_both_walls_mm = 0.0f;          /* 両側の壁で、まっすぐ・まん中を走れている状態が続いた距離 [mm] */
+static volatile bool s_heading_hold_active = false;    /* 今、向きを戻しているか（ログ用） */
+static volatile float s_heading_error_deg = 0.0f;      /* 迷路の向きからのずれ [deg]（+ なら左を向いている。ログ用） */
+static volatile float s_heading_hold_omega_deg_s = 0.0f;  /* 向きを戻すために足した角速度（ログ用） */
 static volatile int s_slow_ticks = 0;               /* 「目標よりずっと遅い」が続いた制御周期の数 */
 static volatile int s_stall_ticks = 0;              /* 「ほとんど進んでいない」が続いた制御周期の数 */
 static volatile control_failsafe_reason_t s_failsafe_reason = CONTROL_FAILSAFE_NONE;  /* 最後に止めたわけ */
@@ -96,18 +122,46 @@ static volatile control_failsafe_reason_t s_failsafe_reason = CONTROL_FAILSAFE_N
 
 #define WALL_FILTER_RATIO 0.05f  /* ずれのゆれを減らす割合（1 周期で新しい値に 5% 近づける。約 10ms で落ち着く） */
 
-/* 制御を始める（止まっているところから）。今の向きを、まっすぐの向きにする */
-void control_start(void)
+/* control_start()・control_restart() の、共通のところ。今の向きを、まっすぐの向きにする */
+static void start_common(void)
 {
-  s_running = false;  /* 書いているあいだは、割り込みに使わせない */
   trajectory_reset();
   s_position_error_mm = 0.0f;
   s_angle_error_deg = 0.0f;
   s_start_angle_deg = imu_get_angle_deg();
+  s_both_walls_mm = 0.0f;
+  wall_ctrl_reset_end_check(odometry_get_distance_mm());
+  side_edge_reset();
   s_slow_ticks = 0;
   s_stall_ticks = 0;
   s_failsafe_reason = CONTROL_FAILSAFE_NONE;
+}
+
+/* 制御を始める（止まっているところから）。今の向きを、まっすぐの向きにする。
+ * 今の向きを迷路の向きの基準にし、向きを戻すのと、基準の向きのリセットは切っておく（使うときは、このあとで入れる。ctrl/run.c） */
+void control_start(void)
+{
+  s_running = false;  /* 書いているあいだは、割り込みに使わせない */
+  start_common();
+  s_heading_reference_deg = s_start_angle_deg;
+  s_heading_hold_enabled = false;
+  s_heading_auto_reset = false;
   s_running = true;   /* 最後に、動いているにする */
+}
+
+/* 探索の途中で止まって、また動き出すときに、制御を始め直す（ctrl/run.c）。control_start() と同じだが、
+ * 迷路の向きの基準と、向きを戻すかどうかは、そのままにする（止まったときに少し斜めを向いていても、それを基準にしない） */
+void control_restart(void)
+{
+  s_running = false;  /* 書いているあいだは、割り込みに使わせない */
+  start_common();
+  s_running = true;   /* 最後に、動いているにする */
+}
+
+/* 向きを戻す（先頭のコメントの「向きを戻す」）を入れる（true）・入れない（false）。探索と最短走行の発進で入れる（ctrl/run.c） */
+void control_set_heading_hold(bool on)
+{
+  s_heading_hold_enabled = on;
 }
 
 /* 横の壁に沿って走る補正を入れる（true）・入れない（false）。探索（ctrl/run.c）で入れる */
@@ -126,6 +180,30 @@ void control_set_on_diagonal(bool on)
 void control_set_diag_control(bool on)
 {
   s_diag_control = on;
+}
+
+/* ジャイロの角度 angle_deg の、いちばん近い迷路の向き（基準の向きから 90° ごと）からのずれ [deg]（−45〜+45°。+ なら左を向いている） */
+static float heading_error_from_grid_deg(float angle_deg)
+{
+  float turned_deg = angle_deg - s_heading_reference_deg;
+  float quarter_count = roundf(turned_deg / 90.0f);  /* roundf は、いちばん近い整数にする（math.h） */
+  return turned_deg - quarter_count * 90.0f;
+}
+
+/* 今の向きを、迷路の向き（90° ごと）とみなして、基準の向きをリセットする。
+ * 壁で姿勢を合わせたあとに呼ぶ（ctrl/run.c）。割り込みの中（両側の壁が続いたとき）からも呼ぶ */
+void control_reset_heading_reference(void)
+{
+  float angle_deg = imu_get_angle_deg();
+  /* 今の向きのずれの分だけ基準を動かすと、今の向きのずれが 0 になる（90° ごとの数は変わらない） */
+  s_heading_reference_deg = s_heading_reference_deg + heading_error_from_grid_deg(angle_deg);
+}
+
+/* 両側の壁が続いたら、基準の向きをリセットする（true）・しない（false）。探索と最短走行で入れる（ctrl/run.c） */
+void control_set_heading_auto_reset(bool on)
+{
+  s_heading_auto_reset = on;
+  s_both_walls_mm = 0.0f;
 }
 
 /* 前壁合わせを始める（true）・やめる（false）。止まっているときに使う（ctrl/run.c） */
@@ -294,6 +372,51 @@ static float wall_omega_deg_s(void)
   return omega;
 }
 
+/* 両側の壁で、まっすぐ・まん中を走れている状態が HEADING_RESET_DISTANCE_MM 続いたら、基準の向きをリセットする
+ * （control_set_heading_auto_reset(true) のときだけ。先頭のコメントの「向きを戻す」） */
+static void update_heading_auto_reset(void)
+{
+  if (!s_heading_auto_reset) {
+    return;
+  }
+  bool straight_and_centered = s_wall_control && trajectory_get_kind() == TRAJECTORY_STRAIGHT && s_wall_used == 3
+                               && fabsf(s_wall_error) < HEADING_RESET_WALL_ERROR_MAX
+                               && fabsf(s_wall_error_rate) < HEADING_RESET_WALL_RATE_MAX;
+  if (!straight_and_centered) {
+    s_both_walls_mm = 0.0f;
+    return;
+  }
+  s_both_walls_mm = s_both_walls_mm + odometry_get_speed_mm_s() * CTRL_PERIOD_S;
+  if (s_both_walls_mm >= HEADING_RESET_DISTANCE_MM) {
+    control_reset_heading_reference();
+    s_both_walls_mm = 0.0f;
+  }
+}
+
+/* 向きを戻すために、目標の角速度に足す分 [deg/s]（+ なら左へ曲げる。先頭のコメントの「向きを戻す」）。
+ * 縦横の直進で、横の壁の補正を入れているのに、左右とも使える壁がないときだけ。遅いときは 0 */
+static float heading_hold_omega_deg_s(void)
+{
+  float speed_mm_s = trajectory_get_speed_mm_s();
+  s_heading_error_deg = heading_error_from_grid_deg(imu_get_angle_deg());
+  s_heading_hold_active = s_heading_hold_enabled && s_wall_control && trajectory_get_kind() == TRAJECTORY_STRAIGHT
+                          && s_wall_used == 0
+                          && speed_mm_s >= WALL_CONTROL_MIN_SPEED_MM_S && !s_front_align;
+  if (!s_heading_hold_active) {
+    s_heading_hold_omega_deg_s = 0.0f;
+    return 0.0f;
+  }
+  float omega = -s_heading_error_deg * HEADING_HOLD_GAIN * (speed_mm_s / 1000.0f);  /* 左を向いている（+）なら右（-）へ */
+  if (omega > HEADING_HOLD_LIMIT_DEG_S) {
+    omega = HEADING_HOLD_LIMIT_DEG_S;
+  }
+  if (omega < -HEADING_HOLD_LIMIT_DEG_S) {
+    omega = -HEADING_HOLD_LIMIT_DEG_S;
+  }
+  s_heading_hold_omega_deg_s = omega;
+  return omega;
+}
+
 /* 斜めの補正で、目標の角速度に足す分 [deg/s]（+ なら左へ曲げる）。
  * 補正を入れていないとき、直進でないとき、遅いときは 0 */
 static float diag_omega_deg_s(void)
@@ -320,7 +443,11 @@ static float diag_omega_deg_s(void)
 static float turn_voltage(void)
 {
   float target_omega = target_omega_deg_s();
-  float correction_deg_s = wall_omega_deg_s() + diag_omega_deg_s();  /* 横の壁の補正と斜めの補正（同時には入れない） */
+  /* 横の壁の補正・斜めの補正・向きを戻す分（同時には入らない。向きを戻すのは、横の壁の補正で使える壁がないときだけ）。
+   * wall_omega_deg_s() が、使える壁（s_wall_used）を決めるので、向きを戻す分より先に呼ぶ */
+  float wall_deg_s = wall_omega_deg_s();
+  float correction_deg_s = wall_deg_s + diag_omega_deg_s() + heading_hold_omega_deg_s();
+  update_heading_auto_reset();
   float omega_error_deg_s = target_omega + correction_deg_s - imu_get_gyro_z_dps();
   s_angle_error_deg = s_angle_error_deg + omega_error_deg_s * CTRL_PERIOD_S;
 
@@ -351,7 +478,14 @@ static void record_log(void)
   values.speed_mm_s = odometry_get_speed_mm_s();
   values.speed_target_mm_s = target_speed_mm_s();
   values.omega_deg_s = imu_get_gyro_z_dps();
-  values.omega_target_deg_s = target_omega_deg_s() + s_wall_omega_deg_s + s_diag_omega_deg_s;
+  values.omega_target_deg_s = target_omega_deg_s() + s_wall_omega_deg_s + s_diag_omega_deg_s + s_heading_hold_omega_deg_s;
+  if (s_heading_hold_active) {
+    /* 向きを戻しているあいだは、wall_err の列に迷路の向きからのずれ [deg]、wall_p の列に戻す角速度（+ なら右へ）を入れる
+     * （logs/README.md。横の壁の補正は入っていないので、その列はあいている） */
+    values.wall_error = s_heading_error_deg;
+    values.wall_p = -s_heading_hold_omega_deg_s;
+    values.wall_d = 0.0f;
+  }
   values.wall_used = s_wall_used;
   values.wall_error = s_wall_error;
   values.wall_p = s_wall_error * WALL_KP;
@@ -473,6 +607,11 @@ void control_update(void)
   } else {
     trajectory_update();
   }
+  wall_ctrl_update_end_check(odometry_get_distance_mm());  /* 壁の終わりの見分け（ctrl/wall_ctrl.c） */
+  /* 壁の終わり・柱の端を見つける（ctrl/side_edge.c）。縦横の直進のときだけ（ターン・その場旋回・斜めの直進・前壁合わせのあいだは、
+   * 覚えた値を捨てる） */
+  bool orthogonal_straight = trajectory_get_kind() == TRAJECTORY_STRAIGHT && !s_on_diagonal && !s_front_align;
+  side_edge_update(odometry_get_distance_mm(), wall_ctrl_get_left(), wall_ctrl_get_right(), orthogonal_straight);
   float forward_v = forward_voltage();
   float turn_v = turn_voltage();
   s_left_voltage_v = forward_v - turn_v;

@@ -504,6 +504,15 @@ void turn_test_run(int number)
   s_turn_test_number = number;
 }
 
+/* 壁切れ・柱の見え方テスト（モード5 No.4〜6）：走らずに、呼ばれた回数と No. を覚える */
+static int s_edge_test_count = 0;
+static int s_edge_test_number = 0;
+void edge_test_run(int number)
+{
+  s_edge_test_count = s_edge_test_count + 1;
+  s_edge_test_number = number;
+}
+
 /* エンコーダの歪みを測る：回さずに、呼ばれたことを覚える */
 void encoder_cal_run(void)
 {
@@ -934,7 +943,7 @@ static void test_sensor_view(void)
   check(s_now_ms >= s_sensor_view_time_ms + LOADING_MS, "センサ値の表示を終えたあとも「ロード中」を出して戻る");
 }
 
-/* 最短走行のターン（モード3 No.1〜7）は、スタート待ちのあとに、選んだ No. で走る。No.8 からはまだない */
+/* 最短走行のターン（モード3 No.1〜7）・斜めの直進のテスト（No.8・9）は、スタート待ちのあとに、選んだ No. で走る */
 static void test_turn_test(void)
 {
   printf("[6] 最短走行のターン（モード3）\n");
@@ -952,6 +961,20 @@ static void test_turn_test(void)
   check(s_turn_test_count == 1 && s_turn_test_number == 7, "モード3 No.7 で、ターンのテストが No.7 で 1 回呼ばれる");
   check(mode_has_action(3, 1) && mode_has_action(3, 9) && !mode_has_action(3, 10) && !mode_has_action(3, 0),
         "モード3 は No.1〜9 だけ決定できる（No.8・9 は斜めの直進のテスト）");
+
+  /* 壁切れ・柱の見え方テスト（モード5 No.4〜6）も、スタート待ちのあとに、選んだ No. で走る */
+  reset_world();
+  mode_init();
+  s_edge_test_count = 0;
+  s_edge_test_number = 0;
+  rotate_left_at(100, 5);    /* モード5 */
+  rotate_right_at(100, 6);   /* No.6 */
+  press_switch_at(500);      /* 決定 */
+  hand_at(1500, 500);        /* スタート */
+  mode_run_once();
+  check(s_edge_test_count == 1 && s_edge_test_number == 6, "モード5 No.6 で、壁切れ・柱の見え方テストが No.6 で 1 回呼ばれる");
+  check(mode_has_action(5, 4) && mode_has_action(5, 6) && !mode_has_action(5, 7),
+        "モード5 の No.4〜6 は決定できて、No.7 はできない");
 
   /* 吸引 ON（モード6 No.3）も、スタート待ちのあとに始まる */
   reset_world();

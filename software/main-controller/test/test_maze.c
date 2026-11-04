@@ -2384,7 +2384,7 @@ static void test_explore_random(int maze_count)
  * shortest.c が使う「最短走行の動き」（ctrl/run.h の run_fast_*）を、ここで仮に作る（仮の機体 その 2）。
  * 仮の機体は、位置 [mm] と向き [deg] と速さを覚え、次のことを調べる。
  *   - 直進・斜めの直進：頼まれた終わりの速さが、その距離で上げられる速さ以下で、最高速以下か。
- *     始めの速さから、その距離で遅くしきれるか
+ *     始めの速さから、その距離で遅くしきれるか。縦横の直進では、始める位置（区画の境目から何 mm 先か。壁切れに使う）が合っているか
  *   - ターン：今の速さで曲がるように頼まれたか（0 より大きく、そのターンの速さ（config/turn_params.h）以下）。始める位置が、迷路の形どおり
  *     （大回り・斜め入りは区画のまん中、斜め出・V90 は壁の辺のまん中）か
  *   - 止まる：その距離で止まれるか
@@ -2436,6 +2436,34 @@ static void fast_straight(float distance_mm, float max_speed_mm_s, float end_spe
   s_fast_speed_mm_s = end_speed_mm_s;
 }
 
+/* 今の位置が、うしろの区画の境目から何 mm 先か（今の向きで。縦横を向いているときだけ使う。0 以上 90 未満） */
+static float position_in_cell_mm(void)
+{
+  float heading_deg = fmodf(s_fast_heading_deg + 3600.0f, 360.0f);
+  float in_cell_mm = 0.0f;
+  if (fabsf(heading_deg - 90.0f) < 1.0f) {
+    in_cell_mm = fmodf(s_fast_y_mm + 9000.0f, CELL_MM);           /* 北向き */
+  } else if (fabsf(heading_deg - 270.0f) < 1.0f) {
+    in_cell_mm = CELL_MM - fmodf(s_fast_y_mm + 9000.0f, CELL_MM);  /* 南向き */
+  } else if (heading_deg < 1.0f || heading_deg > 359.0f) {
+    in_cell_mm = fmodf(s_fast_x_mm + 9000.0f, CELL_MM);           /* 東向き */
+  } else {
+    in_cell_mm = CELL_MM - fmodf(s_fast_x_mm + 9000.0f, CELL_MM);  /* 西向き */
+  }
+  if (in_cell_mm > CELL_MM - 0.5f) {
+    in_cell_mm = in_cell_mm - CELL_MM;  /* 境目のすぐ手前（89.9mm など）は、境目の上（0mm）とみなす */
+  }
+  return in_cell_mm;
+}
+
+/* 直進を始める位置として教えられた値（うしろの区画の境目から何 mm 先か）が、仮の機体の位置と合っているか（±0.5mm） */
+static void check_start_in_cell(float start_in_cell_mm)
+{
+  if (fabsf(position_in_cell_mm() - start_in_cell_mm) > 0.5f) {
+    fast_error("直進を始める位置（区画の境目から）が、教えられた値と違う");
+  }
+}
+
 void run_fast_start(void)
 {
   s_fast_x_mm = HALF_CELL_MM;
@@ -2445,8 +2473,11 @@ void run_fast_start(void)
   s_fast_stopped = false;
 }
 
-void run_fast_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2)
+void run_fast_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2,
+                       float start_in_cell_mm)
 {
+  /* 始める位置が、うしろの区画の境目から何 mm 先か（壁切れに使う）。仮の機体の位置と合っているかを調べる */
+  check_start_in_cell(start_in_cell_mm);
   fast_straight(distance_mm, max_speed_mm_s, end_speed_mm_s, accel_mm_s2);
 }
 

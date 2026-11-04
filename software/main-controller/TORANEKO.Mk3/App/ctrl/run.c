@@ -31,11 +31,25 @@
  * センサを読んだときには、入口の辺から少し進んでいる（探索の計算のあいだも進む）ので、その分を足して比べる。
  * かけた量（かけないときは、かけるはずだった量）は数えておき、モード7 No.1 で出す（run_get_front_correction_*）。
  *
- * ■ 壁切れ（config/run_params.h の WALL_EDGE_*）
- * 探索で 1 区画まっすぐ進むあいだ、横のセンサを見続ける。入口で壁があった側が「壁なし」に変わったら、
- * そこは壁の切れ目（区画の出口の柱を過ぎたところ）なので、入口から WALL_EDGE_POSITION_MM のところにいるはず。
- * 思っていた位置とのずれだけ、この直進の残りの距離を直す（trajectory_add_distance()）。
- * 見つけた位置は数えておき、モード7 No.1 で出す（WALL_EDGE_POSITION_MM を決めるのに使う）。
+ * ■ 壁切れ（config/run_params.h の WALL_EDGE_*・FAST_WALL_EDGE_*。2026-11-04 に、柱も使えるように作り直した）
+ * 横のセンサで見つけた壁の終わり・柱の端（ctrl/side_edge.c）から、区画の境目の位置を求め、思っていた境目とのずれだけ、
+ * 今の直進の残りの距離を直す（trajectory_add_distance()）。横に壁のない区間でも、柱ごとに前後の位置が直る。
+ *   探索：1 区画まっすぐ進むあいだ（go_straight_one_cell()）。1 区画で 1 回だけ
+ *   最短走行：縦横の直進（run_fast_straight()）。1 本の直進で何回でもよい。直進を始める位置が、うしろの区画の境目から
+ *            何 mm 先か（start_in_cell_mm）を教えてもらい、そこから区画の境目は 90mm ごとにあるとする。
+ *            スタート区画の出口の境目は使わない（ほかの境目より 5mm ずれて見える。ctrl/side_edge.c の値のコメント）
+ * いちばん近い境目からのずれが WALL_EDGE_WINDOW_MM より大きければ、読み違いとして使わない。
+ * 直したら、そのぶん「思っている位置」もずらす（1 本の直進で 2 つ目からは、直したあとの位置で比べる。2026-11-04 に直した。
+ * 前は、1 つ目で直した分を差し引かずに 2 つ目でまた直していた）。同じ境目を左右で見つけたら、2 つ目はずれの半分だけ直し、
+ * 2 つの平均にする（機体が横にずれたり、向きがずれたりすると、左右で見える位置が逆向きにずれるので、平均で打ち消す。
+ * 2026-11-04 の柱のテストで、まん中より 6mm 右・左へ 3° のとき、同じ境目で左 +4.6mm・右 −0.6mm だった）。
+ * 見つけた端は 1 回ごとに覚えておき、モード7 No.1 で出す（使わなかったものも）。
+ * 最短走行も、2026-11-04 から直している（FAST_WALL_EDGE_ENABLE が 1）。
+ *
+ * ■ 壁切れの位置は、目標の位置ではなく、機体が本当にいる位置で数える（2026-11-04）
+ * 加速しているあいだ、機体は目標の位置より少し遅れてついていく（1170mm/s に加速しているとき 3.4mm。走行ログで確かめた）。
+ * 目標の位置で数えると、その遅れの分だけ「壁切れが遅く見えた」ことになってしまうので、制御の位置のずれ
+ * （目標 − 測った値。ctrl/control.c の control_get_position_error_mm()。制御を始めてからずっと足し合わせている）を引く。
  *
  * ■ 横壁合わせ（run_search_align_to_side()。2026-11-02）
  * 止まっている区画のまん中で、横の壁のほうへ 90° 回り、その壁で前壁合わせをして、元の向きに戻る。
@@ -63,6 +77,7 @@
 #include "config/turn_params.h"
 #include "ctrl/control.h"
 #include "ctrl/odometry.h"
+#include "ctrl/side_edge.h"
 #include "ctrl/trajectory.h"
 #include "ctrl/wall_ctrl.h"
 #include "drv/imu.h"
@@ -113,13 +128,15 @@ static float s_search_start_mm = 0.0f;                 /* 探索を始めたと�
 static float s_search_start_angle_deg = 0.0f;          /* 探索を始めたときの、ジャイロの角度 [deg]（区画の向きの基準） */
 static run_front_detail_t s_front_details[EVENT_LIST_MAX];  /* 1 回ごとの、くわしい様子（run.h） */
 
-/* 壁切れの記録（探索を始めるたびに 0 に戻す。位置は区画の入口の辺から [mm]） */
-static int s_wall_edge_count = 0;          /* 切れ目を見つけた回数 */
-static float s_wall_edge_sum_mm = 0.0f;    /* 見つけた位置の合計（平均を出すため） */
-static float s_wall_edge_min_mm = 0.0f;    /* いちばん手前で見つけた位置 */
-static float s_wall_edge_max_mm = 0.0f;    /* いちばん先で見つけた位置 */
-static float s_edge_list_mm[EVENT_LIST_MAX];          /* 1 回ごとの、見つけた位置 [mm] */
-static float s_edge_list_traveled_mm[EVENT_LIST_MAX];   /* そのときまでに走った距離 [mm]（探索を始めてから） */
+/* 壁切れ（探索・最短走行）の 1 回ごとの記録（走り始めるたびに 0 に戻す。最初の EVENT_LIST_MAX 回まで） */
+static int s_edge_count = 0;                       /* 見つけた回数 */
+static float s_edge_error_mm[EVENT_LIST_MAX];      /* いちばん近い境目からのずれ [mm]（+ なら、思っているより手前にいる） */
+static float s_edge_speed_mm_s[EVENT_LIST_MAX];    /* そのときの目標の速さ [mm/s] */
+static float s_edge_traveled_mm[EVENT_LIST_MAX];   /* そのときまでに走った距離 [mm]（走り始めてから） */
+static float s_edge_lag_mm[EVENT_LIST_MAX];        /* そのときの、目標の位置からの遅れ [mm]（制御の位置のずれ） */
+static bool s_edge_is_left[EVENT_LIST_MAX];        /* 左のセンサで見つけたか */
+static bool s_edge_is_pillar[EVENT_LIST_MAX];      /* 柱だけか（false なら壁の終わり） */
+static bool s_edge_used[EVENT_LIST_MAX];           /* 位置を直すのに使えたか（範囲の外・スタート区画の出口なら false） */
 
 /* いちばん長かった待ち時間 [µs] */
 uint32_t run_get_longest_wait_us(void)
@@ -241,23 +258,6 @@ float run_get_front_correction_max_mm(void)
   return s_front_correction_max_mm;
 }
 
-/* 壁切れの位置 position_mm（区画の入口から）を記録する */
-static void record_wall_edge(float position_mm)
-{
-  if (s_wall_edge_count == 0 || position_mm < s_wall_edge_min_mm) {
-    s_wall_edge_min_mm = position_mm;
-  }
-  if (s_wall_edge_count == 0 || position_mm > s_wall_edge_max_mm) {
-    s_wall_edge_max_mm = position_mm;
-  }
-  s_wall_edge_sum_mm = s_wall_edge_sum_mm + position_mm;
-  if (s_wall_edge_count < EVENT_LIST_MAX) {
-    s_edge_list_mm[s_wall_edge_count] = position_mm;
-    s_edge_list_traveled_mm[s_wall_edge_count] = odometry_get_distance_mm() - s_search_start_mm;
-  }
-  s_wall_edge_count = s_wall_edge_count + 1;
-}
-
 /* 1 回ごとの記録の数（EVENT_LIST_MAX より多くは覚えない） */
 static int list_count(int count)
 {
@@ -289,86 +289,181 @@ run_front_detail_t run_get_front_correction_detail(int index)
   return s_front_details[index];
 }
 
-/* 壁切れの 1 回ごとの記録：覚えている数と、index 番目の位置・そのときまでに走った距離 [mm]（モード7 No.1 で出す） */
-int run_get_wall_edge_list_count(void)
+/* 壁切れの 1 回ごとの記録（モード7 No.1 で出す）：覚えている数と、index 番目のずれ・速さ・走った距離・遅れ・左か・柱か・使えたか */
+int run_get_edge_count(void)
 {
-  return list_count(s_wall_edge_count);
+  return list_count(s_edge_count);
 }
 
-float run_get_wall_edge_list_mm(int index)
+float run_get_edge_error_mm(int index)
 {
-  return s_edge_list_mm[index];
+  return s_edge_error_mm[index];
 }
 
-float run_get_wall_edge_list_traveled_mm(int index)
+float run_get_edge_speed_mm_s(int index)
 {
-  return s_edge_list_traveled_mm[index];
+  return s_edge_speed_mm_s[index];
 }
 
-/* 壁切れを見つけた回数・平均・いちばん手前・いちばん先の位置 [mm]（モード7 No.1 で出す） */
-int run_get_wall_edge_count(void)
+float run_get_edge_traveled_mm(int index)
 {
-  return s_wall_edge_count;
+  return s_edge_traveled_mm[index];
 }
 
-float run_get_wall_edge_average_mm(void)
+float run_get_edge_lag_mm(int index)
 {
-  if (s_wall_edge_count == 0) {
-    return 0.0f;
+  return s_edge_lag_mm[index];
+}
+
+bool run_get_edge_is_left(int index)
+{
+  return s_edge_is_left[index];
+}
+
+bool run_get_edge_is_pillar(int index)
+{
+  return s_edge_is_pillar[index];
+}
+
+bool run_get_edge_used(int index)
+{
+  return s_edge_used[index];
+}
+
+/* 機体が本当にいる位置 [mm]：目標の位置 target_mm から、制御の位置のずれ（目標より遅れている分）を引く（先頭のコメント） */
+static float actual_position_mm(float target_mm)
+{
+  return target_mm - control_get_position_error_mm();
+}
+
+/* 壁切れを 1 回記録する（最初の EVENT_LIST_MAX 回まで） */
+static void record_edge(float error_mm, bool is_left, bool is_pillar, bool used)
+{
+  if (s_edge_count >= EVENT_LIST_MAX) {
+    s_edge_count = s_edge_count + 1;
+    return;
   }
-  return s_wall_edge_sum_mm / s_wall_edge_count;
+  s_edge_error_mm[s_edge_count] = error_mm;
+  s_edge_speed_mm_s[s_edge_count] = trajectory_get_speed_mm_s();
+  s_edge_traveled_mm[s_edge_count] = odometry_get_distance_mm() - s_search_start_mm;
+  s_edge_lag_mm[s_edge_count] = control_get_position_error_mm();
+  s_edge_is_left[s_edge_count] = is_left;
+  s_edge_is_pillar[s_edge_count] = is_pillar;
+  s_edge_used[s_edge_count] = used;
+  s_edge_count = s_edge_count + 1;
 }
 
-float run_get_wall_edge_min_mm(void)
+/* ---- 直進のあいだに、新しい端を見つけたかを見る（ctrl/side_edge.c の記録を読む） ----
+ * 直進を始めるときに watch_edges_start() を呼び、そのあと new_edge_found() で左右を見る。
+ * 道の上の位置（うしろの区画の境目から [mm]）＝ s_watch_origin_mm ＋ 走った距離（エンコーダ）。
+ * 機体が本当にいる位置で数えるので、始めたときの目標の位置から、制御の位置のずれ（遅れ）を引いておく */
+static int s_watch_seen_left = 0;        /* 直進を始めてから読んだ、左の端の数 */
+static int s_watch_seen_right = 0;       /* 同じく、右 */
+static float s_watch_origin_mm = 0.0f;   /* 道の上の位置 ＝ これ ＋ 走った距離 */
+static float s_found_boundary_mm = 0.0f; /* new_edge_found() で見つけた端から求めた、境目の道の上の位置 [mm] */
+static int s_last_used_cell = -1;        /* この直進で最後に使った境目が、何番目の境目か（道の上の位置 ÷ 90。まだなければ −1） */
+static bool s_last_used_is_left = false; /* その端が、左のセンサか */
+static bool s_found_is_pillar = false;   /* new_edge_found() で見つけた端が、柱だけか */
+
+/* 直進を始めるときに呼ぶ。start_mm は、直進を始める目標の位置（うしろの区画の境目から [mm]） */
+static void watch_edges_start(float start_mm)
 {
-  return s_wall_edge_min_mm;
+  s_watch_seen_left = side_edge_get_count(true);
+  s_watch_seen_right = side_edge_get_count(false);
+  s_watch_origin_mm = actual_position_mm(start_mm) - odometry_get_distance_mm();
+  s_last_used_cell = -1;
 }
 
-float run_get_wall_edge_max_mm(void)
+/* is_left 側（左なら true）に、新しい端があれば、その端から求めた境目の道の上の位置を s_found_boundary_mm に、
+ * 柱だけかを s_found_is_pillar に入れて true を返す。なければ false */
+static bool new_edge_found(bool is_left)
 {
-  return s_wall_edge_max_mm;
+  int seen = s_watch_seen_right;
+  if (is_left) {
+    seen = s_watch_seen_left;
+  }
+  int count = side_edge_get_count(is_left);
+  if (count == seen) {
+    return false;
+  }
+  /* 端の記録は割り込みが書くので、読んでいるあいだに次の端で書き換わっていないかを、数を読み直して確かめる
+   * （書き換わっていたら、もう一度読む。ctrl/side_edge.c の先頭のコメント） */
+  float boundary_mm = side_edge_get_boundary_mm(is_left);
+  bool is_pillar = side_edge_is_pillar(is_left);
+  while (side_edge_get_count(is_left) != count) {
+    count = side_edge_get_count(is_left);
+    boundary_mm = side_edge_get_boundary_mm(is_left);
+    is_pillar = side_edge_is_pillar(is_left);
+  }
+  if (is_left) {
+    s_watch_seen_left = count;
+  } else {
+    s_watch_seen_right = count;
+  }
+  s_found_boundary_mm = s_watch_origin_mm + boundary_mm;
+  s_found_is_pillar = is_pillar;
+  return true;
 }
 
-/* 壁の切れ目を見つけたときに呼ぶ。position_mm は、思っている今の位置（区画の入口から）。
- * 決めた範囲の中なら記録し、WALL_EDGE_ENABLE が 1 なら、ずれた分だけ今の直進の残りを直す */
-static void on_wall_edge(float position_mm)
+/* 境目の道の上の位置 boundary_mm の、いちばん近い区画の境目（90mm ごと）からのずれ [mm]（+ なら、思っているより手前にいる） */
+static float boundary_error_mm(float boundary_mm)
 {
-  float error_mm = position_mm - WALL_EDGE_POSITION_MM;  /* + なら、思っているより手前にいる */
+  float cell_index = roundf(boundary_mm / CELL_MM);  /* roundf は、いちばん近い整数にする（math.h） */
+  return boundary_mm - cell_index * CELL_MM;
+}
+
+/* 見つけた端（s_found_*）を、壁切れとして使う。ずれが範囲の中なら記録して、enable が 1 なら今の直進の残りを直す。
+ * skip_start_cell が true なら、スタート区画の出口の境目（道の上の 90mm）は使わない（先頭のコメント）。使ったら true */
+static bool use_found_edge(bool is_left, int enable, bool skip_start_cell)
+{
+  float error_mm = boundary_error_mm(s_found_boundary_mm);
+  int cell = (int)roundf(s_found_boundary_mm / CELL_MM);  /* 何番目の境目か（整数にする） */
+  bool used = true;
   if (error_mm > WALL_EDGE_WINDOW_MM || error_mm < -WALL_EDGE_WINDOW_MM) {
-    return;  /* 離れすぎている：読み違いとして使わない */
+    used = false;  /* 離れすぎている：読み違いとして使わない */
   }
-  record_wall_edge(position_mm);
-  if (WALL_EDGE_ENABLE == 1) {
-    trajectory_add_distance(error_mm);
+  if (skip_start_cell && cell <= 1) {
+    used = false;  /* スタート区画の出口の境目 */
   }
+  record_edge(error_mm, is_left, s_found_is_pillar, used);
+  if (!used || enable != 1) {
+    return used;
+  }
+  /* 同じ境目を、反対側のセンサでもう見つけて直していたら、2 つ目はずれの半分だけ直す（2 つの平均にする。先頭のコメント） */
+  float correction_mm = error_mm;
+  if (cell == s_last_used_cell && is_left != s_last_used_is_left) {
+    correction_mm = error_mm / 2.0f;
+  }
+  trajectory_add_distance(correction_mm);
+  /* 直したぶん、思っている位置もずらす（本当の位置は、思っていた位置より correction_mm 手前だった） */
+  s_watch_origin_mm = s_watch_origin_mm - correction_mm;
+  s_last_used_cell = cell;
+  s_last_used_is_left = is_left;
+  return used;
 }
 
 /* 探索で 1 区画まっすぐ進む（走っている → 次の区画の入口の辺へ）。進むあいだ、壁切れを探す（先頭のコメント）。
- * 見つけるのは 1 区画で 1 回だけ（左右どちらか先に見つかったほう） */
+ * 使うのは 1 区画で 1 回だけ（左右どちらか先に見つかったほう） */
 static void go_straight_one_cell(void)
 {
   if (failsafe_is_stopped()) {
     return;
   }
   /* 区画の入口の辺から、もう進んでしまった分（この直進では引かれる分）。位置は「入口から」で数えるので足す */
-  float start_mm = trajectory_get_overrun_mm();
-  bool left_was_wall = wall_ctrl_has_wall_left();   /* 入口で見た、この区画の横の壁 */
-  bool right_was_wall = wall_ctrl_has_wall_right();
-  bool edge_found = false;
+  watch_edges_start(trajectory_get_overrun_mm());
+  bool edge_used = false;
 
   trajectory_start_straight(CELL_MM, SEARCH_SPEED_MM_S, SEARCH_SPEED_MM_S, SEARCH_ACCEL_MM_S2);
   while (!trajectory_is_done() && !failsafe_is_stopped()) {
-    if (edge_found) {
-      continue;  /* もう見つけた。あとは着くのを待つ（休まずに待つ理由は wait_until_done() と同じ） */
+    if (edge_used) {
+      continue;  /* もう使った。あとは着くのを待つ（休まずに待つ理由は wait_until_done() と同じ） */
     }
-    bool left_is_wall = wall_ctrl_has_wall_left();
-    bool right_is_wall = wall_ctrl_has_wall_right();
-    if ((left_was_wall && !left_is_wall) || (right_was_wall && !right_is_wall)) {
-      on_wall_edge(start_mm + trajectory_get_distance_mm());
-      edge_found = true;
+    if (new_edge_found(true)) {
+      edge_used = use_found_edge(true, WALL_EDGE_ENABLE, false);
     }
-    left_was_wall = left_is_wall;
-    right_was_wall = right_is_wall;
+    if (!edge_used && new_edge_found(false)) {
+      edge_used = use_found_edge(false, WALL_EDGE_ENABLE, false);
+    }
   }
 }
 
@@ -426,7 +521,8 @@ static void align_if_front_wall(void)
 {
   if (wall_ctrl_has_wall_front()) {
     align_to_front_wall();
-    control_start();  /* 直した向きを、まっすぐの向きにし直す */
+    control_restart();                   /* 直した向きを、まっすぐの向きにし直す */
+    control_reset_heading_reference();   /* 前の壁で向きを合わせたので、今の向きを迷路の向きとみなす（ctrl/control.c） */
   }
 }
 
@@ -441,11 +537,11 @@ static void start_control(void)
   s_search_start_mm = odometry_get_distance_mm();
   s_search_start_angle_deg = imu_get_angle_deg();
   wall_ctrl_clear_too_close();
-  s_wall_edge_count = 0;
-  s_wall_edge_sum_mm = 0.0f;
+  s_edge_count = 0;
   log_start(SEARCH_LOG_INTERVAL_MS);
   control_set_wall_control(true);  /* 横の壁に沿って走る補正を入れる */
-  control_start();
+  control_start();                 /* 今の向き（スタート区画で、お尻を後ろの壁に付けた向き）を、迷路の向きの基準にする */
+  control_set_heading_hold(true);  /* 使える横の壁がないときは、向きを迷路の向きに戻す（ctrl/control.c） */
 }
 
 /* スタート区画から走り出し、北隣の区画 (0, 1) の入口の辺まで進む。
@@ -456,6 +552,7 @@ void run_search_start(void)
     return;
   }
   start_control();
+  control_set_heading_auto_reset(true);  /* 探索は長く走るので、両側の壁が続いたら、基準の向きをリセットする（ctrl/control.c） */
   go_straight(START_OFFSET_MM + HALF_CELL_MM);
   mark_return();
 }
@@ -526,7 +623,7 @@ void run_search_align_to_side(bool is_left)
   if (is_left) {
     angle_deg = 90.0f;
   }
-  control_start();  /* 止まっているので、制御を始め直す */
+  control_restart();  /* 止まっているので、制御を始め直す（迷路の向きの基準は、そのまま） */
   pivot(angle_deg);
   align_if_front_wall();
   pivot(-angle_deg);
@@ -544,7 +641,7 @@ void run_search_go_from_center(run_turn_t turn)
   if (failsafe_is_stopped()) {
     return;
   }
-  control_start();  /* 止まっているので、制御を始め直す */
+  control_restart();  /* 止まっているので、制御を始め直す（迷路の向きの基準は、そのまま） */
   align_if_front_wall();
   if (turn == RUN_TURN_LEFT) {
     pivot(90.0f);
@@ -591,18 +688,36 @@ void run_fast_start(void)
     return;
   }
   start_control();
+  /* 両側の壁が続いたら、基準の向きをリセットする（ctrl/control.c）。2026-11-04 に、吸引したまま止めておくと、
+   * ジャイロが 1 秒に約 0.14° 流れた（モード6 No.3。30 秒で 4°）ので、数秒の最短走行でも入れる */
+  control_set_heading_auto_reset(true);
 }
 
 /* distance_mm まっすぐ進む。max_speed_mm_s まで速くしてから、end_speed_mm_s（次のターンの速さ）まで遅くして戻る。
- * 横の壁に沿って走る補正を入れる */
-void run_fast_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2)
+ * 横の壁に沿って走る補正を入れる。進むあいだ、壁切れを探す（先頭のコメントの「■ 壁切れ」）。
+ * start_in_cell_mm は、直進を始める位置が、うしろの区画の境目から何 mm 先か（区画のまん中なら 45、境目なら 0。
+ * スタート区画から走り出すときは HALF_CELL_MM − START_OFFSET_MM で、そのときはスタート区画の出口の境目を使わない） */
+void run_fast_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2,
+                       float start_in_cell_mm)
 {
   if (failsafe_is_stopped()) {
     return;
   }
   control_set_wall_control(true);
+  bool from_start_cell = start_in_cell_mm == HALF_CELL_MM - START_OFFSET_MM;
+  /* 前の動きが終わってから、もう進んでしまった分（この直進では引かれる分）。位置は「始める位置から」で数えるので足す */
+  watch_edges_start(start_in_cell_mm + trajectory_get_overrun_mm());
+
   trajectory_start_straight(distance_mm, max_speed_mm_s, end_speed_mm_s, accel_mm_s2);
-  wait_until_done();
+  /* 着くまで、休まずに端を見る（休まずに待つ理由は wait_until_done() と同じ） */
+  while (!trajectory_is_done() && !failsafe_is_stopped()) {
+    if (new_edge_found(true)) {
+      use_found_edge(true, FAST_WALL_EDGE_ENABLE, from_start_cell);
+    }
+    if (new_edge_found(false)) {
+      use_found_edge(false, FAST_WALL_EDGE_ENABLE, from_start_cell);
+    }
+  }
 }
 
 /* 斜めに distance_mm まっすぐ進む（run_fast_straight と同じ。横の壁に沿って走る補正のかわりに、斜めの補正を入れる。

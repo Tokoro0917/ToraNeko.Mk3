@@ -48,6 +48,7 @@ set(APP_SOURCES
     App/ctrl/control.c
     App/ctrl/odometry.c
     App/ctrl/run.c
+    App/ctrl/side_edge.c
     App/ctrl/trajectory.c
     App/ctrl/wall_ctrl.c
     App/ctrl/wall_dist.c
@@ -79,6 +80,7 @@ set(APP_SOURCES
     App/sys/shortest.c
     App/sys/suction.c
     App/sys/turn_test.c
+    App/sys/edge_test.c
     App/sys/sensor_view.c
     App/sys/ui.c
 )

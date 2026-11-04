@@ -197,13 +197,31 @@ static void print_front_correction_list(void)
   }
 }
 
-/* 壁切れの 1 回ごとの位置を、走った距離といっしょに 1 行ずつ出す */
-static void print_wall_edge_list(void)
+/* 壁切れ（探索・最短走行）の 1 回ごとのずれを、左右・柱か壁の終わりか・速さ・走った距離・遅れ・使えたかといっしょに 1 行ずつ出す。
+ * 1 行の形：  edge 1: left, pillar, traveled 110 mm, speed 800 mm/s, error 1.2 mm, lag 0.8 mm, used */
+static void print_edge_list(void)
 {
-  for (int i = 0; i < run_get_wall_edge_list_count(); i++) {
+  int count = run_get_edge_count();
+  if (count == 0) {
+    return;
+  }
+  printf("Wall edge: %d times (search applied=%d, shortest applied=%d)\r\n", count, WALL_EDGE_ENABLE, FAST_WALL_EDGE_ENABLE);
+  for (int i = 0; i < count; i++) {
+    const char *side = "right";
+    if (run_get_edge_is_left(i)) {
+      side = "left";
+    }
+    const char *kind = "wall end";
+    if (run_get_edge_is_pillar(i)) {
+      kind = "pillar";
+    }
+    const char *used = "not used";
+    if (run_get_edge_used(i)) {
+      used = "used";
+    }
     uart_wait_free(RESULT_LINE_LENGTH_MAX);
-    printf("  edge %d: traveled %.0f mm, position %.1f mm\r\n", i + 1, run_get_wall_edge_list_traveled_mm(i),
-           run_get_wall_edge_list_mm(i));
+    printf("  edge %d: %s, %s, traveled %.0f mm, speed %.0f mm/s, error %.1f mm, lag %.1f mm, %s\r\n", i + 1, side, kind,
+           run_get_edge_traveled_mm(i), run_get_edge_speed_mm_s(i), run_get_edge_error_mm(i), run_get_edge_lag_mm(i), used);
   }
 }
 
@@ -224,12 +242,7 @@ static void print_search_wait(void)
     printf("Search: side wall too close %d times, nearest %.1f mm (aligned=%d)\r\n",
            wall_ctrl_get_too_close_count(), wall_ctrl_get_too_close_min_mm(), SIDE_ALIGN_ENABLE);
   }
-  if (run_get_wall_edge_count() > 0) {
-    printf("Search: wall edge %d times, average %.1f mm, min %.1f mm, max %.1f mm from cell entry (applied=%d)\r\n",
-           run_get_wall_edge_count(), run_get_wall_edge_average_mm(), run_get_wall_edge_min_mm(),
-           run_get_wall_edge_max_mm(), WALL_EDGE_ENABLE);
-    print_wall_edge_list();
-  }
+  print_edge_list();
 }
 
 /* 最後に走らせた動き（直進・その場旋回・スラローム）の結果を出す。まだ何も走らせていなければ何も出さない */
@@ -278,7 +291,7 @@ static void print_failsafe_reason(void)
 void adjust_print_last_result(void)
 {
   if (s_result.kind == RESULT_NONE && run_get_longest_wait_us() == 0 && run_get_front_correction_count() == 0
-      && run_get_wall_edge_count() == 0 && wall_ctrl_get_too_close_count() == 0
+      && run_get_edge_count() == 0 && wall_ctrl_get_too_close_count() == 0
       && control_get_failsafe_reason() == CONTROL_FAILSAFE_NONE) {
     return;
   }
@@ -438,7 +451,8 @@ void adjust_front_align(void)
  * モード6 No.3 吸引 ON（2026-10-28）
  * ------------------------------------------------------------------------- */
 
-#define SUCTION_BLINK_MS   500  /* 吸っているあいだ、真ん中の 3 個を点滅させる間隔 [ms] */
+#define SUCTION_BLINK_MS   500  /* 吸っているあいだ、真ん中の 3 個を点滅させる間隔 [ms]（ジャイロの角度も、この間隔で出す） */
+#define SUCTION_SETTLE_MS  500  /* 吸引を上げてから、ジャイロのゼロ点を測る前に待つ時間 [ms]（最短走行と同じ） */
 
 /* 真ん中の 3 個（LED3・4・5）を点ける・消す */
 static void show_middle_leds(bool on)
@@ -449,16 +463,25 @@ static void show_middle_leds(bool on)
 }
 
 /* モード6 No.3 吸引 ON：吸引ファンを回し、スイッチが押されるまで吸い続ける（機体は動かない）。
- * 机に置いて吸い付くか、手で持ち上げてどれくらいの力が要るかを見て、SUCTION_VOLTAGE_V を決める */
+ * 机に置いて吸い付くか、手で持ち上げてどれくらいの力が要るかを見て、SUCTION_VOLTAGE_V を決める。
+ * 2026-11-04 から、吸っているあいだ、ジャイロの角度を 0.5 秒ごとにシリアルに出す（`SUCTION_GYRO,時間[s],角度[deg]`）。
+ * 機体は止まっているので、角度が変わった分は、吸引ファンの振動などでジャイロが流れた分（向きを戻す補正が、
+ * ジャイロの角度を使うので、どれくらい流れるかを見る。ctrl/control.c の「向きを戻す」） */
 void adjust_suction_on(void)
 {
   suction_ramp_up();  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
+  ui_wait_ms(SUCTION_SETTLE_MS);
+  imu_remeasure_offset();  /* 吸ったまま、ジャイロのゼロ点を測り直す（最短走行と同じ。約 0.5 秒） */
+  uint32_t start_ms = timebase_get_ms();
   bool lit = true;
   uint32_t next_toggle_ms = timebase_get_ms() + SUCTION_BLINK_MS;
   while (!ui_switch_pushed()) {
     if (timebase_get_ms() >= next_toggle_ms) {
       lit = !lit;
       next_toggle_ms = next_toggle_ms + SUCTION_BLINK_MS;
+      /* LED を切り替えるたび（0.5 秒ごと）に、ジャイロの角度を出す */
+      float elapsed_s = (timebase_get_ms() - start_ms) / 1000.0f;
+      printf("SUCTION_GYRO,%.1f,%.2f\r\n", elapsed_s, imu_get_angle_deg());
     }
     show_middle_leds(lit);
     ui_wait_ms(UI_POLL_MS);

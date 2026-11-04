@@ -1,0 +1,6 @@
+#BEGIN RESULT
+Shortest: wall edge 2 times (applied=0)
+fedge 1: right, traveled 18 mm, speed 480 mm/s, error -3.6 mm, lag 1.9 mm
+fedge 2: left, traveled 111 mm, speed 800 mm/s, error 1.5 mm, lag 0.9 mm
+Failsafe: much slower than target (hit something)
+#END RESULT
