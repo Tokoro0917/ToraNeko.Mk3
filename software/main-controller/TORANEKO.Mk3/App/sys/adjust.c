@@ -225,8 +225,9 @@ static void print_fast_wall_edge(void)
       side = "left";
     }
     uart_wait_free(RESULT_LINE_LENGTH_MAX);
-    printf("  fedge %d: %s, traveled %.0f mm, speed %.0f mm/s, error %.1f mm\r\n", i + 1, side,
-           run_get_fast_wall_edge_traveled_mm(i), run_get_fast_wall_edge_speed_mm_s(i), run_get_fast_wall_edge_error_mm(i));
+    printf("  fedge %d: %s, traveled %.0f mm, speed %.0f mm/s, error %.1f mm, lag %.1f mm\r\n", i + 1, side,
+           run_get_fast_wall_edge_traveled_mm(i), run_get_fast_wall_edge_speed_mm_s(i), run_get_fast_wall_edge_error_mm(i),
+           run_get_fast_wall_edge_lag_mm(i));
   }
 }
 

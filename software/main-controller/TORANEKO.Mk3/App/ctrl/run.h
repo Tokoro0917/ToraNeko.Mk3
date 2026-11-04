@@ -123,6 +123,7 @@ float run_get_fast_wall_edge_error_mm(int index);
 float run_get_fast_wall_edge_speed_mm_s(int index);
 float run_get_fast_wall_edge_traveled_mm(int index);
 bool run_get_fast_wall_edge_is_left(int index);
+float run_get_fast_wall_edge_lag_mm(int index);  /* そのときの、目標の位置からの遅れ [mm]（ずれからは引いてある） */
 
 /* 前壁補正を測ったときの、くわしい様子（1 回ごと。最初の 40 回まで）。2026-11-03 に足した。
  * 止めて測ると合っているのに、走っていると大きくずれる場所があったので、そのとき何が起きていたかを見る */

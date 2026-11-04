@@ -44,6 +44,11 @@
  * あるとして、いちばん近い「区画の入口 + 切れ目を見つける位置」とのずれを求める。1 本の直進で、何回見つけてもよい。
  * 今は測るだけ（FAST_WALL_EDGE_ENABLE が 0）。モード7 No.1 で、ずれと、そのときの速さを出す。
  *
+ * ■ 壁切れの位置は、目標の位置ではなく、機体が本当にいる位置で数える（2026-11-04）
+ * 加速しているあいだ、機体は目標の位置より少し遅れてついていく（1170mm/s に加速しているとき 3.4mm。走行ログで確かめた）。
+ * 目標の位置で数えると、その遅れの分だけ「壁切れが遅く見えた」ことになってしまうので、制御の位置のずれ
+ * （目標 − 測った値。ctrl/control.c の control_get_position_error_mm()。制御を始めてからずっと足し合わせている）を引く。
+ *
  * ■ 横壁合わせ（run_search_align_to_side()。2026-11-02）
  * 止まっている区画のまん中で、横の壁のほうへ 90° 回り、その壁で前壁合わせをして、元の向きに戻る。
  * 前壁合わせで、その壁までの距離（＝左右の位置）と、壁に対する向きが直る。戻るときは、直した向きから 90° 回るので、
@@ -135,6 +140,7 @@ static float s_fast_edge_error_mm[EVENT_LIST_MAX];        /* ずれ [mm]（+ な
 static float s_fast_edge_speed_mm_s[EVENT_LIST_MAX];      /* そのときの目標の速さ [mm/s] */
 static float s_fast_edge_traveled_mm[EVENT_LIST_MAX];     /* そのときまでに走った距離 [mm]（最短走行を始めてから） */
 static bool s_fast_edge_is_left[EVENT_LIST_MAX];          /* 左の壁で見つけたか */
+static float s_fast_edge_lag_mm[EVENT_LIST_MAX];          /* そのときの、目標の位置からの遅れ [mm]（制御の位置のずれ） */
 
 /* いちばん長かった待ち時間 [µs] */
 uint32_t run_get_longest_wait_us(void)
@@ -350,6 +356,12 @@ float run_get_wall_edge_max_mm(void)
   return s_wall_edge_max_mm;
 }
 
+/* 機体が本当にいる位置 [mm]：目標の位置 target_mm から、制御の位置のずれ（目標より遅れている分）を引く（先頭のコメント） */
+static float actual_position_mm(float target_mm)
+{
+  return target_mm - control_get_position_error_mm();
+}
+
 /* 壁の切れ目を見つけるはずの位置 [mm]（区画の入口から）。is_left は左の壁か（左右で違う。config/run_params.h） */
 static float wall_edge_expected_mm(bool is_left)
 {
@@ -394,10 +406,10 @@ static void go_straight_one_cell(void)
     bool left_is_wall = wall_ctrl_has_wall_left();
     bool right_is_wall = wall_ctrl_has_wall_right();
     if (left_was_wall && !left_is_wall) {
-      on_wall_edge(start_mm + trajectory_get_distance_mm(), true);
+      on_wall_edge(actual_position_mm(start_mm + trajectory_get_distance_mm()), true);
       edge_found = true;
     } else if (right_was_wall && !right_is_wall) {
-      on_wall_edge(start_mm + trajectory_get_distance_mm(), false);
+      on_wall_edge(actual_position_mm(start_mm + trajectory_get_distance_mm()), false);
       edge_found = true;
     }
     left_was_wall = left_is_wall;
@@ -637,6 +649,7 @@ static void record_fast_wall_edge(float error_mm, bool is_left)
   s_fast_edge_speed_mm_s[s_fast_edge_count] = trajectory_get_speed_mm_s();
   s_fast_edge_traveled_mm[s_fast_edge_count] = odometry_get_distance_mm() - s_search_start_mm;
   s_fast_edge_is_left[s_fast_edge_count] = is_left;
+  s_fast_edge_lag_mm[s_fast_edge_count] = control_get_position_error_mm();
   s_fast_edge_count = s_fast_edge_count + 1;
 }
 
@@ -682,10 +695,10 @@ void run_fast_straight(float distance_mm, float max_speed_mm_s, float end_speed_
     bool right_is_wall = wall_ctrl_has_wall_right();
     if (moved_mm >= FAST_WALL_EDGE_MASK_MM) {
       if (left_was_wall && !left_is_wall) {
-        on_fast_wall_edge(start_mm + moved_mm, true);
+        on_fast_wall_edge(actual_position_mm(start_mm + moved_mm), true);
       }
       if (right_was_wall && !right_is_wall) {
-        on_fast_wall_edge(start_mm + moved_mm, false);
+        on_fast_wall_edge(actual_position_mm(start_mm + moved_mm), false);
       }
     }
     left_was_wall = left_is_wall;
@@ -717,6 +730,11 @@ float run_get_fast_wall_edge_traveled_mm(int index)
 bool run_get_fast_wall_edge_is_left(int index)
 {
   return s_fast_edge_is_left[index];
+}
+
+float run_get_fast_wall_edge_lag_mm(int index)
+{
+  return s_fast_edge_lag_mm[index];
 }
 
 /* 斜めに distance_mm まっすぐ進む（run_fast_straight と同じ。横の壁に沿って走る補正のかわりに、斜めの補正を入れる。
