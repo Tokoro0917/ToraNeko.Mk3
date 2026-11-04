@@ -24,6 +24,7 @@
 #include "config/robot_params.h"
 #include "ctrl/control.h"
 #include "ctrl/odometry.h"
+#include "ctrl/side_edge.h"
 #include "ctrl/trajectory.h"
 #include "ctrl/wall_ctrl.h"
 #include "drv/fan.h"
@@ -151,6 +152,19 @@ void wall_ctrl_reset_end_check(float distance_mm)
 void wall_ctrl_update_end_check(float distance_mm)
 {
   (void)distance_mm;
+}
+
+/* 壁の終わり・柱の端を見つける（ctrl/side_edge.c）。このテストでは使わないので、何もしない */
+void side_edge_reset(void)
+{
+}
+
+void side_edge_update(float distance_mm, int32_t left_value, int32_t right_value, bool is_straight)
+{
+  (void)distance_mm;
+  (void)left_value;
+  (void)right_value;
+  (void)is_straight;
 }
 
 int32_t wall_ctrl_get_front_left(void)

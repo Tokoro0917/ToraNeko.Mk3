@@ -197,37 +197,31 @@ static void print_front_correction_list(void)
   }
 }
 
-/* 壁切れの 1 回ごとの位置を、走った距離・どちらの壁で見つけたかといっしょに 1 行ずつ出す */
-static void print_wall_edge_list(void)
+/* 壁切れ（探索・最短走行）の 1 回ごとのずれを、左右・柱か壁の終わりか・速さ・走った距離・遅れ・使えたかといっしょに 1 行ずつ出す。
+ * 1 行の形：  edge 1: left, pillar, traveled 110 mm, speed 800 mm/s, error 1.2 mm, lag 0.8 mm, used */
+static void print_edge_list(void)
 {
-  for (int i = 0; i < run_get_wall_edge_list_count(); i++) {
-    const char *side = "right";
-    if (run_get_wall_edge_list_is_left(i)) {
-      side = "left";
-    }
-    uart_wait_free(RESULT_LINE_LENGTH_MAX);
-    printf("  edge %d: %s, traveled %.0f mm, position %.1f mm\r\n", i + 1, side, run_get_wall_edge_list_traveled_mm(i),
-           run_get_wall_edge_list_mm(i));
-  }
-}
-
-/* 最短走行の壁切れの 1 回ごとのずれを、どちらの壁か・速さ・走った距離といっしょに 1 行ずつ出す（最短走行を走らせていれば） */
-static void print_fast_wall_edge(void)
-{
-  int count = run_get_fast_wall_edge_count();
+  int count = run_get_edge_count();
   if (count == 0) {
     return;
   }
-  printf("Shortest: wall edge %d times (applied=%d)\r\n", count, FAST_WALL_EDGE_ENABLE);
+  printf("Wall edge: %d times (search applied=%d, shortest applied=%d)\r\n", count, WALL_EDGE_ENABLE, FAST_WALL_EDGE_ENABLE);
   for (int i = 0; i < count; i++) {
     const char *side = "right";
-    if (run_get_fast_wall_edge_is_left(i)) {
+    if (run_get_edge_is_left(i)) {
       side = "left";
     }
+    const char *kind = "wall end";
+    if (run_get_edge_is_pillar(i)) {
+      kind = "pillar";
+    }
+    const char *used = "not used";
+    if (run_get_edge_used(i)) {
+      used = "used";
+    }
     uart_wait_free(RESULT_LINE_LENGTH_MAX);
-    printf("  fedge %d: %s, traveled %.0f mm, speed %.0f mm/s, error %.1f mm, lag %.1f mm\r\n", i + 1, side,
-           run_get_fast_wall_edge_traveled_mm(i), run_get_fast_wall_edge_speed_mm_s(i), run_get_fast_wall_edge_error_mm(i),
-           run_get_fast_wall_edge_lag_mm(i));
+    printf("  edge %d: %s, %s, traveled %.0f mm, speed %.0f mm/s, error %.1f mm, lag %.1f mm, %s\r\n", i + 1, side, kind,
+           run_get_edge_traveled_mm(i), run_get_edge_speed_mm_s(i), run_get_edge_error_mm(i), run_get_edge_lag_mm(i), used);
   }
 }
 
@@ -248,13 +242,7 @@ static void print_search_wait(void)
     printf("Search: side wall too close %d times, nearest %.1f mm (aligned=%d)\r\n",
            wall_ctrl_get_too_close_count(), wall_ctrl_get_too_close_min_mm(), SIDE_ALIGN_ENABLE);
   }
-  if (run_get_wall_edge_count() > 0) {
-    printf("Search: wall edge %d times, average %.1f mm, min %.1f mm, max %.1f mm from cell entry (applied=%d)\r\n",
-           run_get_wall_edge_count(), run_get_wall_edge_average_mm(), run_get_wall_edge_min_mm(),
-           run_get_wall_edge_max_mm(), WALL_EDGE_ENABLE);
-    print_wall_edge_list();
-  }
-  print_fast_wall_edge();
+  print_edge_list();
 }
 
 /* 最後に走らせた動き（直進・その場旋回・スラローム）の結果を出す。まだ何も走らせていなければ何も出さない */
@@ -303,7 +291,7 @@ static void print_failsafe_reason(void)
 void adjust_print_last_result(void)
 {
   if (s_result.kind == RESULT_NONE && run_get_longest_wait_us() == 0 && run_get_front_correction_count() == 0
-      && run_get_wall_edge_count() == 0 && run_get_fast_wall_edge_count() == 0 && wall_ctrl_get_too_close_count() == 0
+      && run_get_edge_count() == 0 && wall_ctrl_get_too_close_count() == 0
       && control_get_failsafe_reason() == CONTROL_FAILSAFE_NONE) {
     return;
   }

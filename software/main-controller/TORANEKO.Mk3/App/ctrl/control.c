@@ -73,6 +73,7 @@
 #include "config/ctrl_gains.h"
 #include "config/robot_params.h"
 #include "ctrl/odometry.h"
+#include "ctrl/side_edge.h"
 #include "ctrl/trajectory.h"
 #include "ctrl/wall_ctrl.h"
 #include "drv/fan.h"
@@ -130,6 +131,7 @@ static void start_common(void)
   s_start_angle_deg = imu_get_angle_deg();
   s_both_walls_mm = 0.0f;
   wall_ctrl_reset_end_check(odometry_get_distance_mm());
+  side_edge_reset();
   s_slow_ticks = 0;
   s_stall_ticks = 0;
   s_failsafe_reason = CONTROL_FAILSAFE_NONE;
@@ -606,6 +608,10 @@ void control_update(void)
     trajectory_update();
   }
   wall_ctrl_update_end_check(odometry_get_distance_mm());  /* 壁の終わりの見分け（ctrl/wall_ctrl.c） */
+  /* 壁の終わり・柱の端を見つける（ctrl/side_edge.c）。縦横の直進のときだけ（ターン・その場旋回・斜めの直進・前壁合わせのあいだは、
+   * 覚えた値を捨てる） */
+  bool orthogonal_straight = trajectory_get_kind() == TRAJECTORY_STRAIGHT && !s_on_diagonal && !s_front_align;
+  side_edge_update(odometry_get_distance_mm(), wall_ctrl_get_left(), wall_ctrl_get_right(), orthogonal_straight);
   float forward_v = forward_voltage();
   float turn_v = turn_voltage();
   s_left_voltage_v = forward_v - turn_v;

@@ -48,6 +48,7 @@ set(APP_SOURCES
     App/ctrl/control.c
     App/ctrl/odometry.c
     App/ctrl/run.c
+    App/ctrl/side_edge.c
     App/ctrl/trajectory.c
     App/ctrl/wall_ctrl.c
     App/ctrl/wall_dist.c

@@ -10,7 +10,8 @@
 #   test_wall_dist  壁センサの値を距離 [mm] に直す処理（App/ctrl/wall_dist.c）
 #   test_turn  最短走行のターンが決めた位置で終わるか（App/config/turn_params.h）。./test_turn --calc で値を計算する。./test_turn --slip で空回りの式を調べる
 #   test_control  制御のフェイルセーフの見つけ方と、吸引中の摩擦の分の電圧、斜めの補正、向きを戻す（App/ctrl/control.c。センサ・モーターは仮）
-#   test_wall_ctrl  壁の終わりの見分け（App/ctrl/wall_ctrl.c。壁センサは仮）
+#   test_wall_ctrl  壁の終わりの見分け（App/ctrl/wall_ctrl.c）、壁の終わり・柱の端（App/ctrl/side_edge.c）。壁センサは仮。
+#                   ./test_wall_ctrl --replay ファイル… で、実機の走行ログから端を見つける
 
 APP_DIR = ../TORANEKO.Mk3/App
 
@@ -77,8 +78,8 @@ test_turn: test_turn.c $(APP_DIR)/ctrl/trajectory.c $(APP_HEADERS)
 test_control: test_control.c $(APP_DIR)/ctrl/control.c $(APP_DIR)/ctrl/trajectory.c $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_control.c $(APP_DIR)/ctrl/control.c $(APP_DIR)/ctrl/trajectory.c -lm
 
-test_wall_ctrl: test_wall_ctrl.c $(APP_DIR)/ctrl/wall_ctrl.c $(APP_DIR)/ctrl/wall_dist.c $(APP_HEADERS)
-	$(CC) $(CFLAGS) -o $@ test_wall_ctrl.c $(APP_DIR)/ctrl/wall_ctrl.c $(APP_DIR)/ctrl/wall_dist.c -lm
+test_wall_ctrl: test_wall_ctrl.c $(APP_DIR)/ctrl/wall_ctrl.c $(APP_DIR)/ctrl/wall_dist.c $(APP_DIR)/ctrl/side_edge.c $(APP_HEADERS)
+	$(CC) $(CFLAGS) -o $@ test_wall_ctrl.c $(APP_DIR)/ctrl/wall_ctrl.c $(APP_DIR)/ctrl/wall_dist.c $(APP_DIR)/ctrl/side_edge.c -lm
 
 test_flash: test_flash.c $(FLASH_SOURCES) $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_flash.c $(FLASH_SOURCES)

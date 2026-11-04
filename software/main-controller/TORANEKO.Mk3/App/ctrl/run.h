@@ -101,29 +101,22 @@ float run_get_front_correction_average_mm(void);
 float run_get_front_correction_min_mm(void);
 float run_get_front_correction_max_mm(void);
 
-/* 探索の壁切れ（run.c の先頭のコメント）を見つけた回数と、見つけた位置（区画の入口から）の平均・最小・最大 [mm]。モード7 No.1 で出す */
-int run_get_wall_edge_count(void);
-float run_get_wall_edge_average_mm(void);
-float run_get_wall_edge_min_mm(void);
-float run_get_wall_edge_max_mm(void);
-
-/* 前壁補正・壁切れの 1 回ごとの記録（最初の 40 回まで）。量・位置と、そのときまでに走った距離 [mm]（探索を始めてから）。モード7 No.1 で出す */
+/* 前壁補正の 1 回ごとの記録（最初の 40 回まで）。量と、そのときまでに走った距離 [mm]（探索を始めてから）。モード7 No.1 で出す */
 int run_get_front_correction_list_count(void);
 float run_get_front_correction_list_mm(int index);
 float run_get_front_correction_list_traveled_mm(int index);
-int run_get_wall_edge_list_count(void);
-float run_get_wall_edge_list_mm(int index);
-float run_get_wall_edge_list_traveled_mm(int index);
-bool run_get_wall_edge_list_is_left(int index);
 
-/* 最短走行の壁切れ（run.c の先頭のコメント）の 1 回ごとの記録（最初の 40 回まで）：ずれ [mm]（+ なら思っているより手前）、
- * そのときの目標の速さ [mm/s]、走った距離 [mm]（最短走行を始めてから）、左の壁か。モード7 No.1 で出す */
-int run_get_fast_wall_edge_count(void);
-float run_get_fast_wall_edge_error_mm(int index);
-float run_get_fast_wall_edge_speed_mm_s(int index);
-float run_get_fast_wall_edge_traveled_mm(int index);
-bool run_get_fast_wall_edge_is_left(int index);
-float run_get_fast_wall_edge_lag_mm(int index);  /* そのときの、目標の位置からの遅れ [mm]（ずれからは引いてある） */
+/* 壁切れ（探索・最短走行。run.c の先頭のコメント）の 1 回ごとの記録（最初の 40 回まで。モード7 No.1 で出す）：
+ * いちばん近い区画の境目からのずれ [mm]（+ なら思っているより手前）、そのときの目標の速さ [mm/s]、走った距離 [mm]（走り始めてから）、
+ * 目標の位置からの遅れ [mm]（ずれからは引いてある）、左のセンサか、柱だけか（壁の終わりなら false）、位置を直すのに使えたか */
+int run_get_edge_count(void);
+float run_get_edge_error_mm(int index);
+float run_get_edge_speed_mm_s(int index);
+float run_get_edge_traveled_mm(int index);
+float run_get_edge_lag_mm(int index);
+bool run_get_edge_is_left(int index);
+bool run_get_edge_is_pillar(int index);
+bool run_get_edge_used(int index);
 
 /* 前壁補正を測ったときの、くわしい様子（1 回ごと。最初の 40 回まで）。2026-11-03 に足した。
  * 止めて測ると合っているのに、走っていると大きくずれる場所があったので、そのとき何が起きていたかを見る */
