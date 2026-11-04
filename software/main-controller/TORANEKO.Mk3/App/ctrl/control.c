@@ -35,8 +35,9 @@
  *   - 制御を始めたときの向き（control_start()。最短走行は、これだけ）
  *   - 壁で姿勢を合わせたとき（前壁合わせ・横壁合わせのあと。ctrl/run.c が control_reset_heading_reference() を呼ぶ）
  *   - 両側の壁が使えて、まん中に近く、横に動いていない状態が HEADING_RESET_DISTANCE_MM 続いたとき
- *     （control_set_heading_auto_reset(true) のときだけ。探索で入れる。ジャイロの角度は、たくさん曲がるうちに誤差がたまる
- *      （探索の 8 秒で 2〜3°）ので、壁に平行に走れているときの向きを、迷路の向きとみなす）
+ *     （control_set_heading_auto_reset(true) のときだけ。探索と最短走行で入れる。ジャイロの角度は、たくさん曲がるうちに
+ *      誤差がたまり（探索の 8 秒で 2〜3°）、吸引していると止まっていても 1 秒に約 0.14° 流れる（2026-11-04、モード6 No.3）
+ *      ので、壁に平行に走れているときの向きを、迷路の向きとみなす）
  * ジャイロの角度は足し合わせた値なので、角速度の細かいゆれ（吸引ファンなど）はほとんど効かない。
  *
  * ■ 斜めの直進（control_set_on_diagonal(true) のあいだ）
@@ -106,7 +107,7 @@ static volatile float s_diag_omega_deg_s = 0.0f;    /* 斜めの補正で曲げ�
 static volatile int s_diag_used = 0;                /* しきい値を超えた前のセンサ（0 なし、1 左前、2 右前。ログ用） */
 static volatile float s_heading_reference_deg = 0.0f;  /* 迷路の向きの基準（ジャイロの角度。ここから 90° ごとが迷路の向き） */
 static volatile bool s_heading_hold_enabled = false;   /* 向きを戻すのを入れるか（探索と最短走行で入れる） */
-static volatile bool s_heading_auto_reset = false;     /* 両側の壁が続いたら、基準の向きをリセットするか（探索で入れる） */
+static volatile bool s_heading_auto_reset = false;     /* 両側の壁が続いたら、基準の向きをリセットするか（探索と最短走行で入れる） */
 static volatile float s_both_walls_mm = 0.0f;          /* 両側の壁で、まっすぐ・まん中を走れている状態が続いた距離 [mm] */
 static volatile bool s_heading_hold_active = false;    /* 今、向きを戻しているか（ログ用） */
 static volatile float s_heading_error_deg = 0.0f;      /* 迷路の向きからのずれ [deg]（+ なら左を向いている。ログ用） */
@@ -196,7 +197,7 @@ void control_reset_heading_reference(void)
   s_heading_reference_deg = s_heading_reference_deg + heading_error_from_grid_deg(angle_deg);
 }
 
-/* 両側の壁が続いたら、基準の向きをリセットする（true）・しない（false）。探索で入れる（ctrl/run.c） */
+/* 両側の壁が続いたら、基準の向きをリセットする（true）・しない（false）。探索と最短走行で入れる（ctrl/run.c） */
 void control_set_heading_auto_reset(bool on)
 {
   s_heading_auto_reset = on;

@@ -640,6 +640,9 @@ void run_fast_start(void)
     return;
   }
   start_control();
+  /* 両側の壁が続いたら、基準の向きをリセットする（ctrl/control.c）。2026-11-04 に、吸引したまま止めておくと、
+   * ジャイロが 1 秒に約 0.14° 流れた（モード6 No.3。30 秒で 4°）ので、数秒の最短走行でも入れる */
+  control_set_heading_auto_reset(true);
 }
 
 /* 最短走行の壁切れを 1 回記録する（最初の EVENT_LIST_MAX 回まで） */
