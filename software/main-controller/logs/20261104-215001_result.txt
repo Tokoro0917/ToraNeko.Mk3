@@ -1,0 +1,5 @@
+#BEGIN RESULT
+Wall edge: 2 times (search applied=1, shortest applied=0)
+edge 1: left, wall end, traveled 15 mm, speed 358 mm/s, error -5.6 mm, lag 1.7 mm, not used
+edge 2: right, wall end, traveled 111 mm, speed 950 mm/s, error 0.4 mm, lag 2.5 mm, used
+#END RESULT
