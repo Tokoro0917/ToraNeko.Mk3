@@ -471,7 +471,8 @@ static void align_if_front_wall(void)
 {
   if (wall_ctrl_has_wall_front()) {
     align_to_front_wall();
-    control_start();  /* 直した向きを、まっすぐの向きにし直す */
+    control_restart();                   /* 直した向きを、まっすぐの向きにし直す */
+    control_reset_heading_reference();   /* 前の壁で向きを合わせたので、今の向きを迷路の向きとみなす（ctrl/control.c） */
   }
 }
 
@@ -491,7 +492,8 @@ static void start_control(void)
   s_fast_edge_count = 0;
   log_start(SEARCH_LOG_INTERVAL_MS);
   control_set_wall_control(true);  /* 横の壁に沿って走る補正を入れる */
-  control_start();
+  control_start();                 /* 今の向き（スタート区画で、お尻を後ろの壁に付けた向き）を、迷路の向きの基準にする */
+  control_set_heading_hold(true);  /* 使える横の壁がないときは、向きを迷路の向きに戻す（ctrl/control.c） */
 }
 
 /* スタート区画から走り出し、北隣の区画 (0, 1) の入口の辺まで進む。
@@ -502,6 +504,7 @@ void run_search_start(void)
     return;
   }
   start_control();
+  control_set_heading_auto_reset(true);  /* 探索は長く走るので、両側の壁が続いたら、基準の向きをリセットする（ctrl/control.c） */
   go_straight(START_OFFSET_MM + HALF_CELL_MM);
   mark_return();
 }
@@ -572,7 +575,7 @@ void run_search_align_to_side(bool is_left)
   if (is_left) {
     angle_deg = 90.0f;
   }
-  control_start();  /* 止まっているので、制御を始め直す */
+  control_restart();  /* 止まっているので、制御を始め直す（迷路の向きの基準は、そのまま） */
   pivot(angle_deg);
   align_if_front_wall();
   pivot(-angle_deg);
@@ -590,7 +593,7 @@ void run_search_go_from_center(run_turn_t turn)
   if (failsafe_is_stopped()) {
     return;
   }
-  control_start();  /* 止まっているので、制御を始め直す */
+  control_restart();  /* 止まっているので、制御を始め直す（迷路の向きの基準は、そのまま） */
   align_if_front_wall();
   if (turn == RUN_TURN_LEFT) {
     pivot(90.0f);

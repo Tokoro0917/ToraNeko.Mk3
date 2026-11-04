@@ -9,7 +9,8 @@
 #   test_trajectory  目標の速さを作る処理（App/ctrl/trajectory.c）
 #   test_wall_dist  壁センサの値を距離 [mm] に直す処理（App/ctrl/wall_dist.c）
 #   test_turn  最短走行のターンが決めた位置で終わるか（App/config/turn_params.h）。./test_turn --calc で値を計算する。./test_turn --slip で空回りの式を調べる
-#   test_control  制御のフェイルセーフの見つけ方と、吸引中の摩擦の分の電圧（App/ctrl/control.c。センサ・モーターは仮）
+#   test_control  制御のフェイルセーフの見つけ方と、吸引中の摩擦の分の電圧、斜めの補正、向きを戻す（App/ctrl/control.c。センサ・モーターは仮）
+#   test_wall_ctrl  壁の終わりの見分け（App/ctrl/wall_ctrl.c。壁センサは仮）
 
 APP_DIR = ../TORANEKO.Mk3/App
 
@@ -43,12 +44,13 @@ FLASH_SOURCES = \
 	$(APP_DIR)/sys/flash.c \
 	$(APP_DIR)/maze/maze_map.c
 
-test: test_maze test_mode test_output test_flash test_trajectory test_wall_dist test_turn test_control
+test: test_maze test_mode test_output test_flash test_trajectory test_wall_dist test_turn test_control test_wall_ctrl
 	./test_mode
 	./test_trajectory
 	./test_wall_dist
 	./test_turn
 	./test_control
+	./test_wall_ctrl
 	./test_output
 	./test_flash
 	./test_maze
@@ -75,10 +77,13 @@ test_turn: test_turn.c $(APP_DIR)/ctrl/trajectory.c $(APP_HEADERS)
 test_control: test_control.c $(APP_DIR)/ctrl/control.c $(APP_DIR)/ctrl/trajectory.c $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_control.c $(APP_DIR)/ctrl/control.c $(APP_DIR)/ctrl/trajectory.c -lm
 
+test_wall_ctrl: test_wall_ctrl.c $(APP_DIR)/ctrl/wall_ctrl.c $(APP_DIR)/ctrl/wall_dist.c $(APP_HEADERS)
+	$(CC) $(CFLAGS) -o $@ test_wall_ctrl.c $(APP_DIR)/ctrl/wall_ctrl.c $(APP_DIR)/ctrl/wall_dist.c -lm
+
 test_flash: test_flash.c $(FLASH_SOURCES) $(APP_HEADERS)
 	$(CC) $(CFLAGS) -o $@ test_flash.c $(FLASH_SOURCES)
 
 clean:
-	rm -f test_maze test_mode test_output test_flash test_trajectory test_wall_dist test_turn test_control
+	rm -f test_maze test_mode test_output test_flash test_trajectory test_wall_dist test_turn test_control test_wall_ctrl
 
 .PHONY: test clean

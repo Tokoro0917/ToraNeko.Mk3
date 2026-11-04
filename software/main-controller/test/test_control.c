@@ -12,6 +12,8 @@
  *   4. 少しのあいだだけ遅くなって、すぐ戻ったら（ノイズ）、止まらない
  *   5. 吸引しているときは、摩擦の分の電圧を足す
  *   6. 斜めの補正：左の柱に近い（ずれ +）と右へ、右に近いと左へ曲げる。速さに比例し、上限で止まる。切ってあれば曲げない
+ *   7. 向きを戻す：使える横の壁がないとき、迷路の向きからずれていたら戻す。壁があるとき・切ってあるときは戻さない。
+ *      速さに比例し、上限で止まる。基準の向きのリセット（手で・両側の壁が続いたとき）、始め直しても基準が残ること
  */
 #include <math.h>
 #include <stdbool.h>
@@ -60,9 +62,10 @@ float odometry_get_distance_mm(void)
   return s_fake_distance_mm;
 }
 
+static float s_fake_angle_deg = 0.0f;  /* 仮のジャイロが答える角度（テストで決める） */
 float imu_get_angle_deg(void)
 {
-  return 0.0f;
+  return s_fake_angle_deg;
 }
 
 float imu_get_gyro_z_dps(void)
@@ -134,9 +137,20 @@ float wall_ctrl_get_side_error(void)
   return 0.0f;
 }
 
+static int s_fake_walls_used = 0;  /* 仮の、横の壁の補正に使える壁（0 なし、1 左、2 右、3 両方） */
 int wall_ctrl_get_side_walls_used(void)
 {
-  return 0;
+  return s_fake_walls_used;
+}
+
+void wall_ctrl_reset_end_check(float distance_mm)
+{
+  (void)distance_mm;
+}
+
+void wall_ctrl_update_end_check(float distance_mm)
+{
+  (void)distance_mm;
 }
 
 int32_t wall_ctrl_get_front_left(void)
@@ -345,6 +359,89 @@ static void test_diag_control(void)
   check(fabsf(big_v - bigger_v) < 0.0001f, "大きなずれでは、上限 DIAG_OMEGA_LIMIT_DEG_S で止まる");
 }
 
+/* 速さ speed_mm_s で縦横に走っていて、ジャイロの角度が angle_deg のときの、右 − 左 の電圧 [V]（+ なら左へ曲げる）。
+ * hold は向きを戻すのを入れるか、walls_used は使える横の壁。制御は 0° で始める */
+static float hold_turn_voltage(float speed_mm_s, float angle_deg, bool hold, int walls_used)
+{
+  s_fake_angle_deg = 0.0f;
+  s_fake_walls_used = walls_used;
+  reset();
+  control_set_wall_control(true);
+  control_set_heading_hold(hold);
+  run_up_to(speed_mm_s, 6000.0f);
+  s_fake_angle_deg = angle_deg;
+  tick(trajectory_get_speed_mm_s());
+  control_set_wall_control(false);
+  s_fake_angle_deg = 0.0f;
+  s_fake_walls_used = 0;
+  return s_last_right_v - s_last_left_v;
+}
+
+/* 7. 向きを戻す */
+static void test_heading_hold(void)
+{
+  printf("[7] 向きを戻す：使える横の壁がないとき、迷路の向きへ戻す\n");
+  float none_v = hold_turn_voltage(800.0f, 0.0f, true, 0);
+  /* 1° のずれなら、800mm/s で 16deg/s（上限 45deg/s より小さいので、速さに比例するかを比べられる） */
+  float left_v = hold_turn_voltage(800.0f, 1.0f, true, 0);
+  float right_v = hold_turn_voltage(800.0f, -1.0f, true, 0);
+  float near_90_v = hold_turn_voltage(800.0f, 91.0f, true, 0);
+  float wall_v = hold_turn_voltage(800.0f, 1.0f, true, 3);
+  float off_v = hold_turn_voltage(800.0f, 1.0f, false, 0);
+  float slow_v = hold_turn_voltage(400.0f, 1.0f, true, 0);
+  float big_v = hold_turn_voltage(800.0f, 30.0f, true, 0);
+  float bigger_v = hold_turn_voltage(800.0f, 40.0f, true, 0);
+  printf("  右 − 左 の電圧：ずれなし %.4fV、左へ 1° %.4fV、右へ 1° %.4fV、91° %.4fV、壁あり %.4fV、切ってある %.4fV、400mm/s %.4fV\n",
+         none_v, left_v, right_v, near_90_v, wall_v, off_v, slow_v);
+  check(fabsf(none_v) < 0.0001f, "ずれがなければ曲げない");
+  check(left_v < -0.0001f, "左を向いていたら（+1°）、右へ曲げる");
+  check(right_v > 0.0001f, "右を向いていたら（−1°）、左へ曲げる");
+  check(fabsf(near_90_v - left_v) < 0.0001f, "91° なら、迷路の向き 90° から +1° として、同じだけ右へ曲げる");
+  check(fabsf(wall_v) < 0.0001f, "使える横の壁があるときは、向きを戻さない（横の壁の補正だけ）");
+  check(fabsf(off_v) < 0.0001f, "向きを戻すのを入れていなければ曲げない");
+  check(fabsf(slow_v - left_v / 2.0f) < 0.0001f, "半分の速さなら、曲げる量も半分");
+  check(fabsf(big_v - bigger_v) < 0.0001f, "大きなずれでは、上限 HEADING_HOLD_LIMIT_DEG_S で止まる");
+
+  /* 基準の向きのリセット：3° 向いているところでリセットすると、そこが迷路の向きになり、曲げなくなる */
+  s_fake_angle_deg = 0.0f;
+  s_fake_walls_used = 0;
+  reset();
+  control_set_wall_control(true);
+  control_set_heading_hold(true);
+  run_up_to(800.0f, 6000.0f);
+  s_fake_angle_deg = 3.0f;
+  control_reset_heading_reference();
+  tick(trajectory_get_speed_mm_s());
+  float after_reset_v = s_last_right_v - s_last_left_v;
+  /* 始め直し（control_restart）では、基準の向きも、向きを戻すかどうかも、そのまま（速くするあいだは 3° のまま） */
+  control_restart();
+  run_up_to(800.0f, 6000.0f);
+  s_fake_angle_deg = 4.0f;
+  tick(trajectory_get_speed_mm_s());
+  float after_restart_v = s_last_right_v - s_last_left_v;
+  check(fabsf(after_reset_v) < 0.0001f, "リセットした向き（3°）を、迷路の向きとみなす");
+  check(fabsf(after_restart_v - left_v) < 0.0001f, "始め直しても基準（3°）が残り、4° なら +1° として右へ曲げる");
+
+  /* 両側の壁が続いたら、基準の向きをリセットする（入れたときだけ） */
+  s_fake_angle_deg = 0.0f;
+  s_fake_walls_used = 3;
+  reset();
+  control_set_wall_control(true);
+  control_set_heading_hold(true);
+  control_set_heading_auto_reset(true);
+  s_fake_angle_deg = 2.0f;
+  run_up_to(800.0f, 6000.0f);
+  for (int i = 0; i < 400; i++) {
+    tick(trajectory_get_speed_mm_s());  /* 800mm/s で 0.2 秒 = 160mm。HEADING_RESET_DISTANCE_MM（90mm）より長く、両側の壁で走る */
+  }
+  s_fake_walls_used = 0;
+  tick(trajectory_get_speed_mm_s());
+  float auto_reset_v = s_last_right_v - s_last_left_v;
+  check(fabsf(auto_reset_v) < 0.0001f, "両側の壁で 90mm より長く走ったら、そのときの向き（2°）を迷路の向きとみなす");
+  s_fake_angle_deg = 0.0f;
+  control_set_wall_control(false);
+}
+
 int main(void)
 {
   test_normal();
@@ -353,6 +450,7 @@ int main(void)
   test_glitch();
   test_suction_friction();
   test_diag_control();
+  test_heading_hold();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

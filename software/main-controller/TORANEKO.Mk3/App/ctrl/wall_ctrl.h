@@ -28,6 +28,11 @@ bool wall_ctrl_is_hand_front(void);
 float wall_ctrl_get_side_error(void);
 int wall_ctrl_get_side_walls_used(void);
 
+/* 壁の終わりの見分け（壁の終わりでは、その壁を補正に使わない。ctrl/wall_ctrl.c の WALL_END_*）。
+ * 制御を始めるときに reset、制御周期ごとに update を、走った距離 [mm] を渡して呼ぶ（ctrl/control.c） */
+void wall_ctrl_reset_end_check(float distance_mm);
+void wall_ctrl_update_end_check(float distance_mm);
+
 /* 斜めの補正（斜めの直進で、柱や壁に近づいたら離れる。ctrl/control.c） */
 float wall_ctrl_get_diag_error(void);
 int wall_ctrl_get_diag_used(void);

@@ -49,6 +49,17 @@
 #define LEFT_WALL_CONTROL_MIN  1000  /* 左のまん中の値 1460 の約 7 割 */
 #define RIGHT_WALL_CONTROL_MIN 570   /* 右のまん中の値 815 の約 7 割 */
 
+/* 壁の終わりの見分け方（2026-11-04）。壁が終わるところでは、値が下限（上の CONTROL_MIN）を切る前から下がり始め、
+ * 補正が「壁から遠い」と読んで、壁のほうへ曲げてしまう（柱のテストで、左の壁の終わりで 71deg/s 左へ曲げた）。
+ * そこで、進んだ距離あたりの下がり方を見る：WALL_END_WINDOW_MM 進むあいだに WALL_END_DROP より下がったら、
+ * 壁の終わりとみなし、そこから WALL_END_HOLD_MM 進むまで、その壁を補正に使わない。
+ * 値の決め方：今ある実機のログ（探索・最短走行・ターン調整・柱のテスト）に当てはめた。60 にすると、壁の終わり 24 回の
+ * すべてで、値が「壁あり」のしきい値を切る 12〜22mm 手前で見分けられ、壁に沿って走っているとき（約 13000 点）に
+ * 見分けてしまったのは 0.3%（見分けたあいだは、向きを迷路の向きに戻す補正が効くだけなので、まちがえても害は小さい） */
+#define WALL_END_WINDOW_MM 5     /* 下がり方を見る距離 [mm]（1mm ごとに値を覚えておく） */
+#define WALL_END_DROP      60    /* WALL_END_WINDOW_MM 進むあいだに、これより下がったら壁の終わり */
+#define WALL_END_HOLD_MM   15.0f /* 壁の終わりとみなしてから、その壁を使わない距離 [mm] */
+
 /* 区画のまん中にいるときの、前のセンサの値。前壁合わせの目標。
  * 2026-11-02 に、センサを付け直してから、3 枚とも壁ありの区画のまん中で、センサ値の記録（モード5 No.2）で 1 秒の平均を測った値
  * （左前 3333.7、右前 3391.8。付け直す前は 3244・3240） */
@@ -208,9 +219,69 @@ bool wall_ctrl_has_wall_right(void)
   return false;
 }
 
-/* 左の壁を、壁に沿って走る補正に使えるか（値がまん中の値に近いか） */
+/* ---- 壁の終わりの見分け（上の WALL_END_* のコメント） ----
+ * 1mm 進むごとに、左右のセンサの値を覚える（いちばん新しい WALL_END_WINDOW_MM + 1 個）。
+ * 覚えておく場所は、s_end_index の場所に書いたら 1 つ進め、端まで来たら 0 に戻す（いちばん古い値は、次に書く場所にある） */
+#define END_HISTORY_COUNT (WALL_END_WINDOW_MM + 1)
+static int32_t s_left_history[END_HISTORY_COUNT];
+static int32_t s_right_history[END_HISTORY_COUNT];
+static int s_end_index = 0;                  /* 次に書く場所 */
+static int s_end_history_filled = 0;         /* 覚えた数（END_HISTORY_COUNT まで） */
+static float s_end_last_mm = 0.0f;           /* 最後に覚えたときの、走った距離 [mm] */
+static float s_now_mm = 0.0f;                /* 今の、走った距離 [mm] */
+static float s_left_unusable_until_mm = 0.0f;   /* 左の壁を、この距離まで補正に使わない */
+static float s_right_unusable_until_mm = 0.0f;  /* 右の壁を、この距離まで補正に使わない */
+
+/* 壁の終わりの見分けを、最初からやり直す（制御を始めるとき。ctrl/control.c） */
+void wall_ctrl_reset_end_check(float distance_mm)
+{
+  s_end_index = 0;
+  s_end_history_filled = 0;
+  s_end_last_mm = distance_mm;
+  s_now_mm = distance_mm;
+  s_left_unusable_until_mm = distance_mm;
+  s_right_unusable_until_mm = distance_mm;
+}
+
+/* 制御周期ごとに呼ぶ（ctrl/control.c）。distance_mm は、今の走った距離（エンコーダで測った値）。
+ * 1mm 進んでいたら左右の値を覚え、WALL_END_WINDOW_MM 前の値から WALL_END_DROP より下がっていたら、壁の終わりとみなす */
+void wall_ctrl_update_end_check(float distance_mm)
+{
+  s_now_mm = distance_mm;
+  if (distance_mm < s_end_last_mm + 1.0f) {
+    return;  /* まだ 1mm 進んでいない（止まっている、下がっているときも、覚えない） */
+  }
+  s_end_last_mm = distance_mm;
+
+  int32_t left = wall_ctrl_get_left();
+  int32_t right = wall_ctrl_get_right();
+  if (s_end_history_filled >= END_HISTORY_COUNT) {
+    /* いちばん古い値（WALL_END_WINDOW_MM 前）は、これから書く場所にある */
+    int32_t left_before = s_left_history[s_end_index];
+    int32_t right_before = s_right_history[s_end_index];
+    if (left_before - left > WALL_END_DROP) {
+      s_left_unusable_until_mm = distance_mm + WALL_END_HOLD_MM;
+    }
+    if (right_before - right > WALL_END_DROP) {
+      s_right_unusable_until_mm = distance_mm + WALL_END_HOLD_MM;
+    }
+  } else {
+    s_end_history_filled = s_end_history_filled + 1;
+  }
+  s_left_history[s_end_index] = left;
+  s_right_history[s_end_index] = right;
+  s_end_index = s_end_index + 1;
+  if (s_end_index >= END_HISTORY_COUNT) {
+    s_end_index = 0;
+  }
+}
+
+/* 左の壁を、壁に沿って走る補正に使えるか（値がまん中の値に近く、壁の終わりではない） */
 static bool can_use_left_wall(void)
 {
+  if (s_now_mm < s_left_unusable_until_mm) {
+    return false;  /* 壁の終わり */
+  }
   if (wall_ctrl_get_left() > LEFT_WALL_CONTROL_MIN) {
     return true;
   }
@@ -220,6 +291,9 @@ static bool can_use_left_wall(void)
 /* 右の壁を、壁に沿って走る補正に使えるか */
 static bool can_use_right_wall(void)
 {
+  if (s_now_mm < s_right_unusable_until_mm) {
+    return false;  /* 壁の終わり */
+  }
   if (wall_ctrl_get_right() > RIGHT_WALL_CONTROL_MIN) {
     return true;
   }

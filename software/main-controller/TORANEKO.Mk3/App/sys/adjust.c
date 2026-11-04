@@ -463,7 +463,8 @@ void adjust_front_align(void)
  * モード6 No.3 吸引 ON（2026-10-28）
  * ------------------------------------------------------------------------- */
 
-#define SUCTION_BLINK_MS   500  /* 吸っているあいだ、真ん中の 3 個を点滅させる間隔 [ms] */
+#define SUCTION_BLINK_MS   500  /* 吸っているあいだ、真ん中の 3 個を点滅させる間隔 [ms]（ジャイロの角度も、この間隔で出す） */
+#define SUCTION_SETTLE_MS  500  /* 吸引を上げてから、ジャイロのゼロ点を測る前に待つ時間 [ms]（最短走行と同じ） */
 
 /* 真ん中の 3 個（LED3・4・5）を点ける・消す */
 static void show_middle_leds(bool on)
@@ -474,16 +475,25 @@ static void show_middle_leds(bool on)
 }
 
 /* モード6 No.3 吸引 ON：吸引ファンを回し、スイッチが押されるまで吸い続ける（機体は動かない）。
- * 机に置いて吸い付くか、手で持ち上げてどれくらいの力が要るかを見て、SUCTION_VOLTAGE_V を決める */
+ * 机に置いて吸い付くか、手で持ち上げてどれくらいの力が要るかを見て、SUCTION_VOLTAGE_V を決める。
+ * 2026-11-04 から、吸っているあいだ、ジャイロの角度を 0.5 秒ごとにシリアルに出す（`SUCTION_GYRO,時間[s],角度[deg]`）。
+ * 機体は止まっているので、角度が変わった分は、吸引ファンの振動などでジャイロが流れた分（向きを戻す補正が、
+ * ジャイロの角度を使うので、どれくらい流れるかを見る。ctrl/control.c の「向きを戻す」） */
 void adjust_suction_on(void)
 {
   suction_ramp_up();  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
+  ui_wait_ms(SUCTION_SETTLE_MS);
+  imu_remeasure_offset();  /* 吸ったまま、ジャイロのゼロ点を測り直す（最短走行と同じ。約 0.5 秒） */
+  uint32_t start_ms = timebase_get_ms();
   bool lit = true;
   uint32_t next_toggle_ms = timebase_get_ms() + SUCTION_BLINK_MS;
   while (!ui_switch_pushed()) {
     if (timebase_get_ms() >= next_toggle_ms) {
       lit = !lit;
       next_toggle_ms = next_toggle_ms + SUCTION_BLINK_MS;
+      /* LED を切り替えるたび（0.5 秒ごと）に、ジャイロの角度を出す */
+      float elapsed_s = (timebase_get_ms() - start_ms) / 1000.0f;
+      printf("SUCTION_GYRO,%.1f,%.2f\r\n", elapsed_s, imu_get_angle_deg());
     }
     show_middle_leds(lit);
     ui_wait_ms(UI_POLL_MS);
