@@ -39,6 +39,10 @@
  *            何 mm 先か（start_in_cell_mm）を教えてもらい、そこから区画の境目は 90mm ごとにあるとする。
  *            スタート区画の出口の境目は使わない（ほかの境目より 5mm ずれて見える。ctrl/side_edge.c の値のコメント）
  * いちばん近い境目からのずれが WALL_EDGE_WINDOW_MM より大きければ、読み違いとして使わない。
+ * 直したら、そのぶん「思っている位置」もずらす（1 本の直進で 2 つ目からは、直したあとの位置で比べる。2026-11-04 に直した。
+ * 前は、1 つ目で直した分を差し引かずに 2 つ目でまた直していた）。同じ境目を左右で見つけたら、2 つ目はずれの半分だけ直し、
+ * 2 つの平均にする（機体が横にずれたり、向きがずれたりすると、左右で見える位置が逆向きにずれるので、平均で打ち消す。
+ * 2026-11-04 の柱のテストで、まん中より 6mm 右・左へ 3° のとき、同じ境目で左 +4.6mm・右 −0.6mm だった）。
  * 見つけた端は 1 回ごとに覚えておき、モード7 No.1 で出す（使わなかったものも）。
  * 最短走行も、2026-11-04 から直している（FAST_WALL_EDGE_ENABLE が 1）。
  *
@@ -357,6 +361,8 @@ static int s_watch_seen_left = 0;        /* 直進を始めてから読んだ、
 static int s_watch_seen_right = 0;       /* 同じく、右 */
 static float s_watch_origin_mm = 0.0f;   /* 道の上の位置 ＝ これ ＋ 走った距離 */
 static float s_found_boundary_mm = 0.0f; /* new_edge_found() で見つけた端から求めた、境目の道の上の位置 [mm] */
+static int s_last_used_cell = -1;        /* この直進で最後に使った境目が、何番目の境目か（道の上の位置 ÷ 90。まだなければ −1） */
+static bool s_last_used_is_left = false; /* その端が、左のセンサか */
 static bool s_found_is_pillar = false;   /* new_edge_found() で見つけた端が、柱だけか */
 
 /* 直進を始めるときに呼ぶ。start_mm は、直進を始める目標の位置（うしろの区画の境目から [mm]） */
@@ -365,6 +371,7 @@ static void watch_edges_start(float start_mm)
   s_watch_seen_left = side_edge_get_count(true);
   s_watch_seen_right = side_edge_get_count(false);
   s_watch_origin_mm = actual_position_mm(start_mm) - odometry_get_distance_mm();
+  s_last_used_cell = -1;
 }
 
 /* is_left 側（左なら true）に、新しい端があれば、その端から求めた境目の道の上の位置を s_found_boundary_mm に、
@@ -410,17 +417,28 @@ static float boundary_error_mm(float boundary_mm)
 static bool use_found_edge(bool is_left, int enable, bool skip_start_cell)
 {
   float error_mm = boundary_error_mm(s_found_boundary_mm);
+  int cell = (int)roundf(s_found_boundary_mm / CELL_MM);  /* 何番目の境目か（整数にする） */
   bool used = true;
   if (error_mm > WALL_EDGE_WINDOW_MM || error_mm < -WALL_EDGE_WINDOW_MM) {
     used = false;  /* 離れすぎている：読み違いとして使わない */
   }
-  if (skip_start_cell && roundf(s_found_boundary_mm / CELL_MM) <= 1.0f) {
+  if (skip_start_cell && cell <= 1) {
     used = false;  /* スタート区画の出口の境目 */
   }
   record_edge(error_mm, is_left, s_found_is_pillar, used);
-  if (used && enable == 1) {
-    trajectory_add_distance(error_mm);
+  if (!used || enable != 1) {
+    return used;
   }
+  /* 同じ境目を、反対側のセンサでもう見つけて直していたら、2 つ目はずれの半分だけ直す（2 つの平均にする。先頭のコメント） */
+  float correction_mm = error_mm;
+  if (cell == s_last_used_cell && is_left != s_last_used_is_left) {
+    correction_mm = error_mm / 2.0f;
+  }
+  trajectory_add_distance(correction_mm);
+  /* 直したぶん、思っている位置もずらす（本当の位置は、思っていた位置より correction_mm 手前だった） */
+  s_watch_origin_mm = s_watch_origin_mm - correction_mm;
+  s_last_used_cell = cell;
+  s_last_used_is_left = is_left;
   return used;
 }
 
