@@ -1,0 +1,34 @@
+#BEGIN RESULT
+Search: longest wait between moves 8665 us
+Search: front correction 12 times, average 2.6 mm, min -3.3 mm, max 21.0 mm (applied=1)
+front 1: traveled 223 mm, correction -2.2 mm
+FL 89.0 FR 82.3 mm, side L 48.8 R 35.0 mm, overrun 2.6 mm, speed 315 mm/s, yaw 0.9 deg
+front 2: traveled 318 mm, correction -0.5 mm
+FL 84.3 FR 83.7 mm, side L 64.0 R 64.0 mm, overrun 2.6 mm, speed 312 mm/s, yaw 0.8 deg
+front 3: traveled 395 mm, correction 4.3 mm
+FL 88.8 FR 96.6 mm, side L 40.7 R 64.0 mm, overrun 2.6 mm, speed 299 mm/s, yaw 0.7 deg
+front 4: traveled 572 mm, correction -2.4 mm
+FL 82.1 FR 90.4 mm, side L 44.1 R 64.0 mm, overrun 2.6 mm, speed 303 mm/s, yaw 0.6 deg
+front 5: traveled 645 mm, correction 3.1 mm
+FL 90.5 FR 84.6 mm, side L 64.0 R 37.2 mm, overrun 2.6 mm, speed 291 mm/s, yaw 1.3 deg
+front 6: traveled 725 mm, correction 21.0 mm
+FL 107.5 FR 103.5 mm, side L 64.0 R 64.0 mm, overrun 2.6 mm, speed 310 mm/s, yaw 2.1 deg
+front 7: traveled 899 mm, correction 3.7 mm
+FL 88.1 FR 88.2 mm, side L 44.7 R 64.0 mm, overrun 2.6 mm, speed 299 mm/s, yaw 2.4 deg
+front 8: traveled 1064 mm, correction -0.5 mm
+FL 85.7 FR 82.1 mm, side L 64.0 R 47.7 mm, overrun 2.6 mm, speed 297 mm/s, yaw 2.3 deg
+front 9: traveled 1309 mm, correction -3.3 mm
+FL 80.0 FR 82.2 mm, side L 40.5 R 64.0 mm, overrun 2.6 mm, speed 291 mm/s, yaw 1.6 deg
+front 10: traveled 1383 mm, correction 4.5 mm
+FL 98.9 FR 89.0 mm, side L 64.0 R 41.7 mm, overrun 2.6 mm, speed 290 mm/s, yaw 1.9 deg
+front 11: traveled 1557 mm, correction 3.7 mm
+FL 87.9 FR 88.4 mm, side L 64.0 R 51.7 mm, overrun 2.6 mm, speed 286 mm/s, yaw -0.7 deg
+front 12: traveled 1815 mm, correction 0.0 mm
+FL 88.1 FR 86.0 mm, side L 42.7 R 47.1 mm, overrun 0.0 mm, speed 296 mm/s, yaw 1.1 deg
+Search: wall edge 5 times, average 56.0 mm, min 53.9 mm, max 60.5 mm from cell entry (applied=1)
+edge 1: right, traveled 110 mm, position 54.2 mm
+edge 2: right, traveled 535 mm, position 60.5 mm
+edge 3: right, traveled 862 mm, position 56.9 mm
+edge 4: left, traveled 1193 mm, position 53.9 mm
+edge 5: left, traveled 1517 mm, position 54.8 mm
+#END RESULT

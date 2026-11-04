@@ -1,0 +1,30 @@
+#BEGIN RESULT
+Search: longest wait between moves 8664 us
+Search: front correction 10 times, average 4.3 mm, min -3.1 mm, max 16.0 mm (applied=1)
+front 1: traveled 222 mm, correction -2.4 mm
+FL 89.0 FR 82.0 mm, side L 47.4 R 37.2 mm, overrun 2.6 mm, speed 303 mm/s, yaw 2.3 deg
+front 2: traveled 317 mm, correction 0.6 mm
+FL 85.4 FR 84.7 mm, side L 64.0 R 64.0 mm, overrun 2.6 mm, speed 296 mm/s, yaw 1.1 deg
+front 3: traveled 395 mm, correction 4.6 mm
+FL 89.0 FR 97.7 mm, side L 40.2 R 64.0 mm, overrun 2.6 mm, speed 324 mm/s, yaw 1.0 deg
+front 4: traveled 648 mm, correction 2.3 mm
+FL 88.7 FR 84.7 mm, side L 48.2 R 39.2 mm, overrun 2.6 mm, speed 310 mm/s, yaw 1.8 deg
+front 5: traveled 746 mm, correction 6.3 mm
+FL 89.7 FR 91.8 mm, side L 64.0 R 64.0 mm, overrun 2.6 mm, speed 308 mm/s, yaw 1.3 deg
+front 6: traveled 1090 mm, correction 6.4 mm
+FL 88.2 FR 93.5 mm, side L 43.1 R 64.0 mm, overrun 2.6 mm, speed 295 mm/s, yaw 1.8 deg
+front 7: traveled 1259 mm, correction -3.1 mm
+FL 82.6 FR 80.1 mm, side L 64.0 R 47.8 mm, overrun 2.6 mm, speed 310 mm/s, yaw 3.0 deg
+front 8: traveled 1512 mm, correction 16.0 mm
+FL 99.8 FR 101.1 mm, side L 64.0 R 64.0 mm, overrun 2.6 mm, speed 298 mm/s, yaw 2.0 deg
+front 9: traveled 1773 mm, correction 7.9 mm
+FL 92.0 FR 92.7 mm, side L 64.0 R 50.0 mm, overrun 2.6 mm, speed 303 mm/s, yaw -0.5 deg
+front 10: traveled 2033 mm, correction 4.2 mm
+FL 91.8 FR 90.5 mm, side L 43.2 R 46.9 mm, overrun 0.0 mm, speed 288 mm/s, yaw 1.2 deg
+Search: wall edge 5 times, average 55.1 mm, min 49.8 mm, max 60.5 mm from cell entry (applied=1)
+edge 1: right, traveled 110 mm, position 53.7 mm
+edge 2: right, traveled 535 mm, position 60.5 mm
+edge 3: right, traveled 1053 mm, position 58.8 mm
+edge 4: left, traveled 1473 mm, position 49.8 mm
+edge 5: left, traveled 1734 mm, position 53.0 mm
+#END RESULT
