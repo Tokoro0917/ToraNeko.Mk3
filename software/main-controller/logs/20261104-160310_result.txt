@@ -1,0 +1,5 @@
+#BEGIN RESULT
+Shortest: wall edge 2 times (applied=0)
+fedge 1: right, traveled 18 mm, speed 552 mm/s, error -3.2 mm, lag 1.4 mm
+fedge 2: left, traveled 110 mm, speed 800 mm/s, error 1.2 mm, lag 0.1 mm
+#END RESULT
