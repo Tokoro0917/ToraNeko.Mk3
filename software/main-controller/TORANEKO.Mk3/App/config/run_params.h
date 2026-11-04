@@ -116,6 +116,16 @@
 #define WALL_EDGE_RIGHT_POSITION_MM 56.0f
 #define WALL_EDGE_WINDOW_MM   20.0f  /* 決めた位置からこれ以上ずれて見つかったら、読み違いとして使わない [mm] */
 
+/* ---- 最短走行の壁切れ（ctrl/run.c の run_fast_straight。2026-11-04） ----
+ * 最短走行の縦横の直進で、横の壁が切れたところ（探索の壁切れと同じ見つけ方）から、前後の位置のずれを求める。
+ * 切れ目を見つける位置は、探索と同じ WALL_EDGE_LEFT_POSITION_MM・WALL_EDGE_RIGHT_POSITION_MM（区画の入口から）。
+ * 最短走行は探索（300mm/s）より速いので、速さで見つける位置が変わるかもしれない（KOGUMA は 1000mm/s あたり約 6mm 手前に
+ * 見えた）。まず FAST_WALL_EDGE_ENABLE を 0 にして、ずれと速さをモード7 No.1 で出し、速さで変わるかを見てから 1 にする */
+#define FAST_WALL_EDGE_ENABLE    0      /* 直進の残りを直すか（1 直す、0 測るだけ） */
+#define FAST_WALL_EDGE_WINDOW_MM 20.0f  /* 決めた位置からこれ以上ずれて見つかったら、読み違いとして使わない [mm] */
+#define FAST_WALL_EDGE_MASK_MM   10.0f  /* 直進を始めてからこれだけ進むまでは見ない [mm]（ターンのすぐあとは、
+                                           センサが壁をなめて、切れ目でない変化が出る。KOGUMA の EDGE_MASK_AFTER_TURN） */
+
 /* ---- 探索の横壁合わせ（sys/explore.c・ctrl/run.c。2026-11-02） ----
  * 走っていて、区画の入口で横の壁が SIDE_TOO_CLOSE_MM より近いとわかったら、その区画のまん中で止まり、
  * 近すぎた側の壁のほうへ 90° 回って前壁合わせをし、元の向きに戻ってから探索を続ける（左右のずれと向きを直す）。 */

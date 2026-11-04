@@ -177,6 +177,22 @@ static float straight_distance_mm(int i)
   return distance_mm;
 }
 
+/* 経路の i 番目の直進を始める位置が、うしろの区画の境目から何 mm 先か（壁切れに使う。ctrl/run.c の run_fast_straight）。
+ *   最初の直進：スタート区画の南の辺から、タイヤの軸まで（先頭のコメントの「■ スタートの位置」。35mm）
+ *   小回りのあと（No.1〜3）：小回りは区画の入口から次の区画の入口まで曲がるので、境目の上（0mm）
+ *   大回り・斜め出のあと（No.4・5）：区画のまん中（45mm） */
+static float straight_start_in_cell_mm(int i)
+{
+  if (i == 0) {
+    return HALF_CELL_MM - START_OFFSET_MM;
+  }
+  motion_t before = s_path.steps[i - 1].motion;
+  if (before == MOTION_TURN_LEFT || before == MOTION_TURN_RIGHT) {
+    return 0.0f;
+  }
+  return HALF_CELL_MM;
+}
+
 /* No.1〜3：経路の i 番目の動きを走る。最後の動き（ゴールの区画のまん中まで進む直進）では止まる */
 static void run_small_turn_step(int i, float max_speed, float accel)
 {
@@ -186,7 +202,8 @@ static void run_small_turn_step(int i, float max_speed, float accel)
   if (motion == MOTION_STRAIGHT && is_last) {
     run_fast_stop(straight_distance_mm(i), max_speed, accel);
   } else if (motion == MOTION_STRAIGHT) {
-    run_fast_straight(straight_distance_mm(i), max_speed, SEARCH_SPEED_MM_S, accel);  /* 次の小回りの速さで終わる */
+    /* 次の小回りの速さで終わる */
+    run_fast_straight(straight_distance_mm(i), max_speed, SEARCH_SPEED_MM_S, accel, straight_start_in_cell_mm(i));
   } else if (motion == MOTION_TURN_LEFT) {
     run_fast_turn_left();
   } else if (motion == MOTION_TURN_RIGHT) {
@@ -314,7 +331,7 @@ static void run_diagonal_path(int number)
       float distance_mm = straight_distance_mm(i);
       float limit_mm_s = speed_limit_ahead_mm_s(i + 1, accel, diag_accel);
       float end_mm_s = straight_end_speed_mm_s(speed_mm_s, distance_mm, accel, max_speed, limit_mm_s);
-      run_fast_straight(distance_mm, max_speed, end_mm_s, accel);
+      run_fast_straight(distance_mm, max_speed, end_mm_s, accel, straight_start_in_cell_mm(i));
       speed_mm_s = end_mm_s;
     } else if (motion == MOTION_DIAG_STRAIGHT) {
       float distance_mm = diag_distance_mm(i);
