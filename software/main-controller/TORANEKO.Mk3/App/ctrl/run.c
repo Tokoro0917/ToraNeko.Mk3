@@ -33,9 +33,10 @@
  *
  * ■ 壁切れ（config/run_params.h の WALL_EDGE_*）
  * 探索で 1 区画まっすぐ進むあいだ、横のセンサを見続ける。入口で壁があった側が「壁なし」に変わったら、
- * そこは壁の切れ目（区画の出口の柱を過ぎたところ）なので、入口から WALL_EDGE_POSITION_MM のところにいるはず。
+ * そこは壁の切れ目（区画の出口の柱を過ぎたところ）なので、入口から WALL_EDGE_LEFT_POSITION_MM（左の壁）・
+ * WALL_EDGE_RIGHT_POSITION_MM（右の壁）のところにいるはず。
  * 思っていた位置とのずれだけ、この直進の残りの距離を直す（trajectory_add_distance()）。
- * 見つけた位置は数えておき、モード7 No.1 で出す（WALL_EDGE_POSITION_MM を決めるのに使う）。
+ * 見つけた位置は、どちらの壁かといっしょに数えておき、モード7 No.1 で出す（左右の位置を決めるのに使う）。
  *
  * ■ 横壁合わせ（run_search_align_to_side()。2026-11-02）
  * 止まっている区画のまん中で、横の壁のほうへ 90° 回り、その壁で前壁合わせをして、元の向きに戻る。
@@ -336,11 +337,20 @@ float run_get_wall_edge_max_mm(void)
   return s_wall_edge_max_mm;
 }
 
+/* 壁の切れ目を見つけるはずの位置 [mm]（区画の入口から）。is_left は左の壁か（左右で違う。config/run_params.h） */
+static float wall_edge_expected_mm(bool is_left)
+{
+  if (is_left) {
+    return WALL_EDGE_LEFT_POSITION_MM;
+  }
+  return WALL_EDGE_RIGHT_POSITION_MM;
+}
+
 /* 壁の切れ目を見つけたときに呼ぶ。position_mm は、思っている今の位置（区画の入口から）。is_left は左の壁で見つけたか。
  * 決めた範囲の中なら記録し、WALL_EDGE_ENABLE が 1 なら、ずれた分だけ今の直進の残りを直す */
 static void on_wall_edge(float position_mm, bool is_left)
 {
-  float error_mm = position_mm - WALL_EDGE_POSITION_MM;  /* + なら、思っているより手前にいる */
+  float error_mm = position_mm - wall_edge_expected_mm(is_left);  /* + なら、思っているより手前にいる */
   if (error_mm > WALL_EDGE_WINDOW_MM || error_mm < -WALL_EDGE_WINDOW_MM) {
     return;  /* 離れすぎている：読み違いとして使わない */
   }
