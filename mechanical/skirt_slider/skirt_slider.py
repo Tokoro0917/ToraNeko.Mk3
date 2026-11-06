@@ -5,7 +5,7 @@
          skirt_frame.stl / .step   スカート枠（前後のスライダーの出っ張り付き）。両面テープで貼る
          slider_front.stl / .step  スカートを付けないときの前スライダー。ネジで留める
          slider_rear.stl / .step   スカートを付けないときの後ろスライダー。ネジで留める
-         skirt_frame_rect.stl / .step  長方形のスカート枠（内側の面積 約 770mm²）。両面テープで貼る
+         skirt_frame_rect.stl / .step  長方形のスカート枠（内側の面積 約 730mm²）。ネジ頭にかからない。両面テープで貼る
 
 座標は機体の STEP（mechanical/exported/TORANEKO.Mk3_v36.step）と同じ。
   z = 0 がメイン基板の下面（STEP の基板は z = 0〜0.6）、床は z = -2.36（タイヤの下端）
@@ -62,11 +62,11 @@ FRONT_SLIDER_END_Y = -22.5     # 前スライダーはこれより前
 REAR_SLIDER_START_Y = 4.5      # 後ろスライダーはこれより後ろ
 
 # ---- 長方形の枠（skirt_frame_rect）の形 ------------------------------------
-# 袋（フィルム）を切りやすいように、外形を長方形 1 つにした枠。
-RECT_HALF_W = 10.25            # 中心線から枠の外側まで。モータマウントのネジ頭（10.65mm から）の内側
-RECT_FRONT_Y = -26.67          # 前の端（外側の面）。支柱のネジ（Y = -26.07）が前の壁の上に乗る
+# 袋（フィルム）を切りやすいように、外形を長方形 1 つにした枠。どのネジ頭にもかからない。
+RECT_HALF_W = 10.25            # 中心線から枠の外側まで。モータマウントのネジ頭（10.65mm から）の 0.4mm 内側
+RECT_FRONT_Y = -24.42          # 前の端（外側の面）。支柱のネジ頭（Y = -26.07 ± 1.25）の 0.4mm 後ろ
 RECT_REAR_Y = 18.38            # 後ろの端（外側の面）。後ろのえぐれのいちばん深い所（Y = 19.18）から 0.8mm
-RECT_SLIDER_U = 5.0            # スライダーの出っ張りの左右位置。前は支柱のネジのまわりの太い部分をよける
+RECT_SLIDER_U = 5.0            # スライダーの出っ張りの左右位置。前の出っ張りを支柱のネジ頭から離す
 
 
 def outline(inset):
@@ -217,17 +217,15 @@ def skirt_frame():
 
 
 def skirt_frame_rect():
-    """長方形のスカート枠。作り方は skirt_frame() と同じで、外形とスライダーの位置だけが違う。"""
+    """長方形のスカート枠。作り方は skirt_frame() と同じ。
+
+    今の枠と違って、支柱のネジ頭は枠の前の外にあるので、逃げの穴はない。
+    """
     height = FRAME_H - TAPE_T
     pad_height = -FLOOR_Z - SLIDER_GAP - TAPE_T
     body = rect_wall(height).union(rect_flange())
     for x, y in rect_slider_positions():
         body = body.union(slider_pad(x, y, pad_height))
-    # 支柱のネジ頭は前の壁の上に来るので、壁を太くしてから上から逃げの穴をあける
-    for x, y in POST_SCREWS:
-        body = body.union(cylinder_down(x, y, POST_BOSS_R, height))
-        pocket = cylinder_down(x, y, HEAD_POCKET_D / 2, HEAD_POCKET_H + 1).translate((0, 0, 1))
-        body = body.cut(pocket)
     return body.translate((0, 0, -TAPE_T))
 
 
