@@ -5,7 +5,7 @@
          skirt_frame.stl / .step   スカート枠（前後のスライダーの出っ張り付き）。両面テープで貼る
          slider_front.stl / .step  スカートを付けないときの前スライダー。ネジで留める
          slider_rear.stl / .step   スカートを付けないときの後ろスライダー。ネジで留める
-         skirt_frame_wide.stl / .step  囲む面積を広げたスカート枠（約 940mm²）。両面テープで貼る
+         skirt_frame_rect.stl / .step  長方形のスカート枠（内側の面積 約 770mm²）。両面テープで貼る
 
 座標は機体の STEP（mechanical/exported/TORANEKO.Mk3_v36.step）と同じ。
   z = 0 がメイン基板の下面（STEP の基板は z = 0〜0.6）、床は z = -2.36（タイヤの下端）
@@ -61,17 +61,12 @@ SLIDER_SIDE_U = 7.0            # スライダーの出っ張りの左右位置�
 FRONT_SLIDER_END_Y = -22.5     # 前スライダーはこれより前
 REAR_SLIDER_START_Y = 4.5      # 後ろスライダーはこれより後ろ
 
-# ---- 広い枠（skirt_frame_wide）の形 ------------------------------------------
-# 吸う力は「スカートの中の負圧 × 囲む面積」なので、囲む面積を広げると同じファンでも強く吸える。
-# 前・真ん中・後ろの 3 つの帯で幅を変える（どれも中心線から枠の外側までの距離）。
-WIDE_FRONT_HALF_W = 9.3        # 前の帯。前のセンサホルダ（中心線から 9.97mm）があるので今の枠と同じ
-WIDE_FRONT_END_Y = -24.5       # 前の帯はここまで（支柱のネジの逃げの穴は今の枠と同じ位置に残る）
-WIDE_MIDDLE_HALF_W = 12.4      # 真ん中の帯。タイヤの切り欠き（13.4mm）・横のセンサの LED の足（13.45mm）から 1mm 離す
-WIDE_MIDDLE_END_Y = 6.78       # 真ん中の帯はここまで（後ろのモータマウントのネジ頭の手前）
-WIDE_REAR_HALF_W = 10.25       # 後ろの帯。モータマウントのネジ頭（10.65mm）とコネクタ J1 の足（11.6mm）をよける
-# 前のモータマウントのネジ頭（φ2.5）は真ん中の帯の壁にかかるので、壁をネジのまわりだけ内側へへこませる
-WIDE_NOTCH_R = 1.65            # へこみの半径（ネジ頭の半径 1.25 + すき間 0.4）
-WIDE_CORNER_R = 0.6            # 帯の段とへこみの角の丸み
+# ---- 長方形の枠（skirt_frame_rect）の形 ------------------------------------
+# 袋（フィルム）を切りやすいように、外形を長方形 1 つにした枠。
+RECT_HALF_W = 10.25            # 中心線から枠の外側まで。モータマウントのネジ頭（10.65mm から）の内側
+RECT_FRONT_Y = -26.67          # 前の端（外側の面）。支柱のネジ（Y = -26.07）が前の壁の上に乗る
+RECT_REAR_Y = 18.38            # 後ろの端（外側の面）。後ろのえぐれのいちばん深い所（Y = 19.18）から 0.8mm
+RECT_SLIDER_U = 5.0            # スライダーの出っ張りの左右位置。前は支柱のネジのまわりの太い部分をよける
 
 
 def outline(inset):
@@ -122,58 +117,41 @@ def flange():
     return outside.cut(inside)
 
 
-def wide_outline_wire(inset):
-    """広い枠の外形（上から見た形）を線で返す。inset だけ内側に縮めた形にする。
+def rect_outline(inset):
+    """長方形の枠の外形（上から見た形）。inset だけ内側に縮めた長方形を返す。
 
-    3 つの帯（長方形）を足して、前後のえぐれの円とネジのまわりの円を引き、角を丸める。
     inset = 0 で枠の外側の面、inset = WALL_T で内側の面、inset = FLANGE_W でつばの内側になる。
     """
-    arc_r = BOARD_ARC_R + EDGE_MARGIN
-    front_y = FRONT_ARC_CY            # 帯はえぐれの円の中心から始めて、円で切る
-    rear_y = REAR_ARC_CY
-    sketch = cq.Sketch()
-    # 前の帯
-    sketch = sketch.push([(CENTER_X, (front_y + WIDE_FRONT_END_Y) / 2)])
-    sketch = sketch.rect(WIDE_FRONT_HALF_W * 2, WIDE_FRONT_END_Y - front_y)
-    # 真ん中の帯
-    sketch = sketch.push([(CENTER_X, (WIDE_FRONT_END_Y + WIDE_MIDDLE_END_Y) / 2)])
-    sketch = sketch.rect(WIDE_MIDDLE_HALF_W * 2, WIDE_MIDDLE_END_Y - WIDE_FRONT_END_Y)
-    # 後ろの帯
-    sketch = sketch.push([(CENTER_X, (WIDE_MIDDLE_END_Y + rear_y) / 2)])
-    sketch = sketch.rect(WIDE_REAR_HALF_W * 2, rear_y - WIDE_MIDDLE_END_Y)
-    # 前後のえぐれ（今の枠と同じ円弧）を引く
-    sketch = sketch.push([(CENTER_X, FRONT_ARC_CY)]).circle(arc_r, mode="s")
-    sketch = sketch.push([(CENTER_X, REAR_ARC_CY)]).circle(arc_r, mode="s")
-    # 前のモータマウントのネジ頭のまわりを引く
-    sketch = sketch.push(MOTOR_SCREWS_FRONT).circle(WIDE_NOTCH_R, mode="s")
-    # 角を丸める（帯の段・へこみ・円弧との交わり）
-    sketch = sketch.reset().vertices().fillet(WIDE_CORNER_R)
-    # 平らな板にしてから、z = 0 の面の輪郭を取り出す
-    plate = cq.Workplane("XY").placeSketch(sketch).extrude(1)
-    wire = plate.faces("<Z").val().outerWire()
-    if inset == 0:
-        return wire
-    return wire.offset2D(-inset, "arc")[0]
+    width = (RECT_HALF_W - inset) * 2
+    length = (RECT_REAR_Y - RECT_FRONT_Y) - inset * 2
+    middle_y = (RECT_FRONT_Y + RECT_REAR_Y) / 2
+    return cq.Workplane("XY").center(CENTER_X, middle_y).rect(width, length)
 
 
-def extrude_wire_down(wire, height):
-    """線で囲んだ形を z = 0 から下に height だけ押し出す。"""
-    sketch = cq.Workplane("XY").add(wire).toPending()
-    return sketch.extrude(height).translate((0, 0, -height))
-
-
-def wide_wall(height):
-    """広い枠の壁（輪の形）。"""
-    outside = extrude_wire_down(wide_outline_wire(0), height)
-    inside = extrude_wire_down(wide_outline_wire(WALL_T), height + 1)
+def rect_wall(height):
+    """長方形の枠の壁（輪の形）。"""
+    outside = extrude_down(rect_outline(0), height)
+    inside = extrude_down(rect_outline(WALL_T), height + 1)
     return outside.cut(inside)
 
 
-def wide_flange():
-    """広い枠の壁の上端から内側に出す、両面テープを貼るためのつば。"""
-    outside = extrude_wire_down(wide_outline_wire(0), FLANGE_T)
-    inside = extrude_wire_down(wide_outline_wire(FLANGE_W), FLANGE_T + 1)
+def rect_flange():
+    """長方形の枠の壁の上端から内側に出す、両面テープを貼るためのつば。"""
+    outside = extrude_down(rect_outline(0), FLANGE_T)
+    inside = extrude_down(rect_outline(FLANGE_W), FLANGE_T + 1)
     return outside.cut(inside)
+
+
+def rect_slider_positions():
+    """長方形の枠のスライダーの出っ張りの位置（前 2 か所、後ろ 2 か所）。
+
+    前と後ろの壁の厚みの真ん中に置く。
+    """
+    front_y = RECT_FRONT_Y + WALL_T / 2
+    rear_y = RECT_REAR_Y - WALL_T / 2
+    right_x = CENTER_X - RECT_SLIDER_U
+    left_x = CENTER_X + RECT_SLIDER_U
+    return [(right_x, front_y), (left_x, front_y), (right_x, rear_y), (left_x, rear_y)]
 
 
 def cut_post_screw(body, x, y):
@@ -238,14 +216,14 @@ def skirt_frame():
     return body.translate((0, 0, -TAPE_T))
 
 
-def skirt_frame_wide():
-    """囲む面積を広げたスカート枠。作り方は skirt_frame() と同じで、外形だけが違う。"""
+def skirt_frame_rect():
+    """長方形のスカート枠。作り方は skirt_frame() と同じで、外形とスライダーの位置だけが違う。"""
     height = FRAME_H - TAPE_T
     pad_height = -FLOOR_Z - SLIDER_GAP - TAPE_T
-    body = wide_wall(height).union(wide_flange())
-    for x, y in slider_positions():
+    body = rect_wall(height).union(rect_flange())
+    for x, y in rect_slider_positions():
         body = body.union(slider_pad(x, y, pad_height))
-    # 支柱のネジ頭は前の帯の壁の上に来る（今の枠と同じ）
+    # 支柱のネジ頭は前の壁の上に来るので、壁を太くしてから上から逃げの穴をあける
     for x, y in POST_SCREWS:
         body = body.union(cylinder_down(x, y, POST_BOSS_R, height))
         pocket = cylinder_down(x, y, HEAD_POCKET_D / 2, HEAD_POCKET_H + 1).translate((0, 0, 1))
@@ -300,10 +278,10 @@ if __name__ == "__main__":
     sliders = screwed_frame()
     export(keep_y_range(sliders, -50, FRONT_SLIDER_END_Y), "slider_front")
     export(keep_y_range(sliders, REAR_SLIDER_START_Y, 50), "slider_rear")
-    export(skirt_frame_wide(), "skirt_frame_wide")
+    export(skirt_frame_rect(), "skirt_frame_rect")
     print(f"枠の外周の長さ: {outline_length():.1f} mm")
     print(f"枠の内側の面積: {inside_area(outline(WALL_T).wires().val()):.0f} mm²")
-    print(f"広い枠の外周の長さ: {wide_outline_wire(0).Length():.1f} mm")
-    print(f"広い枠の内側の面積: {inside_area(wide_outline_wire(WALL_T)):.0f} mm²")
+    print(f"長方形の枠の外周の長さ: {rect_outline(0).wires().val().Length():.1f} mm")
+    print(f"長方形の枠の内側の面積: {inside_area(rect_outline(WALL_T).wires().val()):.0f} mm²")
     print(f"テープを床から 0.3mm まで垂らすときの幅: {-FLOOR_Z - 0.3:.2f} mm")
     print("done")
