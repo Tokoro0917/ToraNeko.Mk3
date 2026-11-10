@@ -1972,6 +1972,19 @@ void run_search_turn_back_at_center(void)
   s_sim_turn_back_count = s_sim_turn_back_count + 1;
 }
 
+/* 止まっている → お尻を後ろの壁に当てる（スタート区画で北を向いたあと） */
+static int s_sim_back_to_wall_count = 0;  /* 呼ばれた回数 */
+void run_search_back_to_wall(void)
+{
+  if (!s_sim_stopped) {
+    sim_error("走っているのに、後ろへ下がった");
+  }
+  if (s_sim_x != 0 || s_sim_y != 0 || s_sim_dir != DIR_NORTH) {
+    sim_error("スタート区画で北を向いていないのに、後ろへ下がった");
+  }
+  s_sim_back_to_wall_count = s_sim_back_to_wall_count + 1;
+}
+
 /* 壁を見る。explore.c は前・左・右の順に見てから記録するので、前を見たときに「記録する直前の地図」を写しておく */
 bool wall_ctrl_has_wall_front(void)
 {
@@ -2125,6 +2138,7 @@ static bool explore_and_check(explore_type_t type, bool verbose)
   maze_map_init();
   sim_place_at_start(-1);
   s_sim_turn_back_count = 0;
+  s_sim_back_to_wall_count = 0;
   if (!is_unknown_walls_type(type)) {
     s_sim_uturn_only = true;  /* 往復・片道は計算のために止まらない */
   }
@@ -2158,8 +2172,8 @@ static bool explore_and_check(explore_type_t type, bool verbose)
       ok = false;
     }
     /* スタートに戻ったら、北を向いて止まる（2026-11-10） */
-    if (s_sim_dir != DIR_NORTH || s_sim_turn_back_count != 1) {
-      ok = false;
+    if (s_sim_dir != DIR_NORTH || s_sim_turn_back_count != 1 || s_sim_back_to_wall_count != 1) {
+      ok = false;  /* 北を向いて、お尻を後ろの壁に当てて終わる */
     }
   }
   if (type == EXPLORE_ONE_WAY && s_sim_turn_back_count != 0) {

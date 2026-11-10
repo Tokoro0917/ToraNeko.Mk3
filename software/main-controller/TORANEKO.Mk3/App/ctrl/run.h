@@ -23,6 +23,8 @@
  *                                 次の区画の入口の辺へ（U ターンは「止まる」と「後ろを向いて発進」でできている）
  *   run_search_turn_back_at_center()  止まっている → 前壁合わせ・左 90°・前壁合わせ・左 90° で反対を向いて止まる
  *                                 （スタート区画に戻ったとき、次にすぐスタートできるように北を向く。2026-11-10）
+ *   run_search_back_to_wall()     止まっている → まっすぐ後ろへゆっくり下がり、お尻を後ろの壁に押し当てて止まる
+ *                                 （北を向いたあとに使う。走り出す前の置き方と同じになる。2026-11-10）
  *
  * ■ 中身（run.c）を作るときに守ること（sys/explore.c と、test/test_maze.c の「仮の機体」はこれを前提にしている）
  *   1. 走っているあいだの動き（直進・スラローム）は、次の区画の入口の辺に着いたところで戻る。
@@ -55,6 +57,7 @@ void run_search_turn_right(void);
 void run_search_stop_at_center(void);
 void run_search_go_from_center(run_turn_t turn);
 void run_search_turn_back_at_center(void);
+void run_search_back_to_wall(void);
 void run_search_align_to_side(bool is_left);
 
 /* 最短走行（モード1 は sys/shortest.c、モード3 のターンの調整は sys/turn_test.c）の動き。
