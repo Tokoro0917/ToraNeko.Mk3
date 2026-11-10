@@ -5,6 +5,7 @@
          centering_plate.stl / .step          まっすぐ版（機体の中心を区画の中心に、まっすぐ前向きに置く）
          centering_plate_diag_R.stl / .step   斜め版・右（機体の中心を区画の辺の中点に、右斜め 45° 向きに置く）
          centering_plate_diag_L.stl / .step   斜め版・左（右と左右反対。左斜め 45° 向き）
+         centering_plate_edge.stl / .step     境目版（機体の中心〈車軸〉を区画の境目に、まっすぐ前向きに置く。2026-11-10）
 
 どれも区画の床に置き、壁に当てて使う。機体の後ろの 2 つの角を L 字の縁で受けて、
 機体の中心（車軸の中点。基板の外形の中心と同じ）の位置と向きを決める。
@@ -15,6 +16,11 @@
   まっすぐ版: 機体の後ろと後ろの壁のあいだに入る帯。両端が左右の壁に、背中が後ろの壁に当たる
   斜め版:     機体の後ろの辺に沿う棒と、横の壁に沿う棒をつないだ形。
               横の壁に沿う棒が壁に沿って当たり（向きと左右の位置）、その端が奥の壁に当たる（前後の位置）
+
+【境目版の置き方】
+会場ごとの感度合わせ（ファームウェアのモード5 No.7）は、タイヤの軸を区画の境目（入口の辺）に合わせ、左右の壁のまん中に置いて測る。
+境目版は、うしろの区画（区画 B）に置く。区画 B の後ろの壁から機体の後ろまでの枠で、機体の中心を、区画 B と前の区画（区画 A）の
+境目の上に、左右のまん中・まっすぐ前向きに置く。区画 B には後ろと左右の壁が要る（スタート区画と同じ形）。
 
 【斜め版の置き方】
 斜めの動き（斜め入りの終わり、V90、斜め出の始め）は、区画の辺の中点を 45° の向きで通る。
@@ -46,6 +52,8 @@ RIM_BASE_W = 4.0       # 縁の外側に付ける土台（板と同じ厚さ）�
 REAR_BAR_W = 8.0       # 斜め版の、機体の後ろの辺に沿う棒の幅（縁の後ろから）
 SIDE_BAR_W = 10.0      # 斜め版の、横の壁に沿う棒の幅
 GUSSET_LEN = 20.0      # 斜め版の、2 本の棒のつなぎ目に入れる三角の補強の大きさ
+EDGE_BAND_W = 8.0      # 境目版の、後ろの壁に沿う帯の幅
+EDGE_SIDE_W = 8.0      # 境目版の、左右の壁に沿う棒の幅
 
 # ---- 機体の寸法（STEP 座標）-----------------------------------------------
 FLOOR_Z = -2.36                # 床の高さ（基板の下面から）
@@ -59,6 +67,10 @@ HALF_CELL = CELL_INNER / 2 - WALL_GAP         # 区画の中心から板の外�
 BOARD_REAR = BOARD_L / 2                      # 機体の中心から基板の後ろの端まで
 RIM_INNER_V = BOARD_REAR + BOARD_GAP          # 機体の中心から縁の内側（基板に当たる面）まで
 RIM_OUTER_U = BOARD_W / 2 + BOARD_GAP + RIM_W # 機体の中心から縁の外側（左右）まで
+# 境目版：機体の中心（区画の境目の上）から、区画 B の後ろの壁の表面まで（区画 90mm − 壁の厚さの半分 3mm = 87mm）。
+# 板の後ろの端は、そこから WALL_GAP だけ手前
+EDGE_REAR_WALL_V = CELL_PITCH - (CELL_PITCH - CELL_INNER) / 2
+EDGE_PLATE_REAR_V = EDGE_REAR_WALL_V - WALL_GAP
 # 斜め版の区画 B の範囲（区画の座標。原点が辺の中点、x が東、y が北）
 CELL_B_WEST = -HALF_CELL
 CELL_B_EAST = HALF_CELL
@@ -139,6 +151,23 @@ def straight_frame():
     return band.union(rim())
 
 
+def edge_frame():
+    """境目版の枠: 後ろの壁に沿う帯、左右の壁に沿う棒、機体の後ろの帯（左右の壁まで）、縁。
+
+    真ん中は抜いて、口の字の形にする（材料と印刷の時間を減らす）。
+    後ろの壁に沿う帯が後ろの壁に当たって前後の位置が、左右の棒が左右の壁に当たって左右の位置と向きが決まる。
+    """
+    rear_band = robot_rect(-HALF_CELL, HALF_CELL, EDGE_PLATE_REAR_V - EDGE_BAND_W, EDGE_PLATE_REAR_V,
+                           FLOOR_Z, FLOOR_Z + PLATE_T)
+    robot_band = robot_rect(-HALF_CELL, HALF_CELL, RIM_INNER_V, RIM_INNER_V + RIM_W + REAR_BAR_W,
+                            FLOOR_Z, FLOOR_Z + PLATE_T)
+    left_bar = robot_rect(HALF_CELL - EDGE_SIDE_W, HALF_CELL, RIM_INNER_V, EDGE_PLATE_REAR_V,
+                          FLOOR_Z, FLOOR_Z + PLATE_T)
+    right_bar = robot_rect(-HALF_CELL, -HALF_CELL + EDGE_SIDE_W, RIM_INNER_V, EDGE_PLATE_REAR_V,
+                           FLOOR_Z, FLOOR_Z + PLATE_T)
+    return rear_band.union(robot_band).union(left_bar).union(right_bar).union(rim())
+
+
 def gusset():
     """斜め版（右）の、横の壁に沿う棒と機体の後ろの棒のつなぎ目に入れる三角の補強。
 
@@ -215,6 +244,13 @@ def diagonal_centering_plate_left():
     return carve_text(body, "L", mirrored_x, position[1], 5.0, 0)
 
 
+def edge_centering_plate():
+    """境目版のセンタリング板。後ろの壁に沿う帯に「EDGE」と彫る（読める向きが機体の前）。"""
+    body = cut_board(edge_frame())
+    position = at(0, EDGE_PLATE_REAR_V - EDGE_BAND_W / 2, 0)
+    return carve_text(body, "EDGE", position[0], position[1], 4.0, 180)
+
+
 def export(body, name):
     """STEP は機体の座標のまま、STL は底面を z = 0 にずらして出力する。"""
     cq.exporters.export(body, str(OUT / f"{name}.step"))
@@ -227,4 +263,5 @@ if __name__ == "__main__":
     export(centering_plate(), "centering_plate")
     export(diagonal_centering_plate_right(), "centering_plate_diag_R")
     export(diagonal_centering_plate_left(), "centering_plate_diag_L")
+    export(edge_centering_plate(), "centering_plate_edge")
     print("done")
