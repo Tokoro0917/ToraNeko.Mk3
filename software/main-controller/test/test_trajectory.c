@@ -290,6 +290,30 @@ static void test_add_distance(void)
         "もう進んだ量より短くはならない（すぐに終わる）");
 }
 
+/* 後ろへ進む直進（2026-11-10。探索でスタートに戻ったとき、お尻を後ろの壁に当てる）：速さ・距離が - になり、決めた距離で止まる */
+static void test_straight_back(void)
+{
+  printf("[9] 後ろへ進む直進\n");
+  trajectory_reset();
+  trajectory_start_straight_back(13.0f, 50.0f, 1000.0f);
+  bool always_backward = true;
+  int steps = 0;
+  while (!trajectory_is_done() && steps < 10000) {
+    trajectory_update();
+    if (trajectory_get_speed_mm_s() > 0.0f || trajectory_get_distance_mm() > 0.0f) {
+      always_backward = false;
+    }
+    steps = steps + 1;
+  }
+  check(always_backward, "速さと距離は、ずっと 0 か -");
+  check(fabsf(trajectory_get_distance_mm() + 13.0f) < 0.001f, "ちょうど 13mm 下がる（距離は -13）");
+  check(trajectory_get_speed_mm_s() == 0.0f, "下がり終わると止まる");
+  /* 次に前へ進む直進は、ふつうに + になる */
+  trajectory_start_straight(45.0f, 300.0f, 0.0f, 3000.0f);
+  trajectory_update();
+  check(trajectory_get_speed_mm_s() > 0.0f && trajectory_get_distance_mm() > 0.0f, "そのあとの前への直進は + に戻る");
+}
+
 int main(void)
 {
   test_trapezoid();
@@ -300,6 +324,8 @@ int main(void)
   test_slalom();
   test_gap_between_moves();
   test_add_distance();
+
+  test_straight_back();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

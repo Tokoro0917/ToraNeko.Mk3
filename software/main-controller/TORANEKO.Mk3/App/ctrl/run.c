@@ -81,7 +81,6 @@
 #include "ctrl/trajectory.h"
 #include "ctrl/wall_ctrl.h"
 #include "drv/imu.h"
-#include "drv/motor.h"
 #include "drv/timebase.h"
 #include "sys/failsafe.h"
 #include "sys/log.h"
@@ -656,17 +655,25 @@ void run_search_turn_back_at_center(void)
 }
 
 /* 止まっている → まっすぐ後ろへゆっくり下がって、お尻を後ろの壁に押し当てて止まる（スタート区画に戻ったときの最後。sys/explore.c）。
- * 制御（目標の速さに合わせる計算）は止めたまま、左右のモーターに同じ電圧を後ろ向きに BACK_TO_WALL_MS だけかける
- * （config/run_params.h の BACK_TO_WALL_*）。機体は後ろへ進む目標を作れないので、電圧を直接かける（sys/encoder_cal.c と同じやり方）。
- * 壁に当たると止まり、押し当てているあいだに、お尻が壁に沿う。これで、走り出す前の置き方（お尻を後ろの壁に付ける）と同じになる */
+ * 速さの制御をしながら（左右のタイヤを同じ速さで回す）、区画のまん中から START_OFFSET_MM + BACK_TO_WALL_PRESS_MM 下がる
+ * （config/run_params.h の BACK_TO_WALL_*）。壁に当たって止まると、頼んだ位置との差の分だけ後ろへ押し続けるので、
+ * BACK_TO_WALL_PRESS_MS 待つあいだに、お尻が壁に沿う。これで、走り出す前の置き方（お尻を後ろの壁に付ける）と同じになる。
+ * 横の壁に沿う補正は切る（前へ進むときの向きで計算しているため）。終わったら、モーターの出力を 0 にして止まっている */
 void run_search_back_to_wall(void)
 {
   if (failsafe_is_stopped()) {
     return;
   }
-  motor_set_voltage(-BACK_TO_WALL_V, -BACK_TO_WALL_V);  /* - が後ろ向き */
-  timebase_wait_ms(BACK_TO_WALL_MS);
-  motor_stop();
+  control_restart();                 /* 止まっているので、制御を始め直す（向きは、今の向きをまっすぐにする） */
+  control_set_wall_control(false);   /* 横の壁に沿う補正は使わない */
+  trajectory_start_straight_back(START_OFFSET_MM + BACK_TO_WALL_PRESS_MM, BACK_TO_WALL_SPEED_MM_S,
+                                 BACK_TO_WALL_ACCEL_MM_S2);
+  wait_until_done();
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  timebase_wait_ms(BACK_TO_WALL_PRESS_MS);  /* 押し当てたまま待つ */
+  control_stop();                           /* 制御をやめて、モーターを止める */
 }
 
 /* 止まっている → 前に壁があれば前壁合わせをして、その場で向きを変えて（turn）、

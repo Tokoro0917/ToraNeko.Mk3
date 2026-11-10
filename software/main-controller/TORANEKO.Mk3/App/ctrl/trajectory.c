@@ -24,8 +24,10 @@
  * （2026-10-24 の探索のログで、曲がり始めが毎回 10〜13mm 遅れ、壁に当たりかけて気づいた）。
  * そこで、動いていないあいだに進んだ距離（s_overrun_mm）も数えておき、次の直進の距離からその分を引く。
  *
- * ■ 旋回の向き
+ * ■ 旋回の向き・後ろへ進む直進
  * 右回り（角度がマイナス）のときは、中では + の量として計算し、取り出すときに - をかける。
+ * 後ろへ進む直進（trajectory_start_straight_back()。2026-11-10）も同じで、中では + の量として計算し、
+ * 速さ・加速度・距離を取り出すときに - をかける（s_direction が -1）。
  *
  * ■ 割り込み
  * trajectory_update() は制御周期の割り込み（ctrl/control.c）から呼ぶ。
@@ -44,7 +46,7 @@
 static volatile bool s_running = false;    /* 動きの途中か */
 static volatile trajectory_kind_t s_kind = TRAJECTORY_STRAIGHT;  /* 今の動きの種類 */
 static volatile float s_forward_speed_mm_s = 0.0f;  /* スラロームのあいだの、前に進む速さ（一定） */
-static volatile float s_direction = 1.0f;  /* 旋回の向き（左回り 1、右回り -1）。直進は 1 */
+static volatile float s_direction = 1.0f;  /* 旋回の向き（左回り 1、右回り -1）。直進は前へ 1、後ろへ -1 */
 static volatile float s_speed = 0.0f;      /* 今の目標の速さ（直進は mm/s、旋回は deg/s。いつも + ） */
 static volatile float s_accel = 0.0f;      /* 今の目標の加速度（加速中 +、減速中 -、それ以外 0） */
 static volatile float s_amount = 0.0f;     /* この動きで進んだ量（直進は mm、旋回は deg。いつも + ） */
@@ -86,6 +88,26 @@ void trajectory_start_straight(float distance_mm, float max_speed_mm_s, float en
   s_goal_amount = distance_mm;
   s_max_speed = max_speed_mm_s;
   s_end_speed = end_speed_mm_s;
+  s_accel_limit = accel_mm_s2;
+  s_amount = 0.0f;
+  s_running = true;   /* 最後に、動いているにする */
+}
+
+/* まっすぐ後ろへ distance_mm 下がる動きを始める（止まっているところから呼ぶ）。最高速 max_speed_mm_s まで accel_mm_s2 で
+ * 速くし、終わりに止まる。中身は前へ進む直進と同じで、速さ・加速度・距離を取り出すときに - が付く（先頭のコメント） */
+void trajectory_start_straight_back(float distance_mm, float max_speed_mm_s, float accel_mm_s2)
+{
+  s_running = false;  /* 書いているあいだは、割り込みに使わせない */
+  s_kind = TRAJECTORY_STRAIGHT;
+  s_overrun_mm = 0.0f;  /* 止まっているところから始めるので、進んでしまった分はない */
+  if (distance_mm < MIN_DISTANCE_MM) {
+    distance_mm = MIN_DISTANCE_MM;
+  }
+  s_direction = -1.0f;
+  s_speed = 0.0f;
+  s_goal_amount = distance_mm;
+  s_max_speed = max_speed_mm_s;
+  s_end_speed = 0.0f;
   s_accel_limit = accel_mm_s2;
   s_amount = 0.0f;
   s_running = true;   /* 最後に、動いているにする */
@@ -205,11 +227,11 @@ trajectory_kind_t trajectory_get_kind(void)
   return s_kind;
 }
 
-/* 今の目標の、前に進む速さ [mm/s]（その場旋回は 0、スラロームは一定の速さ） */
+/* 今の目標の、前に進む速さ [mm/s]（その場旋回は 0、スラロームは一定の速さ。後ろへ進む直進は -） */
 float trajectory_get_speed_mm_s(void)
 {
   if (s_kind == TRAJECTORY_STRAIGHT) {
-    return s_speed;
+    return s_direction * s_speed;
   }
   if (s_kind == TRAJECTORY_SLALOM) {
     return s_forward_speed_mm_s;
@@ -217,20 +239,20 @@ float trajectory_get_speed_mm_s(void)
   return 0.0f;
 }
 
-/* 今の目標の、前に進む加速度 [mm/s²]（直進のときだけ。ほかは 0） */
+/* 今の目標の、前に進む加速度 [mm/s²]（直進のときだけ。ほかは 0。後ろへ進む直進では - をかける） */
 float trajectory_get_accel_mm_s2(void)
 {
   if (s_kind == TRAJECTORY_STRAIGHT) {
-    return s_accel;
+    return s_direction * s_accel;
   }
   return 0.0f;
 }
 
-/* 直進の、今の動きで進んだ距離 [mm]（旋回・スラロームのあいだは 0） */
+/* 直進の、今の動きで進んだ距離 [mm]（旋回・スラロームのあいだは 0。後ろへ進む直進は -） */
 float trajectory_get_distance_mm(void)
 {
   if (s_kind == TRAJECTORY_STRAIGHT) {
-    return s_amount;
+    return s_direction * s_amount;
   }
   return 0.0f;
 }
