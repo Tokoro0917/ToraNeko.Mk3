@@ -3,21 +3,27 @@
  * 会場ごとの感度合わせ（モード5 No.7・8。MODES.md。KOGUMA のモード3 No.5 と同じ考え方）
  *
  * 会場の迷路は、壁の塗装で光の跳ね返り方が変わり、壁センサの値が、どの距離でもほぼ同じ割合で大きく・小さくなる。
- * そこで、距離の表（ctrl/wall_dist.c）やしきい値は作り直さず、区画のまん中で 1 回測った「倍率」で直す：
- *   倍率 = 会場の区画のまん中で測った値 ÷ 家の迷路で、同じ置き方（前・左・右に壁）で測った値（下の HOME_*）
+ * そこで、距離の表（ctrl/wall_dist.c）やしきい値は作り直さず、区画の境目で 1 回測った「倍率」で直す：
+ *   倍率 = 会場の区画の境目で測った値 ÷ 家の迷路で、同じ置き方で測った値（ctrl/wall_ctrl.h の WALL_HOME_EDGE_*）
  *   使う値 = センサのそのままの値 ÷ 倍率（ctrl/wall_ctrl.c。家の迷路での値に直る）
- * 比べる 2 つは、必ず同じ置き方で測った値にする。横のセンサは、前に壁があると、前の壁で返った光も入って値が上がる
- * （家の迷路で、左 1460 → 1879、右 815 → 1137。ctrl/wall_ctrl.c の LEFT_WALL_REFERENCE のコメント）。
- * 2026-11-10 に最初に作ったときは、前に壁がある置き方で測った値を、前に壁がない置き方で作った距離の表の値と比べていたので、
- * 横の倍率が大きく出すぎていた（会場で 1.11・1.14。本当は 0.88・0.95 くらい）。そのため、横の値が小さく直されて、
- * 横の壁を「ない」と読みやすくなっていた
+ * 横の壁に沿って走る補正の目標も WALL_HOME_EDGE_LEFT・RIGHT なので、会場の境目で測った値が、そのまま目標になる
+ * （会場で測った値 ÷ 倍率 = 家の値）。
+ *
+ * ■ 置き方を区画の境目にしたわけ（2026-11-10。作者の案）
+ * はじめは区画のまん中に、前・左・右に壁がある向きで置いて測っていた。横のセンサは、前の壁が近いと、前の壁で返った光も
+ * 入って値が上がる（家の迷路で、左 1460 → 1879、右 815 → 1137）ので、走っているときと値が違う。境目なら前の壁まで
+ * 87mm あって、その影響が小さく、走っているときに壁を見るのと同じ位置になる。
+ * （最初の作りでは、まん中の値を、前に壁がない置き方で作った距離の表の値と比べていたので、横の倍率が大きく出すぎて
+ * 〈会場で 1.11・1.14〉、横の値が小さく直され、横の壁を「ない」と読みやすくなっていた。そのあと、まん中の値どうしで
+ * 比べるように直し、さらに境目で測るようにした）
  * 壁センサの値は、全部 ctrl/wall_ctrl.c の wall_ctrl_get_left() などを通って使われるので、ここで直せば、
  * 壁のあり・なし、横の壁に沿う補正、前壁合わせ、壁切れ、斜めの補正、手の判定が、どれもそのまま使える。
  * 倍率は Flash に保存するので（sys/flash.c。ゴールと同じ場所）、電源を切っても残る。ビルドし直さなくてよい。
  *
  * ■ モード5 No.7 感度を測る（sensor_scale_measure_run）
- *   1. 区画のまん中に、前・左・右に壁がある向きで置く（スタート区画なら、後ろの壁のほうを向けて置く）
- *   2. スイッチで決定すると、スタート待ちをせずに始まる（前に壁があると、前センサは壁を見ていて、手をかざしたのがわからないため）
+ *   1. 前・左・右に壁がある区画の、入口の辺（区画の境目）に、タイヤの軸を合わせて置く。左右の壁のまん中に、まっすぐ置く
+ *      （基板の前の端から前の壁まで 55mm。入ってくる側のうしろの区画にも、左右の壁があるとよい。境目の柱の横を見るため）
+ *   2. スイッチで決定すると、スタート待ちをせずに始まる（手をかざすと、置いた位置がずれやすいため）
  *   3. 2 秒待ってから（スイッチを押した手を離して、機体が落ち着くまで。このあいだに置き直してもよい）、
  *      そのままの値を 1ms ごとに 1 秒（1000 回）測って平均する。測っているあいだは真ん中の 3 個が点く
  *   4. 4 つのセンサの倍率を出して、どれも SCALE_MIN〜SCALE_MAX なら、使い始めて Flash に保存し、「うまくいった」を出す。
@@ -46,14 +52,11 @@
 #define SCALE_MIN           0.5f   /* これより小さい倍率は、壁がない・遠いとみなして使わない */
 #define SCALE_MAX           2.0f   /* これより大きい倍率は、壁が近すぎる（置き方がおかしい）とみなして使わない */
 
-/* 家の迷路で、区画のまん中に、前・左・右に壁がある向きで置いて測った値（倍率の基準。2026-11-02、センサを付け直したあと。
- * モード5 No.2 の 1 秒の平均）。前は ctrl/wall_ctrl.c の FRONT_LEFT_REFERENCE・FRONT_RIGHT_REFERENCE と同じ値、
- * 横は LEFT_WALL_REFERENCE のコメントにある「前の壁があるとき」の値。家でセンサを付け直したり、距離の表を作り直したりしたら、
- * No.8 で倍率を 1 に戻してから、同じ置き方でモード5 No.2 で測り直して、ここも直す */
-#define HOME_FRONT_LEFT  3334.0f
-#define HOME_LEFT        1879.0f
-#define HOME_RIGHT       1137.0f
-#define HOME_FRONT_RIGHT 3392.0f
+/* 倍率の基準：家の迷路で、区画の境目に同じ置き方で置いたときの値（ctrl/wall_ctrl.h の WALL_HOME_EDGE_*） */
+#define HOME_FRONT_LEFT  WALL_HOME_EDGE_FRONT_LEFT
+#define HOME_LEFT        WALL_HOME_EDGE_LEFT
+#define HOME_RIGHT       WALL_HOME_EDGE_RIGHT
+#define HOME_FRONT_RIGHT WALL_HOME_EDGE_FRONT_RIGHT
 
 /* 最後に測った値（モード7 No.1 で出すため。電源を切ると消える） */
 static bool s_measured = false;
@@ -78,7 +81,7 @@ static bool scale_is_usable(float scale)
 }
 
 /* 4 つの壁センサの、そのままの値を 1 秒測って平均し、s_measured_… に入れる */
-static void measure_center_values(void)
+static void measure_edge_values(void)
 {
   int32_t sum_front_left = 0;  /* 4095 × 1000 でも int32_t に入る */
   int32_t sum_left = 0;
@@ -110,7 +113,7 @@ static sensor_scale_t scale_from_measured(void)
   return scale;
 }
 
-/* モード5 No.7：区画のまん中で測って倍率を決め、使える値なら使い始めて保存する（流れは先頭のコメント） */
+/* モード5 No.7：区画の境目で測って倍率を決め、使える値なら使い始めて保存する（流れは先頭のコメント） */
 void sensor_scale_measure_run(void)
 {
   ui_wait_ms(MEASURE_WAIT_MS);
@@ -119,7 +122,7 @@ void sensor_scale_measure_run(void)
   led_set(3, true);
   led_set(4, true);
   led_set(5, true);
-  measure_center_values();
+  measure_edge_values();
   ui_all_off();
 
   sensor_scale_t scale = scale_from_measured();
@@ -162,7 +165,7 @@ static void print_row(const char *name, float scale, float measured, float home_
  * ビューア（tools/viewer.html）が「感度合わせ」（CENTER）として受け取れるように、次の形で出す。
  *   #BEGIN CENTER measured=この電源で測ったか（1 か 0）
  *   sensor,scale,measured,home
- *   FL,1.0213,3405.0,3334.0     （左前・左・右・右前の順。home は家の迷路で同じ置き方で測った値）
+ *   FL,1.0213,924.3,905.0       （左前・左・右・右前の順。home は家の迷路で同じ置き方で測った値）
  *   #END CENTER */
 void sensor_scale_print(void)
 {

@@ -66,6 +66,19 @@ typedef struct {
   float front_right;  /* 右前 */
 } sensor_scale_t;
 
+/* 家の迷路で、区画の境目（入口の辺）に、タイヤの軸を境目に合わせ、左右の壁のまん中に置いたときのセンサの値（倍率 1）。
+ * 前の壁は 87mm 先（その区画の前の壁）、左右には壁がある。走っているときに壁を見るのと同じ位置なので、
+ * 会場ごとの感度合わせ（sys/sensor_scale.c）の基準にし、横の 2 つは壁に沿って走る補正の目標にもする（ctrl/wall_ctrl.c）。
+ * 会場では「測った値 ÷ 倍率」で比べるので、感度合わせをすると、会場の境目で測った値がそのまま目標になる。
+ *   左前・右前：前の壁まで 87mm のときの、距離の表（ctrl/wall_dist.c。左右の壁ありで測った）の値
+ *   左・右：これまでの横の壁の目標（2026-11-02 に止めて測った左 1426・1495 の平均と、2026-11-03 に探索の走行ログで、
+ *          まん中を走っているときの右 805〜830 から決めた値）
+ * 家で、No.8 で倍率を 1 に戻してから、この置き方でモード5 No.2 を測ったら、その平均をここに入れる */
+#define WALL_HOME_EDGE_FRONT_LEFT  905
+#define WALL_HOME_EDGE_LEFT        1460
+#define WALL_HOME_EDGE_RIGHT       815
+#define WALL_HOME_EDGE_FRONT_RIGHT 1255
+
 void wall_ctrl_set_sensor_scale(sensor_scale_t scale);
 sensor_scale_t wall_ctrl_get_sensor_scale(void);
 
