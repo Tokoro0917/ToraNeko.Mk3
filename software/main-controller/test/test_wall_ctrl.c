@@ -255,11 +255,38 @@ static int replay(int file_count, char *files[])
   return 0;
 }
 
+/* 会場ごとの感度の倍率で、センサの値が直るか（2026-11-10） */
+static void test_sensor_scale(void)
+{
+  printf("[0] 会場ごとの感度の倍率\n");
+  s_fake_left = 1460;
+  s_fake_right = 815;
+  sensor_scale_t scale = wall_ctrl_get_sensor_scale();
+  check(scale.left == 1.0f && scale.right == 1.0f && scale.front_left == 1.0f && scale.front_right == 1.0f,
+        "はじめは倍率が全部 1");
+  check(wall_ctrl_get_left() == 1460 && wall_ctrl_get_right() == 815, "倍率 1 なら、そのままの値");
+
+  scale.left = 2.0f;
+  scale.right = 0.5f;
+  wall_ctrl_set_sensor_scale(scale);
+  check(wall_ctrl_get_left() == 730, "左の倍率 2 なら、左の値は半分（1460 → 730）");
+  check(wall_ctrl_get_right() == 1630, "右の倍率 0.5 なら、右の値は 2 倍（815 → 1630）");
+  check(wall_ctrl_get_left_raw() == 1460 && wall_ctrl_get_right_raw() == 815, "そのままの値（_raw）は倍率で変わらない");
+  check(wall_ctrl_get_sensor_scale().left == 2.0f, "入れた倍率を読める");
+
+  /* ほかのテストのために 1 に戻す */
+  scale.left = 1.0f;
+  scale.right = 1.0f;
+  wall_ctrl_set_sensor_scale(scale);
+}
+
 int main(int argc, char *argv[])
 {
   if (argc >= 2 && strcmp(argv[1], "--replay") == 0) {
     return replay(argc - 2, argv + 2);
   }
+
+  test_sensor_scale();
 
   printf("[1] 壁の値が変わらなければ、左右とも使える\n");
   reset();

@@ -106,3 +106,48 @@ float wall_dist_front_right_mm(int32_t value)
 {
   return value_to_mm(value, FRONT_RIGHT_MM, FRONT_RIGHT_VALUE, FRONT_RIGHT_POINT_COUNT);
 }
+
+/* value_to_mm() の逆：距離 mm のときのセンサの値を、表（point_count 点）から求める。
+ * 表の i 番目と i+1 番目のあいだに mm があれば、その 2 点を直線でつないだところの値を返す */
+static float mm_to_value(float mm, const float mm_table[], const int32_t value_table[], int point_count)
+{
+  int last = point_count - 1;
+  if (mm <= mm_table[0]) {
+    return value_table[0];  /* 表よりも近い */
+  }
+  if (mm >= mm_table[last]) {
+    return value_table[last];  /* 表よりも遠い */
+  }
+  for (int i = 0; i < last; i++) {
+    if (mm <= mm_table[i + 1]) {
+      /* mm は、i 番目（近いほう）と i+1 番目（遠いほう）のあいだ。ratio は、i 番目から i+1 番目へ、どれだけ進んだか（0〜1） */
+      float ratio = (mm - mm_table[i]) / (mm_table[i + 1] - mm_table[i]);
+      return value_table[i] + ratio * (value_table[i + 1] - value_table[i]);
+    }
+  }
+  return value_table[last];  /* ここには来ない */
+}
+
+/* 表で、区画のまん中にいるときの左前のセンサの値 */
+float wall_dist_front_left_center_value(void)
+{
+  return mm_to_value(WALL_DIST_CENTER_MM, FRONT_LEFT_MM, FRONT_LEFT_VALUE, FRONT_LEFT_POINT_COUNT);
+}
+
+/* 表で、区画のまん中にいるときの左のセンサの値 */
+float wall_dist_left_center_value(void)
+{
+  return mm_to_value(WALL_DIST_CENTER_MM, LEFT_MM, LEFT_VALUE, LEFT_POINT_COUNT);
+}
+
+/* 表で、区画のまん中にいるときの右のセンサの値 */
+float wall_dist_right_center_value(void)
+{
+  return mm_to_value(WALL_DIST_CENTER_MM, RIGHT_MM, RIGHT_VALUE, RIGHT_POINT_COUNT);
+}
+
+/* 表で、区画のまん中にいるときの右前のセンサの値 */
+float wall_dist_front_right_center_value(void)
+{
+  return mm_to_value(WALL_DIST_CENTER_MM, FRONT_RIGHT_MM, FRONT_RIGHT_VALUE, FRONT_RIGHT_POINT_COUNT);
+}

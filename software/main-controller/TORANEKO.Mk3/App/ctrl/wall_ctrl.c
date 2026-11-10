@@ -86,28 +86,87 @@
 #define FRONT_LEFT_HAND_THRESHOLD  2800  /* 左前：これより大きければ手がかざされている（仮） */
 #define FRONT_RIGHT_HAND_THRESHOLD 2000  /* 右前：同じく（仮） */
 
-/* 左前のセンサの値（受光 1、組A） */
-int32_t wall_ctrl_get_front_left(void)
+/* 会場ごとの感度の倍率（wall_ctrl.h の sensor_scale_t）。はじめは 1（直さない）。
+ * メインの処理（感度合わせ、電源を入れたとき）で書き、制御周期の割り込みでも読むので volatile にする。
+ * 書くのは機体が止まっているときだけなので、4 つを書く途中で割り込みが入っても、走りには影響しない */
+static volatile float s_scale_front_left = 1.0f;
+static volatile float s_scale_left = 1.0f;
+static volatile float s_scale_right = 1.0f;
+static volatile float s_scale_front_right = 1.0f;
+
+/* 会場ごとの感度の倍率を入れる（sys/sensor_scale.c） */
+void wall_ctrl_set_sensor_scale(sensor_scale_t scale)
+{
+  s_scale_front_left = scale.front_left;
+  s_scale_left = scale.left;
+  s_scale_right = scale.right;
+  s_scale_front_right = scale.front_right;
+}
+
+/* 今の会場ごとの感度の倍率 */
+sensor_scale_t wall_ctrl_get_sensor_scale(void)
+{
+  sensor_scale_t scale;
+  scale.front_left = s_scale_front_left;
+  scale.left = s_scale_left;
+  scale.right = s_scale_right;
+  scale.front_right = s_scale_front_right;
+  return scale;
+}
+
+/* そのままの値 raw_value を、倍率 scale で割って、表を作った迷路での値に直す（小数は切り捨てて整数にする） */
+static int32_t to_home_value(int32_t raw_value, float scale)
+{
+  int32_t home_value = raw_value / scale;
+  return home_value;
+}
+
+/* 左前のセンサの、そのままの値（受光 1、組A） */
+int32_t wall_ctrl_get_front_left_raw(void)
 {
   return wall_get_a_minus_dark(1);
 }
 
-/* 左の壁のセンサの値（受光 3、組B） */
-int32_t wall_ctrl_get_left(void)
+/* 左の壁のセンサの、そのままの値（受光 3、組B） */
+int32_t wall_ctrl_get_left_raw(void)
 {
   return wall_get_b_minus_dark(3);
 }
 
-/* 右の壁のセンサの値（受光 2、組A） */
-int32_t wall_ctrl_get_right(void)
+/* 右の壁のセンサの、そのままの値（受光 2、組A） */
+int32_t wall_ctrl_get_right_raw(void)
 {
   return wall_get_a_minus_dark(2);
 }
 
-/* 右前のセンサの値（受光 4、組B） */
-int32_t wall_ctrl_get_front_right(void)
+/* 右前のセンサの、そのままの値（受光 4、組B） */
+int32_t wall_ctrl_get_front_right_raw(void)
 {
   return wall_get_b_minus_dark(4);
+}
+
+/* 左前のセンサの値（会場ごとの感度の倍率で直したもの） */
+int32_t wall_ctrl_get_front_left(void)
+{
+  return to_home_value(wall_ctrl_get_front_left_raw(), s_scale_front_left);
+}
+
+/* 左の壁のセンサの値（同じ） */
+int32_t wall_ctrl_get_left(void)
+{
+  return to_home_value(wall_ctrl_get_left_raw(), s_scale_left);
+}
+
+/* 右の壁のセンサの値（同じ） */
+int32_t wall_ctrl_get_right(void)
+{
+  return to_home_value(wall_ctrl_get_right_raw(), s_scale_right);
+}
+
+/* 右前のセンサの値（同じ） */
+int32_t wall_ctrl_get_front_right(void)
+{
+  return to_home_value(wall_ctrl_get_front_right_raw(), s_scale_front_right);
 }
 
 /* 横の壁が近すぎた記録（探索の横壁合わせ。探索を始めるたびに 0 に戻す） */

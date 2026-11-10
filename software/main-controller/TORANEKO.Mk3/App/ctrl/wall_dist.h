@@ -19,4 +19,10 @@ float wall_dist_left_mm(int32_t value);
 float wall_dist_right_mm(int32_t value);
 float wall_dist_front_right_mm(int32_t value);
 
+/* 表で、区画のまん中（WALL_DIST_CENTER_MM）にいるときのセンサの値（会場ごとの感度合わせの基準。sys/sensor_scale.c） */
+float wall_dist_front_left_center_value(void);
+float wall_dist_left_center_value(void);
+float wall_dist_right_center_value(void);
+float wall_dist_front_right_center_value(void);
+
 #endif /* CTRL_WALL_DIST_H */

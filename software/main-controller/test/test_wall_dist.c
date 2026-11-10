@@ -113,8 +113,22 @@ static void test_monotonic(void)
   check_monotonic("右前", 3);
 }
 
+/* 5. 表で区画のまん中（42mm）のときの値（会場ごとの感度合わせの基準）と、その値を距離に直すと 42mm に戻るか */
+static void test_center_value(void)
+{
+  printf("[5] 区画のまん中（42mm）のときのセンサの値\n");
+  /* 左の表の 40mm（1600）と 46mm（1270）のあいだ：1600 + (2/6) × (1270 − 1600) = 1490 */
+  check(fabsf(wall_dist_left_center_value() - 1490.0f) < 0.5f, "左の区画のまん中の値は 1490");
+  check(fabsf(wall_dist_left_mm(1490) - 42.0f) < 0.1f, "左 1490 → 42mm");
+  check(fabsf(wall_dist_right_mm(952) - 42.0f) < 0.1f && fabsf(wall_dist_right_center_value() - 951.7f) < 0.5f,
+        "右の区画のまん中の値は約 952 で、距離に直すと 42mm");
+  check(fabsf(wall_dist_front_left_mm(wall_dist_front_left_center_value()) - 42.0f) < 0.1f, "左前：まん中の値を距離に直すと 42mm");
+  check(fabsf(wall_dist_front_right_mm(wall_dist_front_right_center_value()) - 42.0f) < 0.1f, "右前：まん中の値を距離に直すと 42mm");
+}
+
 int main(void)
 {
+  test_center_value();
   test_center();
   test_between();
   test_outside();

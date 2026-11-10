@@ -25,6 +25,10 @@
  *   モード5 No.1     センサ値の表示（スイッチを押すと終わる）
  *   モード5 No.2     センサ値の記録（区画のまん中で 1 秒測り、平均をモード7 No.1 で出す）
  *   モード5 No.3     壁までの距離の表示（センサの値と距離 [mm] を出し続ける。スイッチを押すと終わる）
+ *   モード5 No.4〜6  壁切れ・柱の見え方テスト
+ *   モード5 No.7     会場ごとの感度合わせ（区画のまん中で測って倍率を Flash に保存する。前に壁があって手が使えないので、
+ *                    スタート待ちをせず、決定してから 2 秒後に測る）
+ *   モード5 No.8     感度を元に戻す（倍率を 1 にして保存する。決定するとすぐ）
  *   モード6 No.1     直進（ゆっくり 360mm 走って止まる。タイヤの直径と、制御の係数を合わせる）
  *   モード6 No.3     吸引 ON（吸引ファンを回し、スイッチを押すまで吸い続ける）
  *   モード6 No.6     エンコーダの歪みを測る
@@ -45,6 +49,7 @@
 #include "sys/goal.h"
 #include "sys/output.h"
 #include "sys/sensor_record.h"
+#include "sys/sensor_scale.h"
 #include "sys/shortest.h"
 #include "sys/turn_test.h"
 #include "sys/edge_test.h"
@@ -61,6 +66,7 @@ void mode_init(void)
   ui_init();
   maze_map_init();
   goal_init();
+  sensor_scale_init();  /* Flash に保存した会場ごとの感度の倍率を読む */
   s_mode = 0;
   s_number = 0;
 }
@@ -137,6 +143,12 @@ bool mode_has_action(int mode, int number)
     }
     if (number >= 4 && number <= 6) {
       return true;  /* 壁切れ・柱の見え方テスト */
+    }
+    if (number == 7) {
+      return true;  /* 会場ごとの感度合わせ */
+    }
+    if (number == 8) {
+      return true;  /* 感度を元に戻す */
     }
     return false;
   }
@@ -307,6 +319,7 @@ static void run_setting(int number)
   if (number == 1) {
     adjust_print_last_result();  /* 最後に走らせた調整の動きの結果（走ったときはケーブルを挿していないので、ここで出す） */
     sensor_record_print();       /* 最後に測ったセンサ値の記録（モード5 No.2） */
+    sensor_scale_print();        /* 今の会場ごとの感度の倍率（モード5 No.7） */
     output_all(goal_get_x(), goal_get_y());
     ui_signal_ok();  /* 出し終わった */
   } else if (number == 2) {
@@ -371,6 +384,10 @@ void mode_run_once(void)
     sensor_view_run();  /* スタート待ちをしない */
   } else if (s_mode == 5 && s_number == 3) {
     sensor_view_distance_run();  /* スタート待ちをしない（前センサの値を見たいので） */
+  } else if (s_mode == 5 && s_number == 7) {
+    sensor_scale_measure_run();  /* スタート待ちをしない（前に壁があるので、手をかざしたのがわからない） */
+  } else if (s_mode == 5 && s_number == 8) {
+    sensor_scale_reset_run();  /* スタート待ちをしない（動かないので） */
   } else if (ui_wait_start(s_mode, s_number)) {
     run_selected();
   }
