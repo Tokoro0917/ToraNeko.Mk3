@@ -63,6 +63,7 @@ void run_search_align_to_side(bool is_left);
  *   run_fast_turn_left()・_right()                     探索の速さ（300mm/s）で、小回りのスラローム 90°
  *   run_fast_turn(ターン, 左なら true, 速さ)           大回り・斜めのターン（そのターンの速さ以下。遅くても同じ形で曲がる）
  *   run_fast_turn_speed_mm_s(ターン)                  そのターンを曲がる速さ（config/turn_params.h の *_SPEED_MM_S）
+ *   run_fast_set_turn_set(組)                         ターンの値の組を選ぶ（1：800・600mm/s、2：7 つとも 1000mm/s。はじめは 1）
  *   run_fast_stop(距離, 最高速, 加速度)                進みながら止まり、モーターの出力を 0 にして、ログを止める
  *   run_fast_diag_stop(…)                             斜めに進みながら止まる（同じ。横の壁に沿う補正のかわりに、斜めの補正を入れる）
  *   run_fast_set_diag_correction(入れるなら true)      斜めの直進で、斜めの補正を入れるか（ふつうは入れる。ターンの調整では入れない）
@@ -87,6 +88,7 @@ void run_fast_turn_left(void);
 void run_fast_turn_right(void);
 void run_fast_turn(run_fast_turn_t turn, bool is_left, float speed_mm_s);
 float run_fast_turn_speed_mm_s(run_fast_turn_t turn);
+void run_fast_set_turn_set(int set);
 void run_fast_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
 void run_fast_diag_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
 void run_fast_set_diag_correction(bool on);

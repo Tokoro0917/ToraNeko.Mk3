@@ -87,7 +87,7 @@ bool mode_has_action(int mode, int number)
     return false;
   }
   if (mode == 1) {
-    if (number >= 1 && number <= 5) {
+    if (number >= 1 && number <= 6) {
       return true;  /* 最短走行 */
     }
     return false;

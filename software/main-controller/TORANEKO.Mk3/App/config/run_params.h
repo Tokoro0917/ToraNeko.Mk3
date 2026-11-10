@@ -67,6 +67,12 @@
 #define SHORTEST5_ACCEL_MM_S2         6000.0f
 #define SHORTEST5_DIAG_MAX_SPEED_MM_S 1200.0f
 #define SHORTEST5_DIAG_ACCEL_MM_S2    6000.0f
+/* No.6（2026-11-10）：ターンは組 2（7 つとも 1000mm/s。config/turn_params.h の T1000_…）。直進は No.5 と同じ。
+ * 斜めの直進の最高速は、ターンの速さ（1000mm/s）より速くする */
+#define SHORTEST6_MAX_SPEED_MM_S      1500.0f
+#define SHORTEST6_ACCEL_MM_S2         6000.0f
+#define SHORTEST6_DIAG_MAX_SPEED_MM_S 1200.0f
+#define SHORTEST6_DIAG_ACCEL_MM_S2    6000.0f
 
 /* ゴールにターンで入って終わるときに止まる加速度 [mm/s²] と、止まるまでの距離の上限 [mm]。
  * ゴールの区画のまん中から壁までは 45mm なので、40mm 以内で止まる。6000mm/s² で 40mm なら 693mm/s から止まれるので、
