@@ -15,11 +15,15 @@
  *     いちばん速いときの速さは √(加速度 × 280mm)（4000mm/s² で 1058mm/s、21000mm/s² で 2425mm/s）
  *
  * ■ モード4 No.3 吸引の力（adjust_suction_force。2026-11-10）
- * 吸引の強さを 1.0V から 1V ずつ 5.0V まで上げて、1 段 5 秒ずつ回す（機体は動かない）。
- *   - 機体を台などで固定して、はかりの皿のすぐ上（タイヤが皿に触れるくらい）に浮かせて置く。
+ * 吸引の強さを 1.0V から 1V ずつ 7.0V まで上げて、1 段 5 秒ずつ回す（機体は動かない）。
+ *   - 機体を台などで固定して、はかりの皿のすぐ上（タイヤと皿のあいだに紙 1 枚が通るくらい）に浮かせて置く。
  *     はかりの表示が減った分が、その電圧の吸引の力
- *   - いまの段は、LED1 から順に、段の数だけ点けて出す（1 個 = 1.0V … 5 個 = 5.0V）
- *   - 段が変わるたびに、シリアルに `SUCTION_STEP,段,電圧[V]` を出す
+ *   - いまの段は、LED1 から順に、段の数だけ点けて出す（1 個 = 1.0V … 7 個 = 7.0V）
+ *   - 1 段が終わるたびに、シリアルに `SUCTION_STEP,段,電圧[V],電池の電圧[V]` を出す。電池の電圧は、
+ *     その電圧で 5 秒回したあと（ファンに電流が流れて下がったところ）の値。かけたい電圧より低ければ、
+ *     ファンには電池の電圧までしかかかっていない
+ *   - 6V・7V はファンのモーターの定格（3.7V）の 2 倍近いので、熱くなったり、変なにおい・音がしたりしたら、
+ *     スイッチを押して止める
  *   - スイッチを押すと、途中でも止まる
  *
  * ■ モード6 No.1 直進（adjust_straight）
@@ -90,6 +94,7 @@
 #include "drv/led.h"
 #include "drv/timebase.h"
 #include "drv/uart.h"
+#include "drv/wall.h"
 #include "sys/failsafe.h"
 #include "sys/log.h"
 #include "sys/suction.h"
@@ -514,7 +519,6 @@ static bool run_suction_step(int step)
   float voltage_v = SUCTION_TEST_STEP_V * step;
   fan_set_voltage(voltage_v);
   show_suction_step(step);
-  printf("SUCTION_STEP,%d,%.1f\r\n", step, voltage_v);
   uint32_t end_ms = timebase_get_ms() + SUCTION_TEST_HOLD_MS;
   while (timebase_get_ms() < end_ms) {
     if (ui_switch_pushed()) {
@@ -522,6 +526,7 @@ static bool run_suction_step(int step)
     }
     ui_wait_ms(UI_POLL_MS);
   }
+  printf("SUCTION_STEP,%d,%.1f,%.2f\r\n", step, voltage_v, wall_get_battery_v());
   return false;
 }
 
