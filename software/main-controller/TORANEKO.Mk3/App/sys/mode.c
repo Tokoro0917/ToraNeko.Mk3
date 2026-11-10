@@ -117,6 +117,9 @@ bool mode_has_action(int mode, int number)
     if (number == 1) {
       return true;  /* 吸引なしの加速度テスト */
     }
+    if (number == 3) {
+      return true;  /* 吸引の力 */
+    }
     if (number >= 4 && number <= 11) {
       return true;  /* 吸引ありの加速度テスト */
     }
@@ -334,6 +337,8 @@ static void run_selected(void)
     adjust_front_align();
   } else if (s_mode == 3) {
     turn_test_run(s_number);
+  } else if (s_mode == 4 && s_number == 3) {
+    adjust_suction_force();
   } else if (s_mode == 4) {
     adjust_accel_test(s_number);
   } else if (s_mode == 5 && s_number == 2) {

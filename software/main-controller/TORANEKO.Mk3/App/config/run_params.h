@@ -125,6 +125,11 @@
 #define SUCTION_VOLTAGE_V 5.0f
 #define SUCTION_RAMP_MS   500   /* 0 から SUCTION_VOLTAGE_V まで上げるのにかける時間 [ms]（急に回して電池の電圧が落ちないように） */
 
+/* 吸引の力のテスト（モード4 No.3。2026-11-10）：1.0V から 1V ずつ 5.0V まで、1 段 5 秒ずつ回す */
+#define SUCTION_TEST_STEP_V   1.0f  /* 1 段で上げる電圧 [V] */
+#define SUCTION_TEST_STEPS    5     /* 段の数（5 段目が 5.0V。drv/fan.c の上限 FAN_LIMIT_V と同じ） */
+#define SUCTION_TEST_HOLD_MS  5000  /* 1 段を回す時間 [ms]（はかりの表示が落ち着いてから読めるように） */
+
 /* ---- その場旋回 ---- */
 
 #define PIVOT_OMEGA_DEG_S  720.0f   /* 最高の角速度 [deg/s]（KOGUMA は 2000。まずゆっくり） */

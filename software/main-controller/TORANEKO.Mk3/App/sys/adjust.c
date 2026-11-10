@@ -14,6 +14,14 @@
  *   - 速さの上限は決めず、距離の半分まで加速して、残りの半分で止まる（三角の形）。
  *     いちばん速いときの速さは √(加速度 × 280mm)（4000mm/s² で 1058mm/s、21000mm/s² で 2425mm/s）
  *
+ * ■ モード4 No.3 吸引の力（adjust_suction_force。2026-11-10）
+ * 吸引の強さを 1.0V から 1V ずつ 5.0V まで上げて、1 段 5 秒ずつ回す（機体は動かない）。
+ *   - 機体を台などで固定して、はかりの皿のすぐ上（タイヤが皿に触れるくらい）に浮かせて置く。
+ *     はかりの表示が減った分が、その電圧の吸引の力
+ *   - いまの段は、LED1 から順に、段の数だけ点けて出す（1 個 = 1.0V … 5 個 = 5.0V）
+ *   - 段が変わるたびに、シリアルに `SUCTION_STEP,段,電圧[V]` を出す
+ *   - スイッチを押すと、途中でも止まる
+ *
  * ■ モード6 No.1 直進（adjust_straight）
  * ゆっくり 280mm まっすぐ走って止まる。スタート区画に、お尻を後ろの壁に付けて置き、4 区画目のまん中で止まる
  * （10 + 3 × 90。作者の通路は 4 区画なので、2026-11-03 に 360mm から変えた。加速度テストと同じ置き方・距離）。
@@ -485,6 +493,47 @@ void adjust_suction_on(void)
     }
     show_middle_leds(lit);
     ui_wait_ms(UI_POLL_MS);
+  }
+  fan_stop();
+  ui_all_off();
+  ui_signal_ok();
+}
+
+/* 吸引の力のテストの、いまの段を出す：LED1 から順に、段の数だけ点ける */
+static void show_suction_step(int step)
+{
+  ui_all_off();
+  for (int i = 1; i <= step; i++) {
+    led_set(i, true);
+  }
+}
+
+/* 吸引の力のテストの 1 段を回す。スイッチが押されたら true を返す（そこで止める） */
+static bool run_suction_step(int step)
+{
+  float voltage_v = SUCTION_TEST_STEP_V * step;
+  fan_set_voltage(voltage_v);
+  show_suction_step(step);
+  printf("SUCTION_STEP,%d,%.1f\r\n", step, voltage_v);
+  uint32_t end_ms = timebase_get_ms() + SUCTION_TEST_HOLD_MS;
+  while (timebase_get_ms() < end_ms) {
+    if (ui_switch_pushed()) {
+      return true;
+    }
+    ui_wait_ms(UI_POLL_MS);
+  }
+  return false;
+}
+
+/* モード4 No.3 吸引の力：吸引の強さを段ごとに上げて、1 段 5 秒ずつ回す（流れは先頭のコメント）。
+ * 1 段で上げる電圧は 1.0V だけなので、段のあいだは少しずつ上げなくても、電池の電圧は大きく落ちない */
+void adjust_suction_force(void)
+{
+  for (int step = 1; step <= SUCTION_TEST_STEPS; step++) {
+    bool stopped = run_suction_step(step);
+    if (stopped) {
+      break;
+    }
   }
   fan_stop();
   ui_all_off();
