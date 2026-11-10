@@ -4,8 +4,13 @@
  *
  * 会場の迷路は、壁の塗装で光の跳ね返り方が変わり、壁センサの値が、どの距離でもほぼ同じ割合で大きく・小さくなる。
  * そこで、距離の表（ctrl/wall_dist.c）やしきい値は作り直さず、区画のまん中で 1 回測った「倍率」で直す：
- *   倍率 = 会場の区画のまん中で測った値 ÷ 表で区画のまん中（42mm）のときの値
- *   使う値 = センサのそのままの値 ÷ 倍率（ctrl/wall_ctrl.c。表を作った迷路での値に直る）
+ *   倍率 = 会場の区画のまん中で測った値 ÷ 家の迷路で、同じ置き方（前・左・右に壁）で測った値（下の HOME_*）
+ *   使う値 = センサのそのままの値 ÷ 倍率（ctrl/wall_ctrl.c。家の迷路での値に直る）
+ * 比べる 2 つは、必ず同じ置き方で測った値にする。横のセンサは、前に壁があると、前の壁で返った光も入って値が上がる
+ * （家の迷路で、左 1460 → 1879、右 815 → 1137。ctrl/wall_ctrl.c の LEFT_WALL_REFERENCE のコメント）。
+ * 2026-11-10 に最初に作ったときは、前に壁がある置き方で測った値を、前に壁がない置き方で作った距離の表の値と比べていたので、
+ * 横の倍率が大きく出すぎていた（会場で 1.11・1.14。本当は 0.88・0.95 くらい）。そのため、横の値が小さく直されて、
+ * 横の壁を「ない」と読みやすくなっていた
  * 壁センサの値は、全部 ctrl/wall_ctrl.c の wall_ctrl_get_left() などを通って使われるので、ここで直せば、
  * 壁のあり・なし、横の壁に沿う補正、前壁合わせ、壁切れ、斜めの補正、手の判定が、どれもそのまま使える。
  * 倍率は Flash に保存するので（sys/flash.c。ゴールと同じ場所）、電源を切っても残る。ビルドし直さなくてよい。
@@ -30,7 +35,6 @@
 #include <stdio.h>
 
 #include "ctrl/wall_ctrl.h"
-#include "ctrl/wall_dist.h"
 #include "drv/led.h"
 #include "drv/timebase.h"
 #include "sys/flash.h"
@@ -41,6 +45,15 @@
 #define MEASURE_WAIT_MS     2000   /* 決定してから測り始めるまで待つ時間 [ms]（スイッチから手を離して、機体が落ち着くまで） */
 #define SCALE_MIN           0.5f   /* これより小さい倍率は、壁がない・遠いとみなして使わない */
 #define SCALE_MAX           2.0f   /* これより大きい倍率は、壁が近すぎる（置き方がおかしい）とみなして使わない */
+
+/* 家の迷路で、区画のまん中に、前・左・右に壁がある向きで置いて測った値（倍率の基準。2026-11-02、センサを付け直したあと。
+ * モード5 No.2 の 1 秒の平均）。前は ctrl/wall_ctrl.c の FRONT_LEFT_REFERENCE・FRONT_RIGHT_REFERENCE と同じ値、
+ * 横は LEFT_WALL_REFERENCE のコメントにある「前の壁があるとき」の値。家でセンサを付け直したり、距離の表を作り直したりしたら、
+ * No.8 で倍率を 1 に戻してから、同じ置き方でモード5 No.2 で測り直して、ここも直す */
+#define HOME_FRONT_LEFT  3334.0f
+#define HOME_LEFT        1879.0f
+#define HOME_RIGHT       1137.0f
+#define HOME_FRONT_RIGHT 3392.0f
 
 /* 最後に測った値（モード7 No.1 で出すため。電源を切ると消える） */
 static bool s_measured = false;
@@ -86,14 +99,14 @@ static void measure_center_values(void)
   s_measured = true;
 }
 
-/* 測った値から、倍率（測った値 ÷ 表で区画のまん中のときの値）を出す */
+/* 測った値から、倍率（測った値 ÷ 家の迷路で同じ置き方で測った値）を出す */
 static sensor_scale_t scale_from_measured(void)
 {
   sensor_scale_t scale;
-  scale.front_left = s_measured_front_left / wall_dist_front_left_center_value();
-  scale.left = s_measured_left / wall_dist_left_center_value();
-  scale.right = s_measured_right / wall_dist_right_center_value();
-  scale.front_right = s_measured_front_right / wall_dist_front_right_center_value();
+  scale.front_left = s_measured_front_left / HOME_FRONT_LEFT;
+  scale.left = s_measured_left / HOME_LEFT;
+  scale.right = s_measured_right / HOME_RIGHT;
+  scale.front_right = s_measured_front_right / HOME_FRONT_RIGHT;
   return scale;
 }
 
@@ -139,17 +152,17 @@ void sensor_scale_reset_run(void)
   ui_signal_ok();
 }
 
-/* 1 つのセンサの行を出す（名前,今の倍率,最後に測った値,表で区画のまん中のときの値）。まだ測っていなければ、測った値は 0 */
-static void print_row(const char *name, float scale, float measured, float table_center)
+/* 1 つのセンサの行を出す（名前,今の倍率,最後に測った値,家の迷路での値）。まだ測っていなければ、測った値は 0 */
+static void print_row(const char *name, float scale, float measured, float home_value)
 {
-  printf("%s,%.4f,%.1f,%.1f\r\n", name, scale, measured, table_center);
+  printf("%s,%.4f,%.1f,%.1f\r\n", name, scale, measured, home_value);
 }
 
 /* 今の倍率をシリアルに出す。モード7 No.1（ログ出力）でも呼ぶ。
  * ビューア（tools/viewer.html）が「感度合わせ」（CENTER）として受け取れるように、次の形で出す。
  *   #BEGIN CENTER measured=この電源で測ったか（1 か 0）
- *   sensor,scale,measured,table
- *   FL,1.0213,3395.2,3324.3     （左前・左・右・右前の順）
+ *   sensor,scale,measured,home
+ *   FL,1.0213,3405.0,3334.0     （左前・左・右・右前の順。home は家の迷路で同じ置き方で測った値）
  *   #END CENTER */
 void sensor_scale_print(void)
 {
@@ -159,10 +172,10 @@ void sensor_scale_print(void)
     measured_flag = 1;
   }
   printf("\r\n#BEGIN CENTER measured=%d\r\n", measured_flag);
-  printf("sensor,scale,measured,table\r\n");
-  print_row("FL", scale.front_left, s_measured_front_left, wall_dist_front_left_center_value());
-  print_row("L", scale.left, s_measured_left, wall_dist_left_center_value());
-  print_row("R", scale.right, s_measured_right, wall_dist_right_center_value());
-  print_row("FR", scale.front_right, s_measured_front_right, wall_dist_front_right_center_value());
+  printf("sensor,scale,measured,home\r\n");
+  print_row("FL", scale.front_left, s_measured_front_left, HOME_FRONT_LEFT);
+  print_row("L", scale.left, s_measured_left, HOME_LEFT);
+  print_row("R", scale.right, s_measured_right, HOME_RIGHT);
+  print_row("FR", scale.front_right, s_measured_front_right, HOME_FRONT_RIGHT);
   printf("#END CENTER\r\n");
 }
