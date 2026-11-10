@@ -23,9 +23,9 @@
  *        - ターンが直進をはさまずに続くとき（ターンのあいだは速さを変えられないので、続くターンの遅いほうに合わせる）
  *        - その先の短い直進で、次の次のターンの速さまで遅くしきれないとき
  *      どこまで遅くしておくかは、経路の終わりまで先を見て決める（speed_limit_ahead_mm_s()）
- *   4. 最後が直進なら、ゴールの最初の区画のまん中で止まる。最後がターン（ゴールにターンで入る）なら、
+ *   4. ゴールの区画に入ってから、もう 1 区画進んで、その区画のまん中で止まる（下の「■ ゴールで止まるところ」）
+ *      もう 1 区画進めないとき（ふつうは起きない）は、最後が直進ならゴールの最初の区画のまん中で、最後がターンなら
  *      区画のまん中に着いたところから SHORTEST_STOP_ACCEL_MM_S2 で、SHORTEST_STOP_DISTANCE_MM 以内で止まる
- *      （止まれる速さより速く、最後のターンを曲がらないようにする）
  *   5. 吸引を止める
  *   小回り（MOTION_TURN_LEFT・RIGHT）は経路に残らない（PC で 500 個の迷路を調べて 0 個）が、残ったら走らずに「道がない」にする
  *
@@ -34,6 +34,13 @@
  * 時間を数えるときは、どのターンも FAST_TURN_SPEED_MM_S（500mm/s）で曲がるとして数える（本当はターンごとに速さが違うが、
  * 直線の時間が前後のターンの速さで変わり、ダイクストラで数えにくいため。ターンの形はどれも同じなので、選ぶ道はあまり変わらない）。
  * No.6 は、ターンが 7 つとも 1000mm/s なので、T1000_PATH_TURN_SPEED_MM_S（1000mm/s）で数える。
+ *
+ * ■ ゴールで止まるところ（2026-11-10。作者の案。No.1〜6 とも）
+ * 経路は、ゴールの最初の区画のまん中で終わる。ゴールは 2×2 なので、そこから同じ向きにもう 1 区画進んでも、まだゴールの中にいる。
+ * そこで、経路の最後に「1 区画（90mm）の直進」を足して（最後が直進ならその直進を 1 区画長くして）、その区画のまん中で止まる
+ * （extend_into_goal()）。こうすると、ゴールに直進で入っても、ターンで入っても、止まるところは同じ「ゴールの 2 つ目の区画の
+ * まん中」になり、止まるまでに 1 区画ぶんの余裕ができる（ターンで入ったときに、ターンの速さを落とさなくてよい）。
+ * 次の区画がゴールの外のとき・あいだに壁があるときは、足さない（今までどおり、最初の区画で止まる）
  *
  * ■ スタートの位置
  * 経路は、スタート区画 (0,0) の南の辺から始まる。機体は、お尻を後ろの壁に付けて置くので、
@@ -48,6 +55,7 @@
 #include "ctrl/run.h"
 #include "drv/fan.h"
 #include "maze/dijkstra.h"
+#include "maze/maze_map.h"
 #include "maze/path.h"
 #include "sys/failsafe.h"
 #include "sys/goal.h"
@@ -163,6 +171,45 @@ static bool has_small_turn(void)
   return false;
 }
 
+/* 区画 (x, y) がゴール（左下 (goal_x, goal_y) から GOAL_WIDTH × GOAL_HEIGHT）の中か */
+static bool is_in_goal(int x, int y, int goal_x, int goal_y)
+{
+  if (x < goal_x || x >= goal_x + GOAL_WIDTH) {
+    return false;
+  }
+  if (y < goal_y || y >= goal_y + GOAL_HEIGHT) {
+    return false;
+  }
+  return true;
+}
+
+/* 経路の終わり（ゴールの最初の区画のまん中）から、同じ向きにもう 1 区画進めるなら、経路の最後に 1 区画の直進を足す
+ * （最後が直進なら、その直進を 1 区画長くする）。先頭のコメントの「■ ゴールで止まるところ」 */
+static void extend_into_goal(int goal_x, int goal_y)
+{
+  int next_x = maze_next_x(s_path.end_x, s_path.end_dir);
+  int next_y = maze_next_y(s_path.end_y, s_path.end_dir);
+  if (!is_in_goal(next_x, next_y, goal_x, goal_y)) {
+    return;  /* 次の区画はゴールの外 */
+  }
+  if (maze_map_get_wall(s_path.end_x, s_path.end_y, s_path.end_dir) == WALL_EXIST) {
+    return;  /* あいだに壁がある（ゴールの中には壁がないはずなので、ふつうは起きない） */
+  }
+  int last = s_path.count - 1;
+  if (s_path.steps[last].motion == MOTION_STRAIGHT) {
+    s_path.steps[last].half_count = s_path.steps[last].half_count + 2;  /* 半区画 2 つ = 1 区画 */
+  } else {
+    if (s_path.count >= PATH_STEP_MAX) {
+      return;  /* 経路がいっぱいで足せない（ふつうは起きない） */
+    }
+    s_path.steps[s_path.count].motion = MOTION_STRAIGHT;
+    s_path.steps[s_path.count].half_count = 2;
+    s_path.count = s_path.count + 1;
+  }
+  s_path.end_x = next_x;
+  s_path.end_y = next_y;
+}
+
 /* 最短経路を作って s_path に入れる。number は No.（直進の速さで、選ぶ経路が変わる）。走れる経路ができなければ false。
  * 最初の動きは直進でないといけない（スタート区画の中で曲がる動きは作っていない） */
 static bool make_path(int number, int goal_x, int goal_y)
@@ -191,6 +238,7 @@ static bool make_path(int number, int goal_x, int goal_y)
   if (s_path.steps[0].motion != MOTION_STRAIGHT) {
     return false;
   }
+  extend_into_goal(goal_x, goal_y);
   return true;
 }
 

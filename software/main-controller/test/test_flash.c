@@ -33,7 +33,7 @@
 /* 迷路を保存したときに書く語の数（目印、大きさ、区画ごとに 5 語、確かめの数） */
 #define MAZE_WORD_COUNT (2 + MAZE_SIZE * MAZE_SIZE * 5 + 1)
 /* ゴールを保存したときに書く語の数（目印、x、y、確かめの数） */
-#define GOAL_WORD_COUNT 8  /* 目印、x、y、感度の倍率 4 つ、確かめの数（2026-11-10 から） */
+#define GOAL_WORD_COUNT 10  /* 目印、x、y、感度の倍率 4 つ、壁制御の目標 2 つ、確かめの数（2026-11-10 から） */
 
 /* ---------------------------------------------------------------------------
  * テスト結果の数え方
@@ -457,8 +457,9 @@ static void test_goal(void)
   flash_save_goal(20, 3);
   check(flash_load_goal(&goal_x, &goal_y), "保存したゴールを読める");
   check(goal_x == 20 && goal_y == 3, "読んだゴールは (20, 3)");
-  check(count_written_words(FLASH_AREA_GOAL, FLASH_AREA_WORD_COUNT) == GOAL_WORD_COUNT,
-        "書く語の数は 8（目印、x、y、感度の倍率 4 つ、確かめの数）");
+  /* 書くのは 10 語。壁制御の目標を測っていないときの 2 語は、消したままと同じ 0xFFFFFFFF を書くので、数えると 8 */
+  check(count_written_words(FLASH_AREA_GOAL, FLASH_AREA_WORD_COUNT) == GOAL_WORD_COUNT - 2,
+        "書く語の数は 10（目印、x、y、感度の倍率 4 つ、壁制御の目標 2 つ、確かめの数）");
 
   flash_save_goal(5, 30);
   check(flash_load_goal(&goal_x, &goal_y) && goal_x == 5 && goal_y == 30, "保存し直すと、新しいゴール (5, 30) を読める");
@@ -577,6 +578,63 @@ static void test_sensor_scale(void)
   flash_save_sensor_scale(make_scale(1.05f, 1.0f, 1.0f, 1.0f));
   check(flash_load_goal(&goal_x, &goal_y) && goal_x == 12 && goal_y == 13,
         "前の形のゴールのあとに倍率を保存しても、ゴールは消えない（今の形で書き直す）");
+
+  /* 2026-11-10 の途中の形（目印 "GOA2"、x、y、倍率 4 つ、確かめの数） */
+  reset_flash();
+  s_goal_words[0] = 0x474F4132;
+  s_goal_words[1] = 3;
+  s_goal_words[2] = 4;
+  s_goal_words[3] = 11000;
+  s_goal_words[4] = 9000;
+  s_goal_words[5] = 10000;
+  s_goal_words[6] = 10000;
+  fix_check_number(FLASH_AREA_GOAL, 8);
+  check(flash_load_goal(&goal_x, &goal_y) && goal_x == 3 && goal_y == 4, "途中の形で保存したゴールも読める");
+  check(scale_matches(flash_load_sensor_scale(), 1.1f, 0.9f, 1.0f, 1.0f), "途中の形で保存した倍率も読める");
+  check(!flash_load_wall_reference().is_set, "途中の形には壁制御の目標がないので、目標は「測っていない」");
+}
+
+/* ---------------------------------------------------------------------------
+ * 9. 壁制御の目標（ゴール・倍率と同じ場所。2026-11-10）
+ * ------------------------------------------------------------------------- */
+
+static void test_wall_reference(void)
+{
+  printf("[9] 壁制御の目標\n");
+  int goal_x = 0;
+  int goal_y = 0;
+
+  reset_flash();
+  check(!flash_load_wall_reference().is_set, "保存したことがなければ、目標は「測っていない」");
+
+  flash_save_goal(5, 6);
+  flash_save_sensor_scale(make_scale(1.1f, 0.9f, 0.95f, 1.0f));
+  wall_reference_t reference;
+  reference.is_set = true;
+  reference.left = 1352.4f;
+  reference.right = 801.6f;
+  flash_save_wall_reference(reference);
+  wall_reference_t loaded = flash_load_wall_reference();
+  check(loaded.is_set && fabsf(loaded.left - 1352.4f) < 0.06f && fabsf(loaded.right - 801.6f) < 0.06f,
+        "保存した目標を読める（小数 1 けたまで）");
+  check(flash_load_goal(&goal_x, &goal_y) && goal_x == 5 && goal_y == 6, "目標を保存しても、ゴールは消えない");
+  check(scale_matches(flash_load_sensor_scale(), 1.1f, 0.9f, 0.95f, 1.0f), "目標を保存しても、倍率は消えない");
+
+  flash_save_sensor_scale(make_scale(1.2f, 1.0f, 1.0f, 1.0f));
+  check(flash_load_wall_reference().is_set && fabsf(flash_load_wall_reference().left - 1352.4f) < 0.06f,
+        "倍率を保存しても、目標は消えない");
+  flash_save_goal(8, 8);
+  check(flash_load_wall_reference().is_set, "ゴールを保存しても、目標は消えない");
+
+  /* 元に戻す（倍率 1、目標なし） */
+  wall_reference_t none;
+  none.is_set = false;
+  none.left = 0.0f;
+  none.right = 0.0f;
+  flash_save_sensor_scale_and_reference(make_scale(1.0f, 1.0f, 1.0f, 1.0f), none);
+  check(!flash_load_wall_reference().is_set && scale_matches(flash_load_sensor_scale(), 1.0f, 1.0f, 1.0f, 1.0f),
+        "元に戻すと、倍率は 1、目標は「測っていない」");
+  check(flash_load_goal(&goal_x, &goal_y) && goal_x == 8 && goal_y == 8, "元に戻しても、ゴールは消えない");
 }
 
 /* ---------------------------------------------------------------------------
@@ -623,6 +681,7 @@ int main(void)
   test_separate_areas();
   test_saving_leds();
   test_sensor_scale();
+  test_wall_reference();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

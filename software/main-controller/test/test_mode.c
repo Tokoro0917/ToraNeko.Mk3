@@ -414,26 +414,29 @@ void sensor_view_run(void)
   s_sensor_view_time_ms = s_now_ms;
 }
 
-/* 会場ごとの感度合わせ（モード5 No.7・8）：測らずに、呼ばれた回数と時刻を覚える */
+/* 会場で合わせるもの（モード7 No.3〜5。sys/venue.c）：測らずに、呼ばれた回数を覚える */
 static int s_scale_measure_count = 0;
-static uint32_t s_scale_measure_time_ms = 0;
-static int s_scale_reset_count = 0;
-static int s_scale_print_count = 0;
-void sensor_scale_init(void)
+static int s_reference_measure_count = 0;
+static int s_venue_reset_count = 0;
+static int s_venue_print_count = 0;
+void venue_init(void)
 {
 }
-void sensor_scale_measure_run(void)
+void venue_measure_scale_run(void)
 {
   s_scale_measure_count = s_scale_measure_count + 1;
-  s_scale_measure_time_ms = s_now_ms;
 }
-void sensor_scale_reset_run(void)
+void venue_measure_reference_run(void)
 {
-  s_scale_reset_count = s_scale_reset_count + 1;
+  s_reference_measure_count = s_reference_measure_count + 1;
 }
-void sensor_scale_print(void)
+void venue_reset_run(void)
 {
-  s_scale_print_count = s_scale_print_count + 1;
+  s_venue_reset_count = s_venue_reset_count + 1;
+}
+void venue_print(void)
+{
+  s_venue_print_count = s_venue_print_count + 1;
 }
 
 /* 壁までの距離の表示：出さずに、呼ばれた回数と時刻を覚える */
@@ -801,17 +804,17 @@ static void test_wrap(void)
   mode_init();
 
   rotate_left_at(100, -1);    /* モード7 */
-  rotate_right_at(100, 3);    /* No.3 */
-  press_switch_at(500);       /* モード7・No.3 は何もない：決定しない */
-  rotate_right_at(1000, -4);  /* No.3 - 4 = No.15（迷路呼び出し） */
+  rotate_right_at(100, 6);    /* No.6 */
+  press_switch_at(500);       /* モード7・No.6 は何もない：決定しない（2026-11-10 に No.3〜5 ができたので、No.3 から変えた） */
+  rotate_right_at(1000, -7);  /* No.6 - 7 = No.15（迷路呼び出し） */
   press_switch_at(1500);
   hand_at(2500, 500);
   mode_run_once();
 
-  check_leds_at(300, "0011111", "モード7・No.3 は LED3〜7 が点く");
+  check_leds_at(300, "0111110", "モード7・No.6 は LED2〜6 が点く");
   check_leds_at(1200, "1111111", "モード7・No.15 は全部点く");
   check(mode_get_mode() == 7 && mode_get_number() == 15, "モード7・No.15 になる");
-  check(s_flash_maze_load_count == 1, "迷路呼び出しが 1 回だけ呼ばれる（No.3 では決定しない）");
+  check(s_flash_maze_load_count == 1, "迷路呼び出しが 1 回だけ呼ばれる（No.6 では決定しない）");
 }
 
 /* 前センサの手は、3 回続けて（0.03 秒）読んだときだけ「かざした」とみなす。短く触れただけでは始まらない */
@@ -1002,29 +1005,40 @@ static void test_turn_test(void)
   hand_at(1500, 500);        /* スタート */
   mode_run_once();
   check(s_edge_test_count == 1 && s_edge_test_number == 6, "モード5 No.6 で、壁切れ・柱の見え方テストが No.6 で 1 回呼ばれる");
-  check(mode_has_action(5, 4) && mode_has_action(5, 6) && mode_has_action(5, 7) && mode_has_action(5, 8)
-        && !mode_has_action(5, 9),
-        "モード5 の No.4〜8 は決定できて、No.9 はできない");
+  check(mode_has_action(5, 4) && mode_has_action(5, 6) && !mode_has_action(5, 7),
+        "モード5 の No.4〜6 は決定できて、No.7 はできない（感度合わせは 2026-11-10 にモード7 No.3 へ移した）");
 
-  /* 会場ごとの感度合わせ（モード5 No.7）は、前に壁があって手が使えないので、スタート待ちをせずにすぐ始まる */
+  /* 倍率合わせ（モード7 No.3）・壁制御の目標（No.4）は、置いた位置がずれないように、スタート待ちをせずにすぐ始まる */
   reset_world();
   mode_init();
   s_scale_measure_count = 0;
-  rotate_left_at(100, 5);    /* モード5 */
-  rotate_right_at(100, 7);   /* No.7 */
+  s_reference_measure_count = 0;
+  s_venue_reset_count = 0;
+  rotate_left_at(100, 7);    /* モード7 */
+  rotate_right_at(100, 3);   /* No.3 */
   press_switch_at(500);      /* 決定（手はかざさない） */
   mode_run_once();
-  check(s_scale_measure_count == 1, "モード5 No.7 で、感度合わせが、手をかざさなくても 1 回呼ばれる");
+  check(s_scale_measure_count == 1 && s_reference_measure_count == 0, "モード7 No.3 で、倍率合わせが、手をかざさなくても 1 回呼ばれる");
 
-  /* 感度を元に戻す（モード5 No.8）も、すぐ始まる */
   reset_world();
   mode_init();
-  s_scale_reset_count = 0;
-  rotate_left_at(100, 5);    /* モード5 */
-  rotate_right_at(100, 8);   /* No.8 */
+  rotate_left_at(100, 7);    /* モード7 */
+  rotate_right_at(100, 4);   /* No.4 */
   press_switch_at(500);      /* 決定 */
   mode_run_once();
-  check(s_scale_reset_count == 1 && s_scale_measure_count == 1, "モード5 No.8 で、感度を元に戻すが 1 回呼ばれる（測るほうは呼ばれない）");
+  check(s_reference_measure_count == 1 && s_scale_measure_count == 1, "モード7 No.4 で、壁制御の目標が 1 回呼ばれる（倍率合わせは呼ばれない）");
+
+  reset_world();
+  mode_init();
+  rotate_left_at(100, 7);    /* モード7 */
+  rotate_right_at(100, 5);   /* No.5 */
+  press_switch_at(500);      /* 決定 */
+  mode_run_once();
+  check(s_venue_reset_count == 1 && s_scale_measure_count == 1 && s_reference_measure_count == 1,
+        "モード7 No.5 で、元に戻すが 1 回呼ばれる（測るほうは呼ばれない）");
+  check(mode_has_action(7, 1) && mode_has_action(7, 2) && mode_has_action(7, 5) && !mode_has_action(7, 6)
+        && mode_has_action(7, 15),
+        "モード7 は No.1〜5 と No.15 を決定できる");
 
   /* 吸引 ON（モード6 No.3）も、スタート待ちのあとに始まる */
   reset_world();

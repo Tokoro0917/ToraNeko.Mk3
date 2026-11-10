@@ -1,6 +1,6 @@
 /*
  * flash.c
- * 迷路とゴールの位置、会場ごとの感度の倍率を Flash に保存する・読み込む（MODES.md の 5）
+ * 迷路とゴールの位置、会場ごとの感度の倍率と壁制御の目標を Flash に保存する・読み込む（MODES.md の 5）
  *
  * Flash を消す・書く・読むのは drv/flash_memory.c。ここは「何をどの順番で書くか」を決める。
  * HAL を使わないので、PC のテスト（test/test_flash.c）でも、そのまま動く。
@@ -16,13 +16,16 @@
  *   [4] 左の倍率 × 10000            [5122] 確かめの数
  *   [5] 右の倍率 × 10000
  *   [6] 右前の倍率 × 10000
- *   [7] 確かめの数
+ *   [7] 壁制御の目標：左のそのままの値 × 10（測っていなければ NO_REFERENCE_NUMBER）
+ *   [8] 壁制御の目標：右のそのままの値 × 10（同じ）
+ *   [9] 確かめの数
  *
- * - ゴールと感度の倍率は同じ保存場所にある（Flash の空きが、この 2 つのセクタしかないため。2026-11-10 に倍率を足した）。
- *   消すときはセクタごとなので、片方を保存するときは、もう片方を先に読んでおいて、一緒に書き直す
- *   （ゴールを保存しても倍率は消えず、倍率を保存してもゴールは消えない）。
- *   ゴールを入れたことがなく、倍率だけを保存したときは、ゴールの x・y に NO_GOAL_NUMBER を書く（読むと「ゴールなし」になる）
- * - 2026-11-10 より前の形（目印 GOAL_MARK_OLD。[0] 目印、[1] x、[2] y、[3] 確かめの数）も読める。そのときの倍率は 1
+ * - ゴールと、感度の倍率・壁制御の目標は同じ保存場所にある（Flash の空きが、この 2 つのセクタしかないため。
+ *   2026-11-10 に倍率と目標を足した）。消すときはセクタごとなので、どれか 1 つを保存するときは、ほかを先に読んでおいて、
+ *   一緒に書き直す（ゴールを保存しても倍率・目標は消えず、倍率・目標を保存してもゴールは消えない）。
+ *   ゴールを入れたことがなく、倍率や目標だけを保存したときは、ゴールの x・y に NO_GOAL_NUMBER を書く（読むと「ゴールなし」になる）
+ * - 前の形も読める：GOAL_MARK_V2（2026-11-10 の途中。目標なし：[0]〜[6] は今と同じ、[7] 確かめの数）と、
+ *   GOAL_MARK_OLD（2026-11-10 より前。[0] 目印、[1] x、[2] y、[3] 確かめの数。倍率は 1、目標なし）
  *
  * - 目印：保存したことがあるかを見分ける数。一度も保存していなければ、消したままの 0xFFFFFFFF なので目印と違う
  * - 確かめの数：それより前に書いた数を全部足したもの。書いている途中で電源が切れたときなどは、
@@ -46,7 +49,10 @@
 #include "maze/maze_map.h"
 
 #define GOAL_MARK_OLD 0x474F4131  /* 2026-11-10 より前の形（ゴールだけ）の目印（"GOA1" の文字コード） */
-#define GOAL_MARK 0x474F4132      /* ゴールと感度の倍率を保存した目印（"GOA2" の文字コード。ほかと重ならない数なら何でもよい） */
+#define GOAL_MARK_V2 0x474F4132   /* 2026-11-10 の途中の形（ゴールと倍率）の目印（"GOA2" の文字コード） */
+#define GOAL_MARK 0x474F4133      /* 今の形（ゴール、倍率、壁制御の目標）の目印（"GOA3" の文字コード。ほかと重ならない数なら何でもよい） */
+#define NO_REFERENCE_NUMBER 0xFFFFFFFF  /* 壁制御の目標を測っていないときに書く数 */
+#define REFERENCE_UNIT 10.0f      /* 壁制御の目標は、10 倍して整数で書く（小数 1 けたまで残る） */
 #define NO_GOAL_NUMBER 0xFFFFFFFF /* ゴールを入れたことがないときに、ゴールの x・y に書く数（迷路の外なので、読むと使わない） */
 #define SCALE_UNIT 10000.0f       /* 感度の倍率は、10000 倍して整数で書く（1.0 なら 10000。小数 4 けたまで残る） */
 #define MAZE_MARK 0x4D5A4531  /* 迷路を保存した目印（"MZE1" の文字コード） */
@@ -237,6 +243,7 @@ typedef struct {
   uint32_t goal_x;       /* ゴールの x（入れたことがなければ NO_GOAL_NUMBER） */
   uint32_t goal_y;       /* ゴールの y（同じ） */
   sensor_scale_t scale;  /* 感度の倍率（前の形で保存したものは 1） */
+  wall_reference_t reference;  /* 壁制御の目標（前の形で保存したもの・測っていないものは is_set が false） */
 } goal_area_t;
 
 /* 感度の倍率が全部 1（直さない）のもの */
@@ -263,7 +270,24 @@ static float number_to_scale(uint32_t number)
   return number / SCALE_UNIT;
 }
 
-/* ゴールと感度の保存場所を読む。今の形（GOAL_MARK）と前の形（GOAL_MARK_OLD）のどちらも読める */
+/* 壁制御の目標を測っていない（is_set が false）もの */
+static wall_reference_t no_reference(void)
+{
+  wall_reference_t reference;
+  reference.is_set = false;
+  reference.left = 0.0f;
+  reference.right = 0.0f;
+  return reference;
+}
+
+/* 壁制御の目標（センサの値）を、保存する整数に直す（10 倍して、四捨五入する） */
+static uint32_t reference_to_number(float value)
+{
+  uint32_t number = value * REFERENCE_UNIT + 0.5f;
+  return number;
+}
+
+/* ゴールと感度の保存場所を読む。今の形（GOAL_MARK）と前の形（GOAL_MARK_V2・GOAL_MARK_OLD）のどれも読める */
 static goal_area_t read_goal_area(void)
 {
   goal_area_t area;
@@ -271,16 +295,26 @@ static goal_area_t read_goal_area(void)
   area.goal_x = NO_GOAL_NUMBER;
   area.goal_y = NO_GOAL_NUMBER;
   area.scale = scale_of_one();
+  area.reference = no_reference();
 
   start_reading(FLASH_AREA_GOAL);
   uint32_t mark = read_number();
-  if (mark == GOAL_MARK) {
+  if (mark == GOAL_MARK || mark == GOAL_MARK_V2) {
     area.goal_x = read_number();
     area.goal_y = read_number();
     area.scale.front_left = number_to_scale(read_number());
     area.scale.left = number_to_scale(read_number());
     area.scale.right = number_to_scale(read_number());
     area.scale.front_right = number_to_scale(read_number());
+    if (mark == GOAL_MARK) {
+      uint32_t left_number = read_number();
+      uint32_t right_number = read_number();
+      if (left_number != NO_REFERENCE_NUMBER && right_number != NO_REFERENCE_NUMBER) {
+        area.reference.is_set = true;
+        area.reference.left = left_number / REFERENCE_UNIT;
+        area.reference.right = right_number / REFERENCE_UNIT;
+      }
+    }
     area.is_good = check_number_matches();
   } else if (mark == GOAL_MARK_OLD) {
     area.goal_x = read_number();
@@ -292,12 +326,13 @@ static goal_area_t read_goal_area(void)
     area.goal_x = NO_GOAL_NUMBER;
     area.goal_y = NO_GOAL_NUMBER;
     area.scale = scale_of_one();
+    area.reference = no_reference();
   }
   return area;
 }
 
 /* ゴールと感度の保存場所を消して、今の形で書く */
-static void write_goal_area(uint32_t goal_x, uint32_t goal_y, sensor_scale_t scale)
+static void write_goal_area(uint32_t goal_x, uint32_t goal_y, sensor_scale_t scale, wall_reference_t reference)
 {
   show_saving(true);
   start_writing(FLASH_AREA_GOAL);
@@ -308,16 +343,23 @@ static void write_goal_area(uint32_t goal_x, uint32_t goal_y, sensor_scale_t sca
   write_number(scale_to_number(scale.left));
   write_number(scale_to_number(scale.right));
   write_number(scale_to_number(scale.front_right));
+  if (reference.is_set) {
+    write_number(reference_to_number(reference.left));
+    write_number(reference_to_number(reference.right));
+  } else {
+    write_number(NO_REFERENCE_NUMBER);
+    write_number(NO_REFERENCE_NUMBER);
+  }
   finish_writing();
   show_saving(false);
 }
 
-/* ゴールの位置（左下の区画）を保存する。保存してある感度の倍率は、先に読んで一緒に書き直すので消えない（迷路も消えない）。
+/* ゴールの位置（左下の区画）を保存する。保存してある感度の倍率と壁制御の目標は、先に読んで一緒に書き直すので消えない（迷路も消えない）。
  * 消しているあいだ（約 1〜2 秒）は CPU が止まるので、モーターを止めているときだけ呼ぶ */
 void flash_save_goal(int goal_x, int goal_y)
 {
   goal_area_t saved = read_goal_area();
-  write_goal_area(goal_x, goal_y, saved.scale);
+  write_goal_area(goal_x, goal_y, saved.scale, saved.reference);
 }
 
 /* 保存したゴールの位置を goal_x、goal_y に入れて true。保存したことがない・壊れているときは、
@@ -337,12 +379,12 @@ bool flash_load_goal(int *goal_x, int *goal_y)
   return true;
 }
 
-/* 会場ごとの感度の倍率を保存する。保存してあるゴールは、先に読んで一緒に書き直すので消えない。
+/* 会場ごとの感度の倍率を保存する。保存してあるゴールと壁制御の目標は、先に読んで一緒に書き直すので消えない。
  * 消しているあいだ（約 1〜2 秒）は CPU が止まるので、モーターを止めているときだけ呼ぶ */
 void flash_save_sensor_scale(sensor_scale_t scale)
 {
   goal_area_t saved = read_goal_area();
-  write_goal_area(saved.goal_x, saved.goal_y, scale);
+  write_goal_area(saved.goal_x, saved.goal_y, scale, saved.reference);
 }
 
 /* 保存した感度の倍率。保存したことがない・壊れているときや、前の形（倍率なし）のときは、全部 1 */
@@ -350,4 +392,26 @@ sensor_scale_t flash_load_sensor_scale(void)
 {
   goal_area_t saved = read_goal_area();
   return saved.scale;
+}
+
+/* 壁制御の目標（区画の中心で測った左右のそのままの値）を保存する。保存してあるゴールと倍率は消えない。
+ * 消しているあいだ（約 1〜2 秒）は CPU が止まるので、モーターを止めているときだけ呼ぶ */
+void flash_save_wall_reference(wall_reference_t reference)
+{
+  goal_area_t saved = read_goal_area();
+  write_goal_area(saved.goal_x, saved.goal_y, saved.scale, reference);
+}
+
+/* 保存した壁制御の目標。保存したことがない・壊れているときや、前の形のときは、is_set が false */
+wall_reference_t flash_load_wall_reference(void)
+{
+  goal_area_t saved = read_goal_area();
+  return saved.reference;
+}
+
+/* 感度の倍率と壁制御の目標を、一度に保存する（元に戻すとき。sys/venue.c）。保存してあるゴールは消えない */
+void flash_save_sensor_scale_and_reference(sensor_scale_t scale, wall_reference_t reference)
+{
+  goal_area_t saved = read_goal_area();
+  write_goal_area(saved.goal_x, saved.goal_y, scale, reference);
 }

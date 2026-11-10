@@ -1955,6 +1955,36 @@ void run_search_go_from_center(run_turn_t turn)
   sim_go(dir);
 }
 
+/* 止まっている → その場で反対を向いて止まる（スタート区画に戻ったとき） */
+static int s_sim_turn_back_count = 0;  /* 呼ばれた回数 */
+void run_search_turn_back_at_center(void)
+{
+  if (!sim_begin_motion()) {
+    return;
+  }
+  if (!s_sim_stopped) {
+    sim_error("走っているのに、その場で反対を向いた");
+  }
+  if (s_sim_x != 0 || s_sim_y != 0) {
+    sim_error("スタート区画のほかで、その場で反対を向いた");
+  }
+  s_sim_dir = maze_turn_back(s_sim_dir);
+  s_sim_turn_back_count = s_sim_turn_back_count + 1;
+}
+
+/* 止まっている → お尻を後ろの壁に当てる（スタート区画で北を向いたあと） */
+static int s_sim_back_to_wall_count = 0;  /* 呼ばれた回数 */
+void run_search_back_to_wall(void)
+{
+  if (!s_sim_stopped) {
+    sim_error("走っているのに、後ろへ下がった");
+  }
+  if (s_sim_x != 0 || s_sim_y != 0 || s_sim_dir != DIR_NORTH) {
+    sim_error("スタート区画で北を向いていないのに、後ろへ下がった");
+  }
+  s_sim_back_to_wall_count = s_sim_back_to_wall_count + 1;
+}
+
 /* 壁を見る。explore.c は前・左・右の順に見てから記録するので、前を見たときに「記録する直前の地図」を写しておく */
 bool wall_ctrl_has_wall_front(void)
 {
@@ -2107,6 +2137,8 @@ static bool explore_and_check(explore_type_t type, bool verbose)
 
   maze_map_init();
   sim_place_at_start(-1);
+  s_sim_turn_back_count = 0;
+  s_sim_back_to_wall_count = 0;
   if (!is_unknown_walls_type(type)) {
     s_sim_uturn_only = true;  /* 往復・片道は計算のために止まらない */
   }
@@ -2139,6 +2171,13 @@ static bool explore_and_check(explore_type_t type, bool verbose)
     if (s_sim_x != 0 || s_sim_y != 0) {
       ok = false;
     }
+    /* スタートに戻ったら、北を向いて止まる（2026-11-10） */
+    if (s_sim_dir != DIR_NORTH || s_sim_turn_back_count != 1 || s_sim_back_to_wall_count != 1) {
+      ok = false;  /* 北を向いて、お尻を後ろの壁に当てて終わる */
+    }
+  }
+  if (type == EXPLORE_ONE_WAY && s_sim_turn_back_count != 0) {
+    ok = false;  /* 片道はゴールで止まるだけ */
   }
   int cost = recorded_route_cost();
   if (is_unknown_walls_type(type) && cost != best_cost) {
@@ -2699,6 +2738,19 @@ static bool run_shortest_and_check(int number)
   int cell_y = (int)floorf(s_fast_y_mm / CELL_MM);
   if (!is_in_goal(cell_x, cell_y)) {
     fast_error("ゴールの区画の外で止まった");
+  }
+  /* 2026-11-10：ゴールに入ってからもう 1 区画進んで、その区画のまん中で止まる。
+   * 止まった区画のまん中にいて、うしろ（来た向きの反対）の区画もゴールなら、ゴールの 2 つ目の区画で止まっている */
+  float in_cell_x_mm = s_fast_x_mm - cell_x * CELL_MM;
+  float in_cell_y_mm = s_fast_y_mm - cell_y * CELL_MM;
+  if (fabsf(in_cell_x_mm - HALF_CELL_MM) > 1.0f || fabsf(in_cell_y_mm - HALF_CELL_MM) > 1.0f) {
+    fast_error("区画のまん中で止まっていない");
+  }
+  float heading_rad = s_fast_heading_deg * 3.14159265f / 180.0f;
+  int behind_x = (int)floorf((s_fast_x_mm - CELL_MM * cosf(heading_rad)) / CELL_MM);
+  int behind_y = (int)floorf((s_fast_y_mm - CELL_MM * sinf(heading_rad)) / CELL_MM);
+  if (!is_in_goal(behind_x, behind_y)) {
+    fast_error("ゴールの最初の区画で止まった（もう 1 区画進んでいない）");
   }
   return s_fast_error_count == 0;
 }

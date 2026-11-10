@@ -81,6 +81,7 @@
 #include "ctrl/trajectory.h"
 #include "ctrl/wall_ctrl.h"
 #include "drv/imu.h"
+#include "drv/motor.h"
 #include "drv/timebase.h"
 #include "sys/failsafe.h"
 #include "sys/log.h"
@@ -632,6 +633,40 @@ void run_search_align_to_side(bool is_left)
   }
   timebase_wait_ms(STOP_SETTLE_MS);  /* 目標の速さ 0 のまま制御を続けて、ぴたりと止める */
   control_stop();
+}
+
+/* 止まっている → その場で反対を向いて止まる（スタート区画に戻ったときに、次にすぐスタートできるように北を向く。sys/explore.c）。
+ * U ターンと同じく、左に 90° 回るたびに、前に壁があれば前壁合わせをする（前・左右の位置と向きがそろう）。
+ * 終わったら、モーターの出力を 0 にして止まっている（run.h の約束 2） */
+void run_search_turn_back_at_center(void)
+{
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  control_restart();  /* 止まっているので、制御を始め直す（迷路の向きの基準は、そのまま） */
+  align_if_front_wall();  /* 前（スタート区画の南の壁）で、前後の位置と向きを直す */
+  pivot(90.0f);           /* 1 回目の 90°。前には、もとの右の壁（スタート区画の東の壁）が来る */
+  align_if_front_wall();  /* 左右の位置を直す */
+  pivot(90.0f);           /* 2 回目の 90°。これで反対（北）を向く */
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  timebase_wait_ms(STOP_SETTLE_MS);  /* 目標の速さ 0 のまま制御を続けて、ぴたりと止める */
+  control_stop();
+}
+
+/* 止まっている → まっすぐ後ろへゆっくり下がって、お尻を後ろの壁に押し当てて止まる（スタート区画に戻ったときの最後。sys/explore.c）。
+ * 制御（目標の速さに合わせる計算）は止めたまま、左右のモーターに同じ電圧を後ろ向きに BACK_TO_WALL_MS だけかける
+ * （config/run_params.h の BACK_TO_WALL_*）。機体は後ろへ進む目標を作れないので、電圧を直接かける（sys/encoder_cal.c と同じやり方）。
+ * 壁に当たると止まり、押し当てているあいだに、お尻が壁に沿う。これで、走り出す前の置き方（お尻を後ろの壁に付ける）と同じになる */
+void run_search_back_to_wall(void)
+{
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  motor_set_voltage(-BACK_TO_WALL_V, -BACK_TO_WALL_V);  /* - が後ろ向き */
+  timebase_wait_ms(BACK_TO_WALL_MS);
+  motor_stop();
 }
 
 /* 止まっている → 前に壁があれば前壁合わせをして、その場で向きを変えて（turn）、

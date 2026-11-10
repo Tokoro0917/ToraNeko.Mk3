@@ -26,15 +26,17 @@
  *   モード5 No.2     センサ値の記録（区画のまん中で 1 秒測り、平均をモード7 No.1 で出す）
  *   モード5 No.3     壁までの距離の表示（センサの値と距離 [mm] を出し続ける。スイッチを押すと終わる）
  *   モード5 No.4〜6  壁切れ・柱の見え方テスト
- *   モード5 No.7     会場ごとの感度合わせ（区画の境目で測って倍率を Flash に保存する。置いた位置がずれないように、
- *                    スタート待ちをせず、決定してから 2 秒後に測る）
- *   モード5 No.8     感度を元に戻す（倍率を 1 にして保存する。決定するとすぐ）
  *   モード6 No.1     直進（ゆっくり 360mm 走って止まる。タイヤの直径と、制御の係数を合わせる）
  *   モード6 No.3     吸引 ON（吸引ファンを回し、スイッチを押すまで吸い続ける）
  *   モード6 No.6     エンコーダの歪みを測る
  *   モード6 No.7     壁に沿って直進（横の壁に沿って走る補正を入れて、4 区画走って止まる）（タイヤを浮かせて、左右のモーターを回す）
  *   モード7 No.1     ログ出力（迷路と走行ログを PC へ出す）
  *   モード7 No.2     ゴールの位置を入れる
+ *   モード7 No.3     倍率合わせ（区画の境目で測って、感度の倍率を Flash に保存する。置いた位置がずれないように、
+ *                    スタート待ちをせず、決定してから 2 秒後に測る）
+ *   モード7 No.4     壁制御の目標（区画の中心で測って、横の壁に沿う補正の目標を Flash に保存する。No.3 と同じく 2 秒後に測る）
+ *   モード7 No.5     倍率と壁制御の目標を元に戻す（倍率 1、目標は家の値にして保存する。決定するとすぐ）
+ * Flash に書く操作（ゴール、倍率、目標、迷路呼び出し）は、モード7 にまとめる（2026-11-10。作者が決めた）。
  *   モード7 No.15    迷路呼び出し（Flash に保存した迷路を RAM に戻す）
  * No.0 と、まだ何もない番号では、スイッチを押しても決定しない（何も起きない）。
  */
@@ -49,7 +51,7 @@
 #include "sys/goal.h"
 #include "sys/output.h"
 #include "sys/sensor_record.h"
-#include "sys/sensor_scale.h"
+#include "sys/venue.h"
 #include "sys/shortest.h"
 #include "sys/turn_test.h"
 #include "sys/edge_test.h"
@@ -66,7 +68,7 @@ void mode_init(void)
   ui_init();
   maze_map_init();
   goal_init();
-  sensor_scale_init();  /* Flash に保存した会場ごとの感度の倍率を読む */
+  venue_init();  /* Flash に保存した会場ごとの感度の倍率と、壁制御の目標を読む */
   s_mode = 0;
   s_number = 0;
 }
@@ -144,12 +146,6 @@ bool mode_has_action(int mode, int number)
     if (number >= 4 && number <= 6) {
       return true;  /* 壁切れ・柱の見え方テスト */
     }
-    if (number == 7) {
-      return true;  /* 会場ごとの感度合わせ */
-    }
-    if (number == 8) {
-      return true;  /* 感度を元に戻す */
-    }
     return false;
   }
   if (mode == 6) {
@@ -170,6 +166,9 @@ bool mode_has_action(int mode, int number)
   if (mode == 7) {
     if (number == 1 || number == 2) {
       return true;  /* ログ出力、ゴールの位置 */
+    }
+    if (number >= 3 && number <= 5) {
+      return true;  /* 倍率合わせ、壁制御の目標、元に戻す */
     }
     if (number == 15) {
       return true;  /* 迷路呼び出し */
@@ -313,13 +312,13 @@ static void load_maze(void)
   }
 }
 
-/* 出力と設定（No.1 ログ出力、No.2 ゴールの位置、No.15 迷路呼び出し） */
+/* 出力と設定（No.1 ログ出力、No.2 ゴールの位置、No.15 迷路呼び出し。No.3〜5 はスタート待ちをしないので mode_run_once() で呼ぶ） */
 static void run_setting(int number)
 {
   if (number == 1) {
     adjust_print_last_result();  /* 最後に走らせた調整の動きの結果（走ったときはケーブルを挿していないので、ここで出す） */
     sensor_record_print();       /* 最後に測ったセンサ値の記録（モード5 No.2） */
-    sensor_scale_print();        /* 今の会場ごとの感度の倍率（モード5 No.7） */
+    venue_print();               /* 今の会場ごとの感度の倍率と、壁制御の目標（モード7 No.3・4） */
     output_all(goal_get_x(), goal_get_y());
     ui_signal_ok();  /* 出し終わった */
   } else if (number == 2) {
@@ -384,10 +383,12 @@ void mode_run_once(void)
     sensor_view_run();  /* スタート待ちをしない */
   } else if (s_mode == 5 && s_number == 3) {
     sensor_view_distance_run();  /* スタート待ちをしない（前センサの値を見たいので） */
-  } else if (s_mode == 5 && s_number == 7) {
-    sensor_scale_measure_run();  /* スタート待ちをしない（手をかざすと、置いた位置がずれやすい） */
-  } else if (s_mode == 5 && s_number == 8) {
-    sensor_scale_reset_run();  /* スタート待ちをしない（動かないので） */
+  } else if (s_mode == 7 && s_number == 3) {
+    venue_measure_scale_run();  /* スタート待ちをしない（手をかざすと、置いた位置がずれやすい） */
+  } else if (s_mode == 7 && s_number == 4) {
+    venue_measure_reference_run();  /* 同じ */
+  } else if (s_mode == 7 && s_number == 5) {
+    venue_reset_run();  /* スタート待ちをしない（動かないので） */
   } else if (ui_wait_start(s_mode, s_number)) {
     run_selected();
   }

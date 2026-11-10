@@ -14,6 +14,15 @@
  *   - 未知壁探索で計算するとき（ダイクストラは重いので、止まっているときだけ計算する。KOGUMA と同じ）
  *   - 終わり（スタートに戻ったとき、片道でゴールに着いたとき）
  *
+ * ■ ゴールとスタートで止まるところ
+ *   - ゴールは、ゴールの区画（2×2 のどれか）の入口の辺（区画の境目）に着いたところで「着いた」とみなす。
+ *     片道（No.2）は、そこから進んで、その区画のまん中で止まる。往復・未知壁探索は、止まらずに次へ進む
+ *   - スタートに戻ったら、スタート区画のまん中で止まり、前壁合わせをしつつ、その場で北を向いて止まってから、迷路を保存する
+ *     （run_search_turn_back_at_center()。2026-11-10 に作者の案で足した。次にすぐスタートできるように）。
+ *     回っているあいだにぶつかったら、ほかのフェイルセーフと同じく、最後に壁を記録した 5 区画ぶんを戻してから保存する。
+ *     最後に、まっすぐ後ろへゆっくり下がって、お尻を後ろの壁に押し当てる（run_search_back_to_wall()。作者の案）。
+ *     これで、走り出す前の置き方（お尻を後ろの壁に付ける）と同じになり、そのまま次のスタートができる
+ *
  * ■ 既知区間加速（No.4 だけ。2026-10-27 に追加）
  * 走っているとき（行き・未知壁を見に行くあいだ・帰り）、今いる区画から先に「見たことのある区画をまっすぐ進む」が 2 区画以上続くなら、
  * 1 区画ずつではなく、まとめて速く走る（run_search_known_straight()。速さは config/run_params.h の KNOWN_*）。
@@ -371,6 +380,26 @@ static explore_result_t finish_done(void)
   return EXPLORE_RESULT_DONE;
 }
 
+/* スタートに戻ったときの後始末（先頭のコメント）。スタート区画のまん中で止まり、前壁合わせをしつつ、その場で北を向いてから、
+ * 迷路を Flash に保存する。スタート区画には北からしか入れないので、着いたときは南を向いている。そのときだけ反対を向く */
+static explore_result_t finish_at_start(void)
+{
+  stop_here();
+  if (failsafe_is_stopped()) {
+    return finish_early(EXPLORE_RESULT_FAILSAFE);  /* 止まる途中でぶつかった */
+  }
+  if (s_dir == DIR_SOUTH) {
+    run_search_turn_back_at_center();
+    if (failsafe_is_stopped()) {
+      return finish_early(EXPLORE_RESULT_FAILSAFE);  /* 回っている途中でぶつかった */
+    }
+    s_dir = DIR_NORTH;
+    run_search_back_to_wall();  /* お尻を後ろの壁に当てる（走り出す前の置き方と同じにする） */
+  }
+  flash_save_maze();  /* 止まったあとはモーターの出力が 0 なので、CPU が止まっても動かない（run.h） */
+  return EXPLORE_RESULT_DONE;
+}
+
 /* ---------------------------------------------------------------------------
  * 探索走行
  * ------------------------------------------------------------------------- */
@@ -422,11 +451,11 @@ explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int go
     }
   }
 
-  /* 5. 帰り：スタートまで戻って止まる */
+  /* 5. 帰り：スタートまで戻って止まり、迷路を保存してから、次にすぐスタートできるように北を向く */
   search_set_target(0, 0, 1, 1);
   result = run_to_target();
   if (result != EXPLORE_RESULT_DONE) {
     return finish_early(result);
   }
-  return finish_done();
+  return finish_at_start();
 }
