@@ -29,9 +29,9 @@
 #include "ctrl/wall_dist.h"
 #include "drv/wall.h"
 
-#define FRONT_LEFT_WALL_THRESHOLD  570   /* 左前：これより大きければ前に壁 */
+#define FRONT_LEFT_WALL_THRESHOLD  300   /* 左前：これより大きければ前に壁 */
 #define FRONT_RIGHT_WALL_THRESHOLD 900   /* 右前：同じく */
-#define LEFT_WALL_THRESHOLD        650   /* 左：これより大きければ左に壁 */
+#define LEFT_WALL_THRESHOLD        500   /* 左：これより大きければ左に壁 */
 #define RIGHT_WALL_THRESHOLD       400   /* 右：これより大きければ右に壁 */
 /* 区画のまん中にいるときの、横のセンサの値。壁に沿って走る補正の目標。
  * 2026-11-02 に、前の壁なしで測った 2 回の平均（左 1426・1495、右 922・961）。壁に沿って走るのは、前に壁がない直進のときが
@@ -39,8 +39,8 @@
  * 右は 2026-11-03 に 942 → 815 にした：探索の走行ログで、左右に壁がある直進で左が約 42mm（まん中）のとき、右は 805〜830 だった
  * （止めて測ったときより 1〜2 割低い。右のセンサは斜め前を見るので、走っているときは光の当たる場所が違うらしい）。
  * 942 のままだと、右の壁から遠いと読んで、まん中より右に寄ったところで落ち着いていた */
-#define LEFT_WALL_REFERENCE  1460
-#define RIGHT_WALL_REFERENCE 815
+#define LEFT_WALL_REFERENCE  1205
+#define RIGHT_WALL_REFERENCE 758
 
 /* 壁に沿って走る補正に、その壁を使う下限。壁のあり・なしのしきい値（左 650・右 400）より高くする。
  * 壁の端（柱の近く）では、壁があっても値がまだ上がりきっておらず、補正が「壁から遠い」と読み違えて
