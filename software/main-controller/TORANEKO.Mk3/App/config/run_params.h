@@ -67,6 +67,12 @@
 #define SHORTEST5_ACCEL_MM_S2         6000.0f
 #define SHORTEST5_DIAG_MAX_SPEED_MM_S 1200.0f
 #define SHORTEST5_DIAG_ACCEL_MM_S2    6000.0f
+/* No.6（2026-11-10）：ターンは組 2（7 つとも 1000mm/s。config/turn_params.h の T1000_…）。直進は No.5 と同じ。
+ * 斜めの直進の最高速は、ターンの速さ（1000mm/s）より速くする */
+#define SHORTEST6_MAX_SPEED_MM_S      1500.0f
+#define SHORTEST6_ACCEL_MM_S2         6000.0f
+#define SHORTEST6_DIAG_MAX_SPEED_MM_S 1200.0f
+#define SHORTEST6_DIAG_ACCEL_MM_S2    6000.0f
 
 /* ゴールにターンで入って終わるときに止まる加速度 [mm/s²] と、止まるまでの距離の上限 [mm]。
  * ゴールの区画のまん中から壁までは 45mm なので、40mm 以内で止まる。6000mm/s² で 40mm なら 693mm/s から止まれるので、
@@ -119,11 +125,19 @@
 
 /* ---- 吸引（drv/fan.c。2026-10-28） ---- */
 
-/* 吸引ファンにかける電圧 [V]（2026-11-02 に 2.0 → 5.0。上限は drv/fan.c の FAN_LIMIT_V（5.0V））。
+/* 吸引ファンにかける電圧 [V]（2026-11-02 に 2.0 → 5.0。上限は drv/fan.c の FAN_LIMIT_V（2026-11-10 から 7.0V））。
  * 2026-11-02 に作者が測った：5.0V で吸引の力 55g（機体 26g の約 2.1 倍。はかりの皿の上に浮かせて、表示が 55g 減った）。
  * 押しつける力は 26 + 55 = 81g なので、滑らずに出せる加速度は吸引なしの約 3.1 倍（μ = 0.8 なら約 2.5G） */
 #define SUCTION_VOLTAGE_V 5.0f
 #define SUCTION_RAMP_MS   500   /* 0 から SUCTION_VOLTAGE_V まで上げるのにかける時間 [ms]（急に回して電池の電圧が落ちないように） */
+
+/* 吸引の力のテスト（モード4 No.3。2026-11-10）：1.0V から 1V ずつ 7.0V まで、1 段 5 秒ずつ回す。
+ * 2026-11-10 に作者が測った（袋を貼り直し、一次スカートも変えたあと）：
+ * 1V 10g、2V 50g、3V 80g、4V 110g、5V 130g、6V 150g、7V 170g（はかりの表示が減った分）。
+ * 3V から上は 1V で約 20〜30g ずつ、電圧にほぼ比例して増える（電圧の 2 乗ではない。MODES.md のモード4 No.3） */
+#define SUCTION_TEST_STEP_V   1.0f  /* 1 段で上げる電圧 [V] */
+#define SUCTION_TEST_STEPS    7     /* 段の数（7 段目が 7.0V。drv/fan.c の上限 FAN_LIMIT_V と同じ。LED も 7 個） */
+#define SUCTION_TEST_HOLD_MS  5000  /* 1 段を回す時間 [ms]（はかりの表示が落ち着いてから読めるように） */
 
 /* ---- その場旋回 ---- */
 

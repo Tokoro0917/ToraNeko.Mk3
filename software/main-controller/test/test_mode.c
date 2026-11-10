@@ -486,6 +486,13 @@ void adjust_suction_on(void)
   s_suction_count = s_suction_count + 1;
 }
 
+/* 吸引の力（モード4 No.3）：回さずに、呼ばれた回数を覚える */
+static int s_suction_force_count = 0;
+void adjust_suction_force(void)
+{
+  s_suction_force_count = s_suction_force_count + 1;
+}
+
 /* 吸引ありの加速度テスト（モード4）：走らずに、呼ばれた回数と No. を覚える */
 static int s_accel_test_count = 0;
 static int s_accel_test_number = 0;
@@ -726,7 +733,7 @@ static void test_explore_known(void)
 
   check(s_explore_count == 1 && s_explore_type == EXPLORE_UNKNOWN_WALLS_KNOWN, "No.4 は未知壁探索＋既知区間加速");
   check(!mode_has_action(0, 5), "モード0 の No.5 は決定できない");
-  check(mode_has_action(1, 4) && mode_has_action(1, 5) && !mode_has_action(1, 6), "モード1 は No.1〜5 を決定できる");
+  check(mode_has_action(1, 4) && mode_has_action(1, 6) && !mode_has_action(1, 7), "モード1 は No.1〜6 を決定できる");
 }
 
 /* スタート待ちでスイッチを 1 秒以上押し続けると、手をかざさなくても始まる（前に壁があって、手が使えないとき） */
@@ -998,9 +1005,21 @@ static void test_turn_test(void)
   hand_at(1500, 500);
   mode_run_once();
   check(s_accel_test_count == 1 && s_accel_test_number == 9, "モード4 No.9 で、加速度テストが No.9 で 1 回呼ばれる");
-  check(mode_has_action(4, 1) && mode_has_action(4, 4) && mode_has_action(4, 11) && !mode_has_action(4, 2)
-        && !mode_has_action(4, 3) && !mode_has_action(4, 12),
-        "モード4 は No.1 と No.4〜11 だけ決定できる");
+  check(mode_has_action(4, 1) && mode_has_action(4, 3) && mode_has_action(4, 4) && mode_has_action(4, 11)
+        && !mode_has_action(4, 2) && !mode_has_action(4, 12),
+        "モード4 は No.1・3・4〜11 だけ決定できる");
+
+  /* 吸引の力（モード4 No.3）も、スタート待ちのあとに始まる。加速度テストは呼ばれない */
+  reset_world();
+  mode_init();
+  s_suction_force_count = 0;
+  s_accel_test_count = 0;
+  rotate_left_at(100, 4);    /* モード4 */
+  rotate_right_at(100, 3);   /* No.3 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+  check(s_suction_force_count == 1 && s_accel_test_count == 0, "モード4 No.3 で、吸引の力が 1 回呼ばれる");
 }
 
 /* 壁までの距離の表示（モード5 No.3）も、No.1 と同じくスタート待ちをしない */

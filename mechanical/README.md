@@ -19,7 +19,7 @@ mechanical/
 
 | ディレクトリ | 内容 |
 |---|---|
-| [skirt_slider/](./skirt_slider/) | 吸引ファン用スカート枠（前後のスライダー付き、両面テープで貼る）と、スカートなしで使う前後のスライダー |
+| [skirt_slider/](./skirt_slider/) | 吸引ファン用スカート枠（前後のスライダー付き、両面テープで貼る。長方形の版もある）と、スカートなしで使う前後のスライダー |
 | [battery_holder/](./battery_holder/) | バッテリー 2 本を上部固定基板の上に固定するホルダー |
 | [case_insert/](./case_insert/) | ケース（お弁当箱）の中子に入れて、機体を動かないように納める受け台。中子の寸法は写真からの推定値 |
 | [jigs/maintenance_stand/](./jigs/maintenance_stand/) | 機体を載せるとタイヤが浮くメンテナンス用スタンド |

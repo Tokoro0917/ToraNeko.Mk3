@@ -5,6 +5,7 @@
          skirt_frame.stl / .step   スカート枠（前後のスライダーの出っ張り付き）。両面テープで貼る
          slider_front.stl / .step  スカートを付けないときの前スライダー。ネジで留める
          slider_rear.stl / .step   スカートを付けないときの後ろスライダー。ネジで留める
+         skirt_frame_rect.stl / .step  長方形のスカート枠（内側の面積 約 730mm²）。ネジ頭にかからない。両面テープで貼る
 
 座標は機体の STEP（mechanical/exported/TORANEKO.Mk3_v36.step）と同じ。
   z = 0 がメイン基板の下面（STEP の基板は z = 0〜0.6）、床は z = -2.36（タイヤの下端）
@@ -60,6 +61,13 @@ SLIDER_SIDE_U = 7.0            # スライダーの出っ張りの左右位置�
 FRONT_SLIDER_END_Y = -22.5     # 前スライダーはこれより前
 REAR_SLIDER_START_Y = 4.5      # 後ろスライダーはこれより後ろ
 
+# ---- 長方形の枠（skirt_frame_rect）の形 ------------------------------------
+# 袋（フィルム）を切りやすいように、外形を長方形 1 つにした枠。どのネジ頭にもかからない。
+RECT_HALF_W = 10.25            # 中心線から枠の外側まで。モータマウントのネジ頭（10.65mm から）の 0.4mm 内側
+RECT_FRONT_Y = -24.42          # 前の端（外側の面）。支柱のネジ頭（Y = -26.07 ± 1.25）の 0.4mm 後ろ
+RECT_REAR_Y = 18.38            # 後ろの端（外側の面）。後ろのえぐれのいちばん深い所（Y = 19.18）から 0.8mm
+RECT_SLIDER_U = 5.0            # スライダーの出っ張りの左右位置。前の出っ張りを支柱のネジ頭から離す
+
 
 def outline(inset):
     """枠の外形（上から見た形）。inset だけ内側に縮めた形を返す。
@@ -107,6 +115,43 @@ def flange():
     outside = extrude_down(outline(0), FLANGE_T)
     inside = extrude_down(outline(FLANGE_W), FLANGE_T + 1)
     return outside.cut(inside)
+
+
+def rect_outline(inset):
+    """長方形の枠の外形（上から見た形）。inset だけ内側に縮めた長方形を返す。
+
+    inset = 0 で枠の外側の面、inset = WALL_T で内側の面、inset = FLANGE_W でつばの内側になる。
+    """
+    width = (RECT_HALF_W - inset) * 2
+    length = (RECT_REAR_Y - RECT_FRONT_Y) - inset * 2
+    middle_y = (RECT_FRONT_Y + RECT_REAR_Y) / 2
+    return cq.Workplane("XY").center(CENTER_X, middle_y).rect(width, length)
+
+
+def rect_wall(height):
+    """長方形の枠の壁（輪の形）。"""
+    outside = extrude_down(rect_outline(0), height)
+    inside = extrude_down(rect_outline(WALL_T), height + 1)
+    return outside.cut(inside)
+
+
+def rect_flange():
+    """長方形の枠の壁の上端から内側に出す、両面テープを貼るためのつば。"""
+    outside = extrude_down(rect_outline(0), FLANGE_T)
+    inside = extrude_down(rect_outline(FLANGE_W), FLANGE_T + 1)
+    return outside.cut(inside)
+
+
+def rect_slider_positions():
+    """長方形の枠のスライダーの出っ張りの位置（前 2 か所、後ろ 2 か所）。
+
+    前と後ろの壁の厚みの真ん中に置く。
+    """
+    front_y = RECT_FRONT_Y + WALL_T / 2
+    rear_y = RECT_REAR_Y - WALL_T / 2
+    right_x = CENTER_X - RECT_SLIDER_U
+    left_x = CENTER_X + RECT_SLIDER_U
+    return [(right_x, front_y), (left_x, front_y), (right_x, rear_y), (left_x, rear_y)]
 
 
 def cut_post_screw(body, x, y):
@@ -171,6 +216,19 @@ def skirt_frame():
     return body.translate((0, 0, -TAPE_T))
 
 
+def skirt_frame_rect():
+    """長方形のスカート枠。作り方は skirt_frame() と同じ。
+
+    今の枠と違って、支柱のネジ頭は枠の前の外にあるので、逃げの穴はない。
+    """
+    height = FRAME_H - TAPE_T
+    pad_height = -FLOOR_Z - SLIDER_GAP - TAPE_T
+    body = rect_wall(height).union(rect_flange())
+    for x, y in rect_slider_positions():
+        body = body.union(slider_pad(x, y, pad_height))
+    return body.translate((0, 0, -TAPE_T))
+
+
 def screwed_frame():
     """ネジで留める枠（スカートなしで使うスライダーの元になる形）。"""
     body = wall(FRAME_H)
@@ -198,6 +256,11 @@ def outline_length():
     return outline(0).wires().val().Length()
 
 
+def inside_area(wire):
+    """枠の内側の面の線で囲まれた面積（吸う力がかかる面積）。"""
+    return cq.Face.makeFromWires(wire).Area()
+
+
 def export(body, name):
     """STEP は機体の座標のまま、STL は基板側の面を下にして出力する。"""
     cq.exporters.export(body, str(OUT / f"{name}.step"))
@@ -213,6 +276,10 @@ if __name__ == "__main__":
     sliders = screwed_frame()
     export(keep_y_range(sliders, -50, FRONT_SLIDER_END_Y), "slider_front")
     export(keep_y_range(sliders, REAR_SLIDER_START_Y, 50), "slider_rear")
+    export(skirt_frame_rect(), "skirt_frame_rect")
     print(f"枠の外周の長さ: {outline_length():.1f} mm")
+    print(f"枠の内側の面積: {inside_area(outline(WALL_T).wires().val()):.0f} mm²")
+    print(f"長方形の枠の外周の長さ: {rect_outline(0).wires().val().Length():.1f} mm")
+    print(f"長方形の枠の内側の面積: {inside_area(rect_outline(WALL_T).wires().val()):.0f} mm²")
     print(f"テープを床から 0.3mm まで垂らすときの幅: {-FLOOR_Z - 0.3:.2f} mm")
     print("done")

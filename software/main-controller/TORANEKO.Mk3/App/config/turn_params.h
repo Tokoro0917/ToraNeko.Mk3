@@ -27,6 +27,12 @@
  *      *_POST_ADJUST_MM）に入れる。2 の計算の値はそのままにしておく（test_turn が、計算の値でターンの形を確かめるため）。
  *      前距離を足すと、曲がり始めが前にずれる（止まる位置が、始めの向きに進む）。後距離を足すと、曲がったあとが長くなる
  * 2026-11-04 に、7 つのターンとも実機（吸引 5.0V）で合わせ終わった。合わせた分は「実機で足す前距離・後距離」にある。
+ *
+ * ■ ターンの組（2026-11-10）
+ * ターンの値は 2 組ある。どちらの組で曲がるかは、ctrl/run.c の run_fast_set_turn_set() で選ぶ。
+ *   - 組 1（下の BIG90_… などの名前）：ゆるいターン 800mm/s、きついターン 600mm/s。最短走行 No.4・5 が使う
+ *   - 組 2（T1000_BIG90_… などの名前。T1000 は「1000mm/s のターン」）：7 つとも 1000mm/s。最短走行 No.6 が使う
+ * モード3（ターンの調整）がどちらの組を走らせるかは、TURN_TEST_TURN_SET で選ぶ（下）。
  */
 #ifndef CONFIG_TURN_PARAMS_H
 #define CONFIG_TURN_PARAMS_H
@@ -128,5 +134,91 @@
 #define V90_OMEGA_DEG_S 788.7f
 #define V90_PRE_MM 3.0f
 #define V90_POST_MM 3.2f
+
+/* ===========================================================================
+ * 組 2：7 つとも 1000mm/s のターン（2026-11-10。作者が「全部 1m/s のターン」を作りたいので足した）
+ * 角加速度は、組 1 と同じく 10000 ×（速さ ÷ 500）² = 40000deg/s²。500mm/s のときと同じ形になるので、
+ * 前距離・後距離の計算の値は組 1 とほぼ同じになり（0.5ms ごとに計算するので 0.1〜0.4mm 違う）、最高角速度が速さに比例して大きくなる。
+ * 横向きの加速度（速さ × 角速度）は速さの 2 乗で増える。組 1 より、ゆるいターンは 1.56 倍（約 12800mm/s²）、
+ * きついターンは 2.78 倍（約 20700〜23000mm/s²）になる（下の --calc の行）。2026-11-10 に作者が測った吸引の力
+ * （5.0V で 130g）なら、滑り始める加速度は約 21600mm/s² の見込み（MODES.md のモード4 No.3）なので、
+ * きついターン（大回り 180°・斜め入り 135°・斜め出 135°・V90）は滑るかもしれない。モード3 で 1 つずつ確かめる。
+ * 滑るターンは、そのターンの *_SPEED_MM_S だけを下げて、角加速度を 10000 ×（速さ ÷ 500）² にし、--calc をやり直す
+ * =========================================================================== */
+
+/* ターンごとの速さ [mm/s] と角加速度 [deg/s²] */
+#define T1000_BIG90_SPEED_MM_S    1000.0f
+#define T1000_BIG90_ALPHA_DEG_S2  40000.0f
+#define T1000_BIG180_SPEED_MM_S   1000.0f
+#define T1000_BIG180_ALPHA_DEG_S2 40000.0f
+#define T1000_IN45_SPEED_MM_S     1000.0f
+#define T1000_IN45_ALPHA_DEG_S2   40000.0f
+#define T1000_IN135_SPEED_MM_S    1000.0f
+#define T1000_IN135_ALPHA_DEG_S2  40000.0f
+#define T1000_OUT45_SPEED_MM_S    1000.0f
+#define T1000_OUT45_ALPHA_DEG_S2  40000.0f
+#define T1000_OUT135_SPEED_MM_S   1000.0f
+#define T1000_OUT135_ALPHA_DEG_S2 40000.0f
+#define T1000_V90_SPEED_MM_S      1000.0f
+#define T1000_V90_ALPHA_DEG_S2    40000.0f
+
+/* 実機で足す前距離・後距離 [mm]。まだ実機で合わせていないので、はじめは組 1 で合わせた値と同じにしてある
+ * （1000mm/s では横向きの加速度が大きく、空回りが増えるが、吸引も 55g から 130g に強くなって空回りしにくくなったので、
+ * どちらに動くかわからないため）。モード3（TURN_TEST_TURN_SET を 2 にする）で走らせて合わせる */
+#define T1000_BIG90_PRE_ADJUST_MM   BIG90_PRE_ADJUST_MM
+#define T1000_BIG90_POST_ADJUST_MM  BIG90_POST_ADJUST_MM
+#define T1000_BIG180_PRE_ADJUST_MM  BIG180_PRE_ADJUST_MM
+#define T1000_BIG180_POST_ADJUST_MM BIG180_POST_ADJUST_MM
+#define T1000_BIG180_WIDTH_ADJUST_MM BIG180_WIDTH_ADJUST_MM  /* 大回り 180° の幅に足す分（組 1 の BIG180_WIDTH_ADJUST_MM と同じ使い方） */
+#define T1000_OUT45_STRAIGHT_MIN_MM  OUT45_STRAIGHT_MIN_MM   /* 斜め出 45° の前距離・後距離の短いほう（組 1 と同じ） */
+#define T1000_IN45_PRE_ADJUST_MM    IN45_PRE_ADJUST_MM
+#define T1000_IN45_POST_ADJUST_MM   IN45_POST_ADJUST_MM
+#define T1000_IN135_PRE_ADJUST_MM   IN135_PRE_ADJUST_MM
+#define T1000_IN135_POST_ADJUST_MM  IN135_POST_ADJUST_MM
+#define T1000_OUT45_PRE_ADJUST_MM   OUT45_PRE_ADJUST_MM
+#define T1000_OUT45_POST_ADJUST_MM  OUT45_POST_ADJUST_MM
+#define T1000_OUT135_PRE_ADJUST_MM  OUT135_PRE_ADJUST_MM
+#define T1000_OUT135_POST_ADJUST_MM OUT135_POST_ADJUST_MM
+#define T1000_V90_PRE_ADJUST_MM     V90_PRE_ADJUST_MM
+#define T1000_V90_POST_ADJUST_MM    V90_POST_ADJUST_MM
+
+/* 最高角速度・前距離・後距離（test_turn --calc の出力の、組 2 の行） */
+/* 前距離・後距離の短いほう 3.0mm で計算（test/test_turn.c --calc）。大回り 180° は幅 98mm（90 + T1000_BIG180_WIDTH_ADJUST_MM） */
+/* 大回り 90°（1000mm/s、角加速度 40000deg/s²。横向きの加速度はいちばん大きいとき 12791mm/s²） */
+#define T1000_BIG90_OMEGA_DEG_S 732.9f
+#define T1000_BIG90_PRE_MM 3.0f
+#define T1000_BIG90_POST_MM 3.1f
+/* 大回り 180°（1000mm/s、角加速度 40000deg/s²。横向きの加速度はいちばん大きいとき 20721mm/s²） */
+#define T1000_BIG180_OMEGA_DEG_S 1187.2f
+#define T1000_BIG180_PRE_MM 3.0f
+#define T1000_BIG180_POST_MM 3.0f
+/* 斜め入り 45°（1000mm/s、角加速度 40000deg/s²。横向きの加速度はいちばん大きいとき 12315mm/s²） */
+#define T1000_IN45_OMEGA_DEG_S 705.6f
+#define T1000_IN45_PRE_MM 3.0f
+#define T1000_IN45_POST_MM 22.0f
+/* 斜め入り 135°（1000mm/s、角加速度 40000deg/s²。横向きの加速度はいちばん大きいとき 22604mm/s²） */
+#define T1000_IN135_OMEGA_DEG_S 1295.1f
+#define T1000_IN135_PRE_MM 10.3f
+#define T1000_IN135_POST_MM 3.1f
+/* 斜め出 45°（1000mm/s、角加速度 40000deg/s²。横向きの加速度はいちばん大きいとき 12303mm/s²） */
+#define T1000_OUT45_OMEGA_DEG_S 704.9f
+#define T1000_OUT45_PRE_MM 21.6f
+#define T1000_OUT45_POST_MM 3.4f
+/* 斜め出 135°（1000mm/s、角加速度 40000deg/s²。横向きの加速度はいちばん大きいとき 22726mm/s²） */
+#define T1000_OUT135_OMEGA_DEG_S 1302.1f
+#define T1000_OUT135_PRE_MM 3.0f
+#define T1000_OUT135_POST_MM 10.9f
+/* V90°（1000mm/s、角加速度 40000deg/s²。横向きの加速度はいちばん大きいとき 22743mm/s²） */
+#define T1000_V90_OMEGA_DEG_S 1303.1f
+#define T1000_V90_PRE_MM 3.0f
+#define T1000_V90_POST_MM 3.1f
+
+/* 最短走行 No.6 の経路を選ぶとき（maze/dijkstra.c の走る時間の見積もり）に、どのターンも曲がるとする速さ [mm/s]。
+ * 組 1 の FAST_TURN_SPEED_MM_S と同じ使い方。組 2 のターンごとの速さのいちばん遅いもの以下にする */
+#define T1000_PATH_TURN_SPEED_MM_S 1000.0f
+
+/* モード3（ターンの調整。sys/turn_test.c）で走らせる組（1 か 2）。2026-11-10 に、組 2 を合わせるため 2 にした。
+ * 組 1 を走らせたいときは 1 にして、書き込み直す */
+#define TURN_TEST_TURN_SET 2
 
 #endif /* CONFIG_TURN_PARAMS_H */

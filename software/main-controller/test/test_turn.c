@@ -4,7 +4,7 @@
  *
  *   ./test_turn          config/turn_params.h の値で、どのターンも決めた位置・向きで終わるかを調べる（make で実行）
  *   ./test_turn --calc   ターンごとの速さ・角加速度（config/turn_params.h の値）から、各ターンの最高角速度・前距離・後距離を
- *                        計算して、config/turn_params.h に貼る行を出す
+ *                        計算して、config/turn_params.h に貼る行を出す（組 1 と組 2〈T1000_〉の両方）
  *   ./test_turn --slip   実機で合わせた前距離・後距離（*_ADJUST_MM）が、「曲がっているあいだタイヤが空回りする」という
  *                        係数 1 つの式で説明できるかを調べる（下の「■ 空回りの式」）
  *
@@ -79,6 +79,17 @@ static const turn_shape_t TURNS[TURN_COUNT] = {
   {"V90°", "V90", 90.0f, 90.0f / SQRT2_F, 90.0f / SQRT2_F, V90_SPEED_MM_S, V90_ALPHA_DEG_S2, TURN_MARGIN_MM},
 };
 
+/* 組 2（7 つとも 1000mm/s。config/turn_params.h の T1000_…）。形の決め方は組 1 と同じ */
+static const turn_shape_t TURNS_1000[TURN_COUNT] = {
+  {"大回り 90°", "T1000_BIG90", 90.0f, 90.0f, 90.0f, T1000_BIG90_SPEED_MM_S, T1000_BIG90_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"大回り 180°", "T1000_BIG180", 180.0f, 90.0f + T1000_BIG180_WIDTH_ADJUST_MM, 0.0f, T1000_BIG180_SPEED_MM_S, T1000_BIG180_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"斜め入り 45°", "T1000_IN45", 45.0f, 45.0f, 90.0f, T1000_IN45_SPEED_MM_S, T1000_IN45_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"斜め入り 135°", "T1000_IN135", 135.0f, 90.0f, 45.0f, T1000_IN135_SPEED_MM_S, T1000_IN135_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"斜め出 45°", "T1000_OUT45", 45.0f, 45.0f / SQRT2_F, 135.0f / SQRT2_F, T1000_OUT45_SPEED_MM_S, T1000_OUT45_ALPHA_DEG_S2, T1000_OUT45_STRAIGHT_MIN_MM},
+  {"斜め出 135°", "T1000_OUT135", 135.0f, 135.0f / SQRT2_F, 45.0f / SQRT2_F, T1000_OUT135_SPEED_MM_S, T1000_OUT135_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"V90°", "T1000_V90", 90.0f, 90.0f / SQRT2_F, 90.0f / SQRT2_F, T1000_V90_SPEED_MM_S, T1000_V90_ALPHA_DEG_S2, TURN_MARGIN_MM},
+};
+
 /* スラロームだけで進む位置（始めた向きから見て、左へ・前へ） */
 typedef struct {
   float left_mm;
@@ -149,13 +160,14 @@ static float omega_criterion(const turn_shape_t *turn, float omega_deg_s)
   return shorter_mm - turn->straight_min_mm;
 }
 
-/* --calc：各ターンの最高角速度・前距離・後距離を計算して、config/turn_params.h に貼る行を出す */
-static int calculate(void)
+/* --calc の 1 組ぶん：組 turns の各ターンの最高角速度・前距離・後距離を計算して、config/turn_params.h に貼る行を出す */
+static void calculate_set(const turn_shape_t turns[], const char *title)
 {
+  printf("/* ---- %s ---- */\n", title);
   printf("/* 前距離・後距離の短いほう %.1fmm で計算（斜め出 45° は OUT45_STRAIGHT_MIN_MM。test/test_turn.c --calc） */\n",
          TURN_MARGIN_MM);
   for (int i = 0; i < TURN_COUNT; i++) {
-    const turn_shape_t *turn = &TURNS[i];
+    const turn_shape_t *turn = &turns[i];
     /* 角速度を半分ずつ狭めて、決め手の値が 0 になるところを探す（二分法） */
     float low_deg_s = 100.0f;
     float high_deg_s = 5000.0f;
@@ -182,6 +194,13 @@ static int calculate(void)
     printf("#define %s_PRE_MM %.1ff\n", turn->prefix, pre_mm);
     printf("#define %s_POST_MM %.1ff\n", turn->prefix, post_mm);
   }
+}
+
+/* --calc：組 1 と組 2 の両方を計算して、config/turn_params.h に貼る行を出す */
+static int calculate(void)
+{
+  calculate_set(TURNS, "組 1（ゆるいターン 800mm/s、きついターン 600mm/s）");
+  calculate_set(TURNS_1000, "組 2（7 つとも 1000mm/s）");
   return 0;
 }
 
@@ -362,10 +381,20 @@ int main(int argc, char *argv[])
   check_turn(&TURNS[5], OUT135_OMEGA_DEG_S, OUT135_PRE_MM, OUT135_POST_MM);
   check_turn(&TURNS[6], V90_OMEGA_DEG_S, V90_PRE_MM, V90_POST_MM);
 
+  printf("[1b] 組 2（7 つとも 1000mm/s。config/turn_params.h の T1000_…）\n");
+  check_turn(&TURNS_1000[0], T1000_BIG90_OMEGA_DEG_S, T1000_BIG90_PRE_MM, T1000_BIG90_POST_MM);
+  check_turn(&TURNS_1000[1], T1000_BIG180_OMEGA_DEG_S, T1000_BIG180_PRE_MM, T1000_BIG180_POST_MM);
+  check_turn(&TURNS_1000[2], T1000_IN45_OMEGA_DEG_S, T1000_IN45_PRE_MM, T1000_IN45_POST_MM);
+  check_turn(&TURNS_1000[3], T1000_IN135_OMEGA_DEG_S, T1000_IN135_PRE_MM, T1000_IN135_POST_MM);
+  check_turn(&TURNS_1000[4], T1000_OUT45_OMEGA_DEG_S, T1000_OUT45_PRE_MM, T1000_OUT45_POST_MM);
+  check_turn(&TURNS_1000[5], T1000_OUT135_OMEGA_DEG_S, T1000_OUT135_PRE_MM, T1000_OUT135_POST_MM);
+  check_turn(&TURNS_1000[6], T1000_V90_OMEGA_DEG_S, T1000_V90_PRE_MM, T1000_V90_POST_MM);
+
   printf("[2] 遅く入ったターン（速さ k 倍、最高角速度 k 倍、角加速度 k² 倍）\n");
   check_slow_turn(&TURNS[0], BIG90_OMEGA_DEG_S, 0.5f);
   check_slow_turn(&TURNS[2], IN45_OMEGA_DEG_S, 0.4f);
   check_slow_turn(&TURNS[3], IN135_OMEGA_DEG_S, 0.6f);
+  check_slow_turn(&TURNS_1000[0], T1000_BIG90_OMEGA_DEG_S, 0.5f);
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

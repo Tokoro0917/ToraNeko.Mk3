@@ -13,7 +13,8 @@
  *   1. 吸引を上げて（0.5 秒）、0.5 秒待つ（最短走行は吸引して走るので、ターンも吸引して合わせる。
  *      吸引なしでは 4000mm/s² で前後に滑っていて、500mm/s のターンの横向きの加速度 3000〜5800mm/s² では滑る）
  *   2. ジャイロのゼロ点を測り直す（約 0.5 秒。吸ったまま測る）
- *   3. そのターンの速さ（config/turn_params.h の *_SPEED_MM_S。ゆるいターンは 800mm/s、きついターンは 600mm/s）まで
+ *   3. そのターンの速さ（config/turn_params.h の *_SPEED_MM_S。組 1 は、ゆるいターン 800mm/s、きついターン 600mm/s。
+ *      組 2 は 7 つとも 1000mm/s。どちらの組かは config/turn_params.h の TURN_TEST_TURN_SET で選ぶ）まで
  *      速くしながら、ターンの始まりまで進む
  *        No.1〜4：スタート区画から、次の区画のまん中まで（START_OFFSET_MM + 1 区画 = 100mm）
  *        No.5〜7：区画の辺のまん中から、斜めに 1 つぶん（63.6mm）進んで、次の辺のまん中まで
@@ -65,8 +66,9 @@
 #include "sys/ui.h"
 
 #define TURN_TEST_LOG_INTERVAL_MS 1        /* 走行ログの間隔 [ms]（1000 行で 1 秒ぶん） */
-#define TURN_TEST_ACCEL_MM_S2     6000.0f  /* 速くする・止まるときの加速度 [mm/s²]（800mm/s まで 53mm。斜め 1 つぶん 63.6mm で
-                                              800mm/s に上げて止めるため。吸引 5.0V では 10000mm/s² まで滑らない） */
+#define TURN_TEST_ACCEL_MM_S2     8000.0f  /* 速くする・止まるときの加速度 [mm/s²]（1000mm/s まで 62.5mm。斜め 1 つぶん 63.6mm で
+                                              1000mm/s〈組 2〉に上げて止めるため。2026-11-10 に 6000 から上げた。
+                                              吸引 5.0V では 10000mm/s² まで滑らない） */
 #define TURN_TEST_SUCTION_WAIT_MS 500      /* 吸引を上げてから、走り出す前に待つ時間 [ms]（ファンの回り方を落ち着かせる） */
 #define DIAG_TEST_STEPS           6        /* 斜めの直進のテスト（No.8・9）で進む、斜めの直進の数（6 つで 382mm） */
 #define DIAG_TEST_SPEED_MM_S      SHORTEST4_DIAG_MAX_SPEED_MM_S  /* 同じく、速さ [mm/s]（最短走行 No.4 の斜めと同じ 800） */
@@ -74,6 +76,7 @@
 /* 吸引を上げ、制御とログを始める（まだ動かない） */
 static void prepare(void)
 {
+  run_fast_set_turn_set(TURN_TEST_TURN_SET);  /* 走らせる組（config/turn_params.h） */
   run_fast_set_diag_correction(false);  /* ターンの調整では、斜めの補正を入れない（先頭のコメント） */
   suction_ramp_up();  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
   ui_wait_ms(TURN_TEST_SUCTION_WAIT_MS);
@@ -168,6 +171,7 @@ static void run_diag_test(bool use_correction)
   run_fast_set_diag_correction(use_correction);
   run_fast_diag_stop(DIAG_TEST_STEPS * DIAG_STEP_MM, DIAG_TEST_SPEED_MM_S, TURN_TEST_ACCEL_MM_S2);
   run_fast_set_diag_correction(true);  /* ふつうの「入れる」に戻す（最短走行のため） */
+  run_fast_set_turn_set(1);            /* 組 1 に戻す */
   fan_stop();
   signal_end();
 }
@@ -207,5 +211,6 @@ void turn_test_run(int number)
 
   fan_stop();  /* 吸引を止める（フェイルセーフで止まったときは、もう止まっている） */
   run_fast_set_diag_correction(true);  /* ふつうの「入れる」に戻す（最短走行のため） */
+  run_fast_set_turn_set(1);            /* 組 1 に戻す */
   signal_end();
 }
