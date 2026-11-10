@@ -77,7 +77,7 @@ set(APP_SOURCES
     App/sys/output.c
     App/sys/scheduler.c
     App/sys/sensor_record.c
-    App/sys/sensor_scale.c
+    App/sys/venue.c
     App/sys/shortest.c
     App/sys/suction.c
     App/sys/turn_test.c

@@ -40,11 +40,10 @@
  * （止めて測ったときより 1〜2 割低い。右のセンサは斜め前を見るので、走っているときは光の当たる場所が違うらしい）。
  * 942 のままだと、右の壁から遠いと読んで、まん中より右に寄ったところで落ち着いていた。
  * 2026-11-10 に作者が、ほかの迷路で 1205・758 にしたが、それは感度合わせの倍率が間違っていた（横の値が小さく直されていた）
- * のを埋め合わせたものだった。同じ日に、感度合わせを区画の境目で測るように直し、目標は、境目で測った値
- * （ctrl/wall_ctrl.h の WALL_HOME_EDGE_LEFT・RIGHT）にした。会場では倍率で直した値と比べるので、
- * 会場の境目で感度合わせをすると、そこで測った値がそのまま目標になる */
-#define LEFT_WALL_REFERENCE  WALL_HOME_EDGE_LEFT
-#define RIGHT_WALL_REFERENCE WALL_HOME_EDGE_RIGHT
+ * のを埋め合わせたものだった。同じ日に、会場では、区画の中心に置いて測った値を目標にできるようにした
+ * （モード7 No.4。下の wall_reference_left()）。ここの値は、会場で測っていないときに使う、家の迷路の値 */
+#define LEFT_WALL_REFERENCE  WALL_HOME_CENTER_LEFT   /* 1460（ctrl/wall_ctrl.h） */
+#define RIGHT_WALL_REFERENCE WALL_HOME_CENTER_RIGHT  /* 815 */
 
 /* 壁に沿って走る補正に、その壁を使う下限。壁のあり・なしのしきい値（左 650・右 400）より高くする。
  * 壁の端（柱の近く）では、壁があっても値がまだ上がりきっておらず、補正が「壁から遠い」と読み違えて
@@ -98,7 +97,7 @@ static volatile float s_scale_left = 1.0f;
 static volatile float s_scale_right = 1.0f;
 static volatile float s_scale_front_right = 1.0f;
 
-/* 会場ごとの感度の倍率を入れる（sys/sensor_scale.c） */
+/* 会場ごとの感度の倍率を入れる（sys/venue.c） */
 void wall_ctrl_set_sensor_scale(sensor_scale_t scale)
 {
   s_scale_front_left = scale.front_left;
@@ -116,6 +115,49 @@ sensor_scale_t wall_ctrl_get_sensor_scale(void)
   scale.right = s_scale_right;
   scale.front_right = s_scale_front_right;
   return scale;
+}
+
+/* 横の壁に沿って走る補正の目標（wall_ctrl.h の wall_reference_t）。会場で測った値（そのままの値）。
+ * メインの処理（モード7 No.4、電源を入れたとき）で書き、制御周期の割り込みでも読むので volatile にする */
+static volatile bool s_reference_is_set = false;
+static volatile float s_reference_left_raw = 0.0f;
+static volatile float s_reference_right_raw = 0.0f;
+
+/* 横の壁に沿って走る補正の目標を入れる（sys/venue.c） */
+void wall_ctrl_set_wall_reference(wall_reference_t reference)
+{
+  s_reference_is_set = reference.is_set;
+  s_reference_left_raw = reference.left;
+  s_reference_right_raw = reference.right;
+}
+
+/* 今の横の壁に沿って走る補正の目標（会場で測った値） */
+wall_reference_t wall_ctrl_get_wall_reference(void)
+{
+  wall_reference_t reference;
+  reference.is_set = s_reference_is_set;
+  reference.left = s_reference_left_raw;
+  reference.right = s_reference_right_raw;
+  return reference;
+}
+
+/* 左の壁の目標。会場で測った値があれば、それを倍率で割ったもの（wall_ctrl_get_left() と同じく、家の迷路での値に直す。
+ * こうすると、左のセンサのそのままの値が、測った値になるところへ寄っていく）。なければ LEFT_WALL_REFERENCE */
+static float wall_reference_left(void)
+{
+  if (s_reference_is_set) {
+    return s_reference_left_raw / s_scale_left;
+  }
+  return LEFT_WALL_REFERENCE;
+}
+
+/* 右の壁の目標（左と同じ） */
+static float wall_reference_right(void)
+{
+  if (s_reference_is_set) {
+    return s_reference_right_raw / s_scale_right;
+  }
+  return RIGHT_WALL_REFERENCE;
 }
 
 /* そのままの値 raw_value を、倍率 scale で割って、表を作った迷路での値に直す（小数は切り捨てて整数にする） */
@@ -368,8 +410,8 @@ static bool can_use_right_wall(void)
  * （両方のときと、同じずれで同じくらいの大きさになるように）。どちらも使えなければ 0 */
 float wall_ctrl_get_side_error(void)
 {
-  float left_error = wall_ctrl_get_left() - LEFT_WALL_REFERENCE;
-  float right_error = wall_ctrl_get_right() - RIGHT_WALL_REFERENCE;
+  float left_error = wall_ctrl_get_left() - wall_reference_left();
+  float right_error = wall_ctrl_get_right() - wall_reference_right();
   bool left = can_use_left_wall();
   bool right = can_use_right_wall();
 

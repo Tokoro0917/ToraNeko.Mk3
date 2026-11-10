@@ -280,6 +280,47 @@ static void test_sensor_scale(void)
   wall_ctrl_set_sensor_scale(scale);
 }
 
+/* 壁制御の目標（区画の中心で測った値。2026-11-10）：測った値のところで、横のずれが 0 になるか */
+static void test_wall_reference(void)
+{
+  printf("[0b] 壁制御の目標\n");
+  /* はじめは家の値（1460・815）。家の値の位置で、ずれは 0 */
+  s_fake_left = 1460;
+  s_fake_right = 815;
+  check(!wall_ctrl_get_wall_reference().is_set, "はじめは、会場で測った目標なし");
+  check(fabsf(wall_ctrl_get_side_error()) < 1.0f, "家の値の位置で、横のずれは 0");
+
+  /* 会場で、左 1300・右 900 を目標にすると、そこでずれが 0 になる */
+  wall_reference_t reference;
+  reference.is_set = true;
+  reference.left = 1300.0f;
+  reference.right = 900.0f;
+  wall_ctrl_set_wall_reference(reference);
+  s_fake_left = 1300;
+  s_fake_right = 900;
+  check(fabsf(wall_ctrl_get_side_error()) < 1.0f, "会場で測った目標の位置で、横のずれは 0");
+
+  /* 倍率が 1 でなくても、そのままの値が目標と同じなら、ずれは 0（目標も倍率で割って比べるため） */
+  sensor_scale_t scale = wall_ctrl_get_sensor_scale();
+  scale.left = 0.9f;
+  scale.right = 1.1f;
+  wall_ctrl_set_sensor_scale(scale);
+  check(fabsf(wall_ctrl_get_side_error()) < 2.0f, "倍率を変えても、そのままの値が目標と同じなら、横のずれは 0");
+
+  /* 左へ寄る（左の値が上がる）と、ずれは + */
+  s_fake_left = 1400;
+  check(wall_ctrl_get_side_error() > 50.0f, "左に寄ると、ずれは +");
+
+  /* ほかのテストのために戻す */
+  scale.left = 1.0f;
+  scale.right = 1.0f;
+  wall_ctrl_set_sensor_scale(scale);
+  reference.is_set = false;
+  wall_ctrl_set_wall_reference(reference);
+  s_fake_left = 1460;
+  s_fake_right = 815;
+}
+
 int main(int argc, char *argv[])
 {
   if (argc >= 2 && strcmp(argv[1], "--replay") == 0) {
@@ -287,6 +328,7 @@ int main(int argc, char *argv[])
   }
 
   test_sensor_scale();
+  test_wall_reference();
 
   printf("[1] 壁の値が変わらなければ、左右とも使える\n");
   reset();
