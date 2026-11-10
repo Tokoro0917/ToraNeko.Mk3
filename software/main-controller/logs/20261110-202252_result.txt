@@ -1,0 +1,31 @@
+#BEGIN RESULT
+Search: longest wait between moves 9259 us
+Search: front correction 8 times, average -7.3 mm, min -53.0 mm, max 15.5 mm (applied=1)
+front 1: traveled 852 mm, correction -53.0 mm
+FL 34.0 FR 34.0 mm, side L 31.1 R 32.5 mm, overrun 0.0 mm, speed 154 mm/s, yaw 0.0 deg
+front 2: traveled 1017 mm, correction 15.5 mm
+FL 100.7 FR 98.7 mm, side L 64.0 R 64.0 mm, overrun 2.7 mm, speed 286 mm/s, yaw -0.6 deg
+front 3: traveled 1260 mm, correction 6.2 mm
+FL 90.3 FR 90.8 mm, side L 64.0 R 64.0 mm, overrun 2.7 mm, speed 310 mm/s, yaw -3.0 deg
+front 4: traveled 1418 mm, correction -4.1 mm
+FL 80.2 FR 86.4 mm, side L 42.2 R 64.0 mm, overrun 2.7 mm, speed 323 mm/s, yaw -1.5 deg
+front 5: traveled 1492 mm, correction 12.9 mm
+FL 100.2 FR 94.3 mm, side L 64.0 R 48.3 mm, overrun 2.7 mm, speed 300 mm/s, yaw -1.3 deg
+front 6: traveled 1833 mm, correction -53.0 mm
+FL 34.0 FR 34.0 mm, side L 30.1 R 33.0 mm, overrun 0.0 mm, speed 160 mm/s, yaw -2.3 deg
+front 7: traveled 2082 mm, correction 6.6 mm
+FL 90.9 FR 100.2 mm, side L 41.5 R 64.0 mm, overrun 2.7 mm, speed 281 mm/s, yaw -1.6 deg
+front 8: traveled 2163 mm, correction 10.2 mm
+FL 103.4 FR 94.5 mm, side L 64.0 R 46.5 mm, overrun 2.7 mm, speed 307 mm/s, yaw -1.5 deg
+Search: side wall too close 2 times, nearest 30.1 mm (aligned=1)
+Wall edge: 9 times (search applied=1, shortest applied=1)
+edge 1: right, wall end, traveled 200 mm, speed 300 mm/s, error -1.7 mm, lag -1.5 mm, used
+edge 2: right, wall end, traveled 387 mm, speed 300 mm/s, error 6.9 mm, lag -1.6 mm, used
+edge 3: right, wall end, traveled 571 mm, speed 300 mm/s, error 4.7 mm, lag -1.5 mm, used
+edge 4: left, pillar, traveled 736 mm, speed 300 mm/s, error -5.9 mm, lag -1.4 mm, used
+edge 5: right, wall end, traveled 978 mm, speed 300 mm/s, error 0.6 mm, lag -0.6 mm, used
+edge 6: left, wall end, traveled 1146 mm, speed 300 mm/s, error -4.6 mm, lag -1.0 mm, used
+edge 7: right, wall end, traveled 1716 mm, speed 300 mm/s, error -0.4 mm, lag -1.5 mm, used
+edge 8: right, wall end, traveled 1948 mm, speed 300 mm/s, error -4.1 mm, lag -0.7 mm, used
+edge 9: right, pillar, traveled 2048 mm, speed 300 mm/s, error 5.5 mm, lag -1.3 mm, used
+#END RESULT
