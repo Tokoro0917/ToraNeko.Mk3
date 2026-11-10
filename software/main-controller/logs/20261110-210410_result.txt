@@ -1,0 +1,6 @@
+#BEGIN RESULT
+Wall edge: 2 times (search applied=1, shortest applied=1)
+edge 1: right, wall end, traveled 684 mm, speed 1111 mm/s, error 6.8 mm, lag 2.0 mm, used
+edge 2: right, wall end, traveled 1901 mm, speed 1051 mm/s, error -0.6 mm, lag -1.2 mm, used
+Failsafe: much slower than target (hit something)
+#END RESULT

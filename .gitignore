@@ -49,6 +49,7 @@ software/main-controller/test/test_turn
 software/main-controller/test/test_control
 software/main-controller/test/test_output
 software/main-controller/test/test_flash
+software/main-controller/test/test_wall_ctrl
 software/main-controller/test/test_output_dump.txt
 
 # --- STM32 (CubeMX + CMake) ---

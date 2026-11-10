@@ -22,6 +22,7 @@
  */
 #include <stdbool.h>
 #include <stdint.h>
+#include <math.h>
 #include <stdio.h>
 
 #include "drv/flash_memory.h"
@@ -32,7 +33,7 @@
 /* 迷路を保存したときに書く語の数（目印、大きさ、区画ごとに 5 語、確かめの数） */
 #define MAZE_WORD_COUNT (2 + MAZE_SIZE * MAZE_SIZE * 5 + 1)
 /* ゴールを保存したときに書く語の数（目印、x、y、確かめの数） */
-#define GOAL_WORD_COUNT 4
+#define GOAL_WORD_COUNT 8  /* 目印、x、y、感度の倍率 4 つ、確かめの数（2026-11-10 から） */
 
 /* ---------------------------------------------------------------------------
  * テスト結果の数え方
@@ -457,7 +458,7 @@ static void test_goal(void)
   check(flash_load_goal(&goal_x, &goal_y), "保存したゴールを読める");
   check(goal_x == 20 && goal_y == 3, "読んだゴールは (20, 3)");
   check(count_written_words(FLASH_AREA_GOAL, FLASH_AREA_WORD_COUNT) == GOAL_WORD_COUNT,
-        "書く語の数は 4（目印、x、y、確かめの数）");
+        "書く語の数は 8（目印、x、y、感度の倍率 4 つ、確かめの数）");
 
   flash_save_goal(5, 30);
   check(flash_load_goal(&goal_x, &goal_y) && goal_x == 5 && goal_y == 30, "保存し直すと、新しいゴール (5, 30) を読める");
@@ -512,6 +513,73 @@ static void test_separate_areas(void)
 }
 
 /* ---------------------------------------------------------------------------
+ * 8. 会場ごとの感度の倍率（ゴールと同じ場所。2026-11-10）
+ * ------------------------------------------------------------------------- */
+
+/* 2 つの倍率がほぼ同じか（保存すると小数 4 けたになるので、0.0001 まで） */
+static bool scale_is_near(float a, float b)
+{
+  return fabsf(a - b) < 0.0001f;
+}
+
+/* 倍率 4 つを作る */
+static sensor_scale_t make_scale(float front_left, float left, float right, float front_right)
+{
+  sensor_scale_t scale;
+  scale.front_left = front_left;
+  scale.left = left;
+  scale.right = right;
+  scale.front_right = front_right;
+  return scale;
+}
+
+/* 倍率 4 つが、決めた値とほぼ同じか */
+static bool scale_matches(sensor_scale_t scale, float front_left, float left, float right, float front_right)
+{
+  return scale_is_near(scale.front_left, front_left) && scale_is_near(scale.left, left)
+         && scale_is_near(scale.right, right) && scale_is_near(scale.front_right, front_right);
+}
+
+static void test_sensor_scale(void)
+{
+  printf("[8] 会場ごとの感度の倍率\n");
+  int goal_x = 0;
+  int goal_y = 0;
+
+  reset_flash();
+  check(scale_matches(flash_load_sensor_scale(), 1.0f, 1.0f, 1.0f, 1.0f), "保存したことがなければ、倍率は全部 1");
+
+  flash_save_sensor_scale(make_scale(1.0213f, 0.9512f, 1.25f, 0.8f));
+  check(scale_matches(flash_load_sensor_scale(), 1.0213f, 0.9512f, 1.25f, 0.8f), "保存した倍率を読める（小数 4 けたまで）");
+  check(!flash_load_goal(&goal_x, &goal_y), "ゴールを入れたことがなく、倍率だけを保存したときは、ゴールは読めない");
+
+  flash_save_goal(7, 9);
+  check(flash_load_goal(&goal_x, &goal_y) && goal_x == 7 && goal_y == 9, "倍率のあとにゴールを保存すると、ゴールを読める");
+  check(scale_matches(flash_load_sensor_scale(), 1.0213f, 0.9512f, 1.25f, 0.8f), "ゴールを保存しても、倍率は消えない");
+
+  flash_save_sensor_scale(make_scale(1.1f, 1.2f, 1.3f, 1.4f));
+  check(flash_load_goal(&goal_x, &goal_y) && goal_x == 7 && goal_y == 9, "倍率を保存し直しても、ゴールは消えない");
+  check(scale_matches(flash_load_sensor_scale(), 1.1f, 1.2f, 1.3f, 1.4f), "保存し直した倍率を読める");
+
+  /* 壊れた保存：確かめの数が合わない */
+  s_goal_words[4] = 12345;
+  check(scale_matches(flash_load_sensor_scale(), 1.0f, 1.0f, 1.0f, 1.0f), "壊れているときは、倍率は全部 1");
+  check(!flash_load_goal(&goal_x, &goal_y), "壊れているときは、ゴールも読まない");
+
+  /* 2026-11-10 より前の形（目印 "GOA1"、x、y、確かめの数）で保存したゴール */
+  reset_flash();
+  s_goal_words[0] = 0x474F4131;
+  s_goal_words[1] = 12;
+  s_goal_words[2] = 13;
+  fix_check_number(FLASH_AREA_GOAL, 4);
+  check(flash_load_goal(&goal_x, &goal_y) && goal_x == 12 && goal_y == 13, "前の形で保存したゴールも読める");
+  check(scale_matches(flash_load_sensor_scale(), 1.0f, 1.0f, 1.0f, 1.0f), "前の形のときは、倍率は全部 1");
+  flash_save_sensor_scale(make_scale(1.05f, 1.0f, 1.0f, 1.0f));
+  check(flash_load_goal(&goal_x, &goal_y) && goal_x == 12 && goal_y == 13,
+        "前の形のゴールのあとに倍率を保存しても、ゴールは消えない（今の形で書き直す）");
+}
+
+/* ---------------------------------------------------------------------------
  * 7. 保存しているあいだの表示
  * ------------------------------------------------------------------------- */
 
@@ -554,6 +622,7 @@ int main(void)
   test_goal();
   test_separate_areas();
   test_saving_leds();
+  test_sensor_scale();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");

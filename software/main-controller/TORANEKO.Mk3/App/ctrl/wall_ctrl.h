@@ -43,11 +43,44 @@ int wall_ctrl_get_diag_used(void);
 float wall_ctrl_get_front_distance_error(void);
 float wall_ctrl_get_front_angle_error(void);
 
-/* 4 つの壁センサの値（ON−OFF。LED の光の分だけ）。センサ値の表示などで使う */
+/* 4 つの壁センサの値（ON−OFF。LED の光の分だけ）。センサ値の表示などで使う。
+ * 会場ごとの感度の倍率（下）で割って、表やしきい値を決めた迷路での値に直してある */
 int32_t wall_ctrl_get_front_left(void);
 int32_t wall_ctrl_get_left(void);
 int32_t wall_ctrl_get_right(void);
 int32_t wall_ctrl_get_front_right(void);
+
+/* 倍率で割る前の、そのままの値（会場ごとの感度合わせで、倍率を測るときに使う。sys/sensor_scale.c） */
+int32_t wall_ctrl_get_front_left_raw(void);
+int32_t wall_ctrl_get_left_raw(void);
+int32_t wall_ctrl_get_right_raw(void);
+int32_t wall_ctrl_get_front_right_raw(void);
+
+/* 会場ごとの感度の倍率（会場の区画のまん中の値 ÷ 表を作った迷路での区画のまん中の値）。4 つのセンサで 1 つずつ。
+ * 会場の壁の塗装で、センサの値がどの距離でもほぼ同じ割合で変わるので、この倍率で割って、もとの迷路の値に直す
+ * （KOGUMA の WallDist_Scale と同じ考え方。1 なら直さない）。はじめは 1。sys/sensor_scale.c が Flash から読んで入れる */
+typedef struct {
+  float front_left;   /* 左前 */
+  float left;         /* 左 */
+  float right;        /* 右 */
+  float front_right;  /* 右前 */
+} sensor_scale_t;
+
+/* 家の迷路で、区画の境目（入口の辺）に、タイヤの軸を境目に合わせ、左右の壁のまん中に置いたときのセンサの値（倍率 1）。
+ * 前の壁は 87mm 先（その区画の前の壁）、左右には壁がある。走っているときに壁を見るのと同じ位置なので、
+ * 会場ごとの感度合わせ（sys/sensor_scale.c）の基準にし、横の 2 つは壁に沿って走る補正の目標にもする（ctrl/wall_ctrl.c）。
+ * 会場では「測った値 ÷ 倍率」で比べるので、感度合わせをすると、会場の境目で測った値がそのまま目標になる。
+ *   左前・右前：前の壁まで 87mm のときの、距離の表（ctrl/wall_dist.c。左右の壁ありで測った）の値
+ *   左・右：これまでの横の壁の目標（2026-11-02 に止めて測った左 1426・1495 の平均と、2026-11-03 に探索の走行ログで、
+ *          まん中を走っているときの右 805〜830 から決めた値）
+ * 家で、No.8 で倍率を 1 に戻してから、この置き方でモード5 No.2 を測ったら、その平均をここに入れる */
+#define WALL_HOME_EDGE_FRONT_LEFT  905
+#define WALL_HOME_EDGE_LEFT        1460
+#define WALL_HOME_EDGE_RIGHT       815
+#define WALL_HOME_EDGE_FRONT_RIGHT 1255
+
+void wall_ctrl_set_sensor_scale(sensor_scale_t scale);
+sensor_scale_t wall_ctrl_get_sensor_scale(void);
 
 /* 4 つの壁センサの値を、壁までの距離 [mm] に直したもの（ctrl/wall_dist.c。区画のまん中で 42mm） */
 float wall_ctrl_get_front_left_mm(void);

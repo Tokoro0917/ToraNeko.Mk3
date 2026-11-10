@@ -29,18 +29,22 @@
 #include "ctrl/wall_dist.h"
 #include "drv/wall.h"
 
-#define FRONT_LEFT_WALL_THRESHOLD  570   /* 左前：これより大きければ前に壁 */
-#define FRONT_RIGHT_WALL_THRESHOLD 900   /* 右前：同じく */
-#define LEFT_WALL_THRESHOLD        650   /* 左：これより大きければ左に壁 */
+#define FRONT_LEFT_WALL_THRESHOLD  300   /* 左前：これより大きければ前に壁 */
+#define FRONT_RIGHT_WALL_THRESHOLD 700   /* 右前：同じく（2026-11-10 に 900 → 700。横の壁がないところから行き止まりに入ると、入口で右前が 900 を下回って前の壁を見落とし、ぶつかっていた） */
+#define LEFT_WALL_THRESHOLD        500   /* 左：これより大きければ左に壁 */
 #define RIGHT_WALL_THRESHOLD       400   /* 右：これより大きければ右に壁 */
 /* 区画のまん中にいるときの、横のセンサの値。壁に沿って走る補正の目標。
  * 2026-11-02 に、前の壁なしで測った 2 回の平均（左 1426・1495、右 922・961）。壁に沿って走るのは、前に壁がない直進のときが
  * ほとんどなので、前の壁なしの値にした（前の壁があると、左 1879・右 1137 に上がる）。
  * 右は 2026-11-03 に 942 → 815 にした：探索の走行ログで、左右に壁がある直進で左が約 42mm（まん中）のとき、右は 805〜830 だった
  * （止めて測ったときより 1〜2 割低い。右のセンサは斜め前を見るので、走っているときは光の当たる場所が違うらしい）。
- * 942 のままだと、右の壁から遠いと読んで、まん中より右に寄ったところで落ち着いていた */
-#define LEFT_WALL_REFERENCE  1460
-#define RIGHT_WALL_REFERENCE 815
+ * 942 のままだと、右の壁から遠いと読んで、まん中より右に寄ったところで落ち着いていた。
+ * 2026-11-10 に作者が、ほかの迷路で 1205・758 にしたが、それは感度合わせの倍率が間違っていた（横の値が小さく直されていた）
+ * のを埋め合わせたものだった。同じ日に、感度合わせを区画の境目で測るように直し、目標は、境目で測った値
+ * （ctrl/wall_ctrl.h の WALL_HOME_EDGE_LEFT・RIGHT）にした。会場では倍率で直した値と比べるので、
+ * 会場の境目で感度合わせをすると、そこで測った値がそのまま目標になる */
+#define LEFT_WALL_REFERENCE  WALL_HOME_EDGE_LEFT
+#define RIGHT_WALL_REFERENCE WALL_HOME_EDGE_RIGHT
 
 /* 壁に沿って走る補正に、その壁を使う下限。壁のあり・なしのしきい値（左 650・右 400）より高くする。
  * 壁の端（柱の近く）では、壁があっても値がまだ上がりきっておらず、補正が「壁から遠い」と読み違えて
@@ -86,28 +90,87 @@
 #define FRONT_LEFT_HAND_THRESHOLD  2800  /* 左前：これより大きければ手がかざされている（仮） */
 #define FRONT_RIGHT_HAND_THRESHOLD 2000  /* 右前：同じく（仮） */
 
-/* 左前のセンサの値（受光 1、組A） */
-int32_t wall_ctrl_get_front_left(void)
+/* 会場ごとの感度の倍率（wall_ctrl.h の sensor_scale_t）。はじめは 1（直さない）。
+ * メインの処理（感度合わせ、電源を入れたとき）で書き、制御周期の割り込みでも読むので volatile にする。
+ * 書くのは機体が止まっているときだけなので、4 つを書く途中で割り込みが入っても、走りには影響しない */
+static volatile float s_scale_front_left = 1.0f;
+static volatile float s_scale_left = 1.0f;
+static volatile float s_scale_right = 1.0f;
+static volatile float s_scale_front_right = 1.0f;
+
+/* 会場ごとの感度の倍率を入れる（sys/sensor_scale.c） */
+void wall_ctrl_set_sensor_scale(sensor_scale_t scale)
+{
+  s_scale_front_left = scale.front_left;
+  s_scale_left = scale.left;
+  s_scale_right = scale.right;
+  s_scale_front_right = scale.front_right;
+}
+
+/* 今の会場ごとの感度の倍率 */
+sensor_scale_t wall_ctrl_get_sensor_scale(void)
+{
+  sensor_scale_t scale;
+  scale.front_left = s_scale_front_left;
+  scale.left = s_scale_left;
+  scale.right = s_scale_right;
+  scale.front_right = s_scale_front_right;
+  return scale;
+}
+
+/* そのままの値 raw_value を、倍率 scale で割って、表を作った迷路での値に直す（小数は切り捨てて整数にする） */
+static int32_t to_home_value(int32_t raw_value, float scale)
+{
+  int32_t home_value = raw_value / scale;
+  return home_value;
+}
+
+/* 左前のセンサの、そのままの値（受光 1、組A） */
+int32_t wall_ctrl_get_front_left_raw(void)
 {
   return wall_get_a_minus_dark(1);
 }
 
-/* 左の壁のセンサの値（受光 3、組B） */
-int32_t wall_ctrl_get_left(void)
+/* 左の壁のセンサの、そのままの値（受光 3、組B） */
+int32_t wall_ctrl_get_left_raw(void)
 {
   return wall_get_b_minus_dark(3);
 }
 
-/* 右の壁のセンサの値（受光 2、組A） */
-int32_t wall_ctrl_get_right(void)
+/* 右の壁のセンサの、そのままの値（受光 2、組A） */
+int32_t wall_ctrl_get_right_raw(void)
 {
   return wall_get_a_minus_dark(2);
 }
 
-/* 右前のセンサの値（受光 4、組B） */
-int32_t wall_ctrl_get_front_right(void)
+/* 右前のセンサの、そのままの値（受光 4、組B） */
+int32_t wall_ctrl_get_front_right_raw(void)
 {
   return wall_get_b_minus_dark(4);
+}
+
+/* 左前のセンサの値（会場ごとの感度の倍率で直したもの） */
+int32_t wall_ctrl_get_front_left(void)
+{
+  return to_home_value(wall_ctrl_get_front_left_raw(), s_scale_front_left);
+}
+
+/* 左の壁のセンサの値（同じ） */
+int32_t wall_ctrl_get_left(void)
+{
+  return to_home_value(wall_ctrl_get_left_raw(), s_scale_left);
+}
+
+/* 右の壁のセンサの値（同じ） */
+int32_t wall_ctrl_get_right(void)
+{
+  return to_home_value(wall_ctrl_get_right_raw(), s_scale_right);
+}
+
+/* 右前のセンサの値（同じ） */
+int32_t wall_ctrl_get_front_right(void)
+{
+  return to_home_value(wall_ctrl_get_front_right_raw(), s_scale_front_right);
 }
 
 /* 横の壁が近すぎた記録（探索の横壁合わせ。探索を始めるたびに 0 に戻す） */

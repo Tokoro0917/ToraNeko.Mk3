@@ -1,0 +1,28 @@
+#BEGIN RESULT
+Search: longest wait between moves 9262 us
+Search: front correction 7 times, average -1.4 mm, min -53.0 mm, max 18.3 mm (applied=1)
+front 1: traveled 767 mm, correction 17.5 mm
+FL 109.0 FR 101.8 mm, side L 64.0 R 39.7 mm, overrun 2.7 mm, speed 302 mm/s, yaw 1.9 deg
+front 2: traveled 845 mm, correction -6.7 mm
+FL 80.3 FR 104.0 mm, side L 30.9 R 64.0 mm, overrun 0.0 mm, speed 306 mm/s, yaw 1.9 deg
+front 3: traveled 935 mm, correction 5.9 mm
+FL 90.2 FR 98.1 mm, side L 60.0 R 64.0 mm, overrun 2.7 mm, speed 322 mm/s, yaw -1.1 deg
+front 4: traveled 1185 mm, correction 18.3 mm
+FL 100.5 FR 104.6 mm, side L 64.0 R 64.0 mm, overrun 2.7 mm, speed 301 mm/s, yaw -0.6 deg
+front 5: traveled 1435 mm, correction -53.0 mm
+FL 34.0 FR 34.0 mm, side L 29.8 R 33.0 mm, overrun 0.0 mm, speed 196 mm/s, yaw -0.5 deg
+front 6: traveled 1697 mm, correction 3.7 mm
+FL 88.0 FR 101.0 mm, side L 47.7 R 64.0 mm, overrun 2.7 mm, speed 295 mm/s, yaw -1.1 deg
+front 7: traveled 1776 mm, correction 4.2 mm
+FL 90.0 FR 87.0 mm, side L 64.0 R 46.2 mm, overrun 2.7 mm, speed 301 mm/s, yaw -0.6 deg
+Search: side wall too close 2 times, nearest 29.8 mm (aligned=1)
+Wall edge: 8 times (search applied=1, shortest applied=1)
+edge 1: right, wall end, traveled 203 mm, speed 300 mm/s, error 1.7 mm, lag -1.5 mm, used
+edge 2: right, wall end, traveled 388 mm, speed 300 mm/s, error 4.9 mm, lag -1.3 mm, used
+edge 3: right, wall end, traveled 573 mm, speed 300 mm/s, error 4.9 mm, lag -1.3 mm, used
+edge 4: left, pillar, traveled 734 mm, speed 300 mm/s, error -10.6 mm, lag -1.4 mm, used
+edge 5: left, wall end, traveled 1147 mm, speed 300 mm/s, error -12.9 mm, lag -1.1 mm, used
+edge 6: left, wall end, traveled 1316 mm, speed 300 mm/s, error -2.7 mm, lag -1.1 mm, used
+edge 7: right, wall end, traveled 1565 mm, speed 300 mm/s, error -1.3 mm, lag -0.6 mm, used
+edge 8: right, pillar, traveled 1664 mm, speed 300 mm/s, error 4.3 mm, lag -1.1 mm, used
+#END RESULT

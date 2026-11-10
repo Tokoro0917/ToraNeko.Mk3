@@ -414,6 +414,28 @@ void sensor_view_run(void)
   s_sensor_view_time_ms = s_now_ms;
 }
 
+/* 会場ごとの感度合わせ（モード5 No.7・8）：測らずに、呼ばれた回数と時刻を覚える */
+static int s_scale_measure_count = 0;
+static uint32_t s_scale_measure_time_ms = 0;
+static int s_scale_reset_count = 0;
+static int s_scale_print_count = 0;
+void sensor_scale_init(void)
+{
+}
+void sensor_scale_measure_run(void)
+{
+  s_scale_measure_count = s_scale_measure_count + 1;
+  s_scale_measure_time_ms = s_now_ms;
+}
+void sensor_scale_reset_run(void)
+{
+  s_scale_reset_count = s_scale_reset_count + 1;
+}
+void sensor_scale_print(void)
+{
+  s_scale_print_count = s_scale_print_count + 1;
+}
+
 /* 壁までの距離の表示：出さずに、呼ばれた回数と時刻を覚える */
 static int s_distance_view_count = 0;
 static uint32_t s_distance_view_time_ms = 0;
@@ -980,8 +1002,29 @@ static void test_turn_test(void)
   hand_at(1500, 500);        /* スタート */
   mode_run_once();
   check(s_edge_test_count == 1 && s_edge_test_number == 6, "モード5 No.6 で、壁切れ・柱の見え方テストが No.6 で 1 回呼ばれる");
-  check(mode_has_action(5, 4) && mode_has_action(5, 6) && !mode_has_action(5, 7),
-        "モード5 の No.4〜6 は決定できて、No.7 はできない");
+  check(mode_has_action(5, 4) && mode_has_action(5, 6) && mode_has_action(5, 7) && mode_has_action(5, 8)
+        && !mode_has_action(5, 9),
+        "モード5 の No.4〜8 は決定できて、No.9 はできない");
+
+  /* 会場ごとの感度合わせ（モード5 No.7）は、前に壁があって手が使えないので、スタート待ちをせずにすぐ始まる */
+  reset_world();
+  mode_init();
+  s_scale_measure_count = 0;
+  rotate_left_at(100, 5);    /* モード5 */
+  rotate_right_at(100, 7);   /* No.7 */
+  press_switch_at(500);      /* 決定（手はかざさない） */
+  mode_run_once();
+  check(s_scale_measure_count == 1, "モード5 No.7 で、感度合わせが、手をかざさなくても 1 回呼ばれる");
+
+  /* 感度を元に戻す（モード5 No.8）も、すぐ始まる */
+  reset_world();
+  mode_init();
+  s_scale_reset_count = 0;
+  rotate_left_at(100, 5);    /* モード5 */
+  rotate_right_at(100, 8);   /* No.8 */
+  press_switch_at(500);      /* 決定 */
+  mode_run_once();
+  check(s_scale_reset_count == 1 && s_scale_measure_count == 1, "モード5 No.8 で、感度を元に戻すが 1 回呼ばれる（測るほうは呼ばれない）");
 
   /* 吸引 ON（モード6 No.3）も、スタート待ちのあとに始まる */
   reset_world();
