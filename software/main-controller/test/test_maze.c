@@ -2588,6 +2588,11 @@ float run_fast_turn_speed_mm_s(run_fast_turn_t turn)
 }
 
 /* 最短走行 No.4・5 の吸引（sys/suction.c・drv/fan.c）と待ち時間（sys/ui.c）。PC では何もしない */
+void suction_ramp_up_to(float voltage_v)
+{
+  (void)voltage_v;  /* 使わない引数（(void) を付けると、使っていないという警告が出ない） */
+}
+
 void suction_ramp_up(void)
 {
 }

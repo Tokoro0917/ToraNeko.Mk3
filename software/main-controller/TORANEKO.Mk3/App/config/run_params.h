@@ -67,6 +67,15 @@
 #define SHORTEST5_ACCEL_MM_S2         6000.0f
 #define SHORTEST5_DIAG_MAX_SPEED_MM_S 1200.0f
 #define SHORTEST5_DIAG_ACCEL_MM_S2    6000.0f
+/* No.4〜6 の吸引の電圧 [V]（2026-11-10。No. ごとに変えられるようにした。No.1〜3 は吸引しない）。
+ * 上限は drv/fan.c の FAN_LIMIT_V（7.0V）。2026-11-10 の吸引の力のテストで、5V 130g、6V 150g、7V 170g。
+ * 6V・7V はファンのモーターの定格（3.7V）の 2 倍近いので、熱くなりやすい。続けて何回も走らせない。
+ * 吸引を強くすると摩擦も増える（config/ctrl_gains.h の FF_SUCTION_FRICTION_V は 5V で決めた値）。
+ * ターンの前距離・後距離も、走るときと同じ電圧で合わせる（config/turn_params.h の TURN_TEST_SUCTION_V） */
+#define SHORTEST4_SUCTION_V 5.0f
+#define SHORTEST5_SUCTION_V 5.0f
+#define SHORTEST6_SUCTION_V 5.0f
+
 /* No.6（2026-11-10）：ターンは組 2（7 つとも 1000mm/s。config/turn_params.h の T1000_…）。直進は No.5 と同じ。
  * 斜めの直進の最高速は、ターンの速さ（1000mm/s）より速くする */
 #define SHORTEST6_MAX_SPEED_MM_S      1500.0f

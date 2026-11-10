@@ -142,6 +142,18 @@ static float diag_accel_mm_s2(int number)
   return SHORTEST4_DIAG_ACCEL_MM_S2;
 }
 
+/* No. ごとの、吸引の電圧 [V]（No.4〜6 だけ使う。config/run_params.h の SHORTEST*_SUCTION_V） */
+static float suction_voltage_v(int number)
+{
+  if (number == 5) {
+    return SHORTEST5_SUCTION_V;
+  }
+  if (number == 6) {
+    return SHORTEST6_SUCTION_V;
+  }
+  return SHORTEST4_SUCTION_V;
+}
+
 /* No. ごとの、ターンの値の組（No.6 は組 2〈7 つとも 1000mm/s〉、ほかは組 1。ctrl/run.c の run_fast_set_turn_set()） */
 static int turn_set_of(int number)
 {
@@ -437,10 +449,10 @@ static void run_diagonal_path(int number)
   }
 }
 
-/* No.4〜6：吸引を上げて、少し待つ（先頭のコメントの 1） */
-static void start_suction(void)
+/* No.4〜6：吸引を No. ごとの電圧まで上げて、少し待つ（先頭のコメントの 1） */
+static void start_suction(int number)
 {
-  suction_ramp_up();  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
+  suction_ramp_up_to(suction_voltage_v(number));  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
   ui_wait_ms(SHORTEST_SUCTION_WAIT_MS);
 }
 
@@ -454,7 +466,7 @@ shortest_result_t shortest_run(int number, int goal_x, int goal_y)
   float accel = accel_mm_s2(number);
 
   if (uses_diagonal(number)) {
-    start_suction();
+    start_suction(number);
   }
   run_fast_set_turn_set(turn_set_of(number));  /* No.6 は組 2 で曲がる */
   run_fast_start();  /* ジャイロのゼロ点を測り直してから、制御を始める（No.4〜6 は、吸ったまま測る） */

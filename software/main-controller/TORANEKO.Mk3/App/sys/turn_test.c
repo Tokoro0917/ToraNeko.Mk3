@@ -78,7 +78,7 @@ static void prepare(void)
 {
   run_fast_set_turn_set(TURN_TEST_TURN_SET);  /* 走らせる組（config/turn_params.h） */
   run_fast_set_diag_correction(false);  /* ターンの調整では、斜めの補正を入れない（先頭のコメント） */
-  suction_ramp_up();  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
+  suction_ramp_up_to(TURN_TEST_SUCTION_V);  /* 0.5 秒かけて吸引を上げる（sys/suction.c。電圧は config/turn_params.h） */
   ui_wait_ms(TURN_TEST_SUCTION_WAIT_MS);
   run_fast_start();   /* ジャイロのゼロ点を測り直してから、制御を始める */
   log_start(TURN_TEST_LOG_INTERVAL_MS);  /* ターンを細かく見たいので、ログは 1ms ごとにし直す */

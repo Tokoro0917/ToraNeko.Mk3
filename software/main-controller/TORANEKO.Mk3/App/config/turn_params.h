@@ -221,4 +221,9 @@
  * 組 1 を走らせたいときは 1 にして、書き込み直す */
 #define TURN_TEST_TURN_SET 2
 
+/* モード3（ターンの調整）で吸う電圧 [V]（2026-11-10）。最短走行の、その組を使う No. と同じ電圧にする
+ * （組 1 なら config/run_params.h の SHORTEST4_SUCTION_V・SHORTEST5_SUCTION_V、組 2 なら SHORTEST6_SUCTION_V）。
+ * 吸う強さで滑り方が変わり、前距離・後距離に足す分も変わるため */
+#define TURN_TEST_SUCTION_V 5.0f
+
 #endif /* CONFIG_TURN_PARAMS_H */
