@@ -2725,6 +2725,19 @@ static bool run_shortest_and_check(int number)
   if (!is_in_goal(cell_x, cell_y)) {
     fast_error("ゴールの区画の外で止まった");
   }
+  /* 2026-11-10：ゴールに入ってからもう 1 区画進んで、その区画のまん中で止まる。
+   * 止まった区画のまん中にいて、うしろ（来た向きの反対）の区画もゴールなら、ゴールの 2 つ目の区画で止まっている */
+  float in_cell_x_mm = s_fast_x_mm - cell_x * CELL_MM;
+  float in_cell_y_mm = s_fast_y_mm - cell_y * CELL_MM;
+  if (fabsf(in_cell_x_mm - HALF_CELL_MM) > 1.0f || fabsf(in_cell_y_mm - HALF_CELL_MM) > 1.0f) {
+    fast_error("区画のまん中で止まっていない");
+  }
+  float heading_rad = s_fast_heading_deg * 3.14159265f / 180.0f;
+  int behind_x = (int)floorf((s_fast_x_mm - CELL_MM * cosf(heading_rad)) / CELL_MM);
+  int behind_y = (int)floorf((s_fast_y_mm - CELL_MM * sinf(heading_rad)) / CELL_MM);
+  if (!is_in_goal(behind_x, behind_y)) {
+    fast_error("ゴールの最初の区画で止まった（もう 1 区画進んでいない）");
+  }
   return s_fast_error_count == 0;
 }
 
