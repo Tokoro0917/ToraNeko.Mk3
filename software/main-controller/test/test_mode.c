@@ -228,11 +228,11 @@ static int s_sensor_record_count = 0;       /* センサ値の記録（モード
 static int s_record_print_count = 0;        /* センサ値の記録を出すのが呼ばれた回数 */
 static int s_record_print_output_count = 0; /* センサ値の記録を出したときの、出力が呼ばれた回数（出力より前に出すか） */
 static int s_straight_count = 0;            /* 直進（モード6 No.1）が呼ばれた回数 */
-static int s_pivot_count = 0;               /* その場 180° 旋回（モード2 No.4）が呼ばれた回数 */
+static int s_pivot_count = 0;               /* その場 180° 旋回（モード2 No.3）が呼ばれた回数 */
 static int s_slalom_count = 0;              /* スラローム 90°（モード2 No.1）が呼ばれた回数 */
-static int s_along_wall_count = 0;          /* 壁に沿って直進（モード6 No.7）が呼ばれた回数 */
+static int s_along_wall_count = 0;          /* 壁に沿って直進（モード6 No.2）が呼ばれた回数 */
 static int s_uturn_count = 0;               /* U ターン（モード2 No.2）が呼ばれた回数 */
-static int s_align_count = 0;               /* 壁合わせだけ（モード2 No.5）が呼ばれた回数 */
+static int s_align_count = 0;               /* 壁合わせだけ（モード2 No.4）が呼ばれた回数 */
 static int s_result_print_count = 0;        /* 調整の動きの結果を出すのが呼ばれた回数 */
 static int s_result_print_output_count = 0; /* そのとき、出力が何回呼ばれていたか（出力より前に出すことを確かめる） */
 static int s_output_goal_x = 0;   /* 出力に渡されたゴール */
@@ -511,7 +511,7 @@ void adjust_suction_on(void)
   s_suction_count = s_suction_count + 1;
 }
 
-/* 吸引の力（モード4 No.3）：回さずに、呼ばれた回数を覚える */
+/* 吸引の力（モード6 No.4）：回さずに、呼ばれた回数を覚える */
 static int s_suction_force_count = 0;
 void adjust_suction_force(void)
 {
@@ -804,17 +804,17 @@ static void test_wrap(void)
   mode_init();
 
   rotate_left_at(100, -1);    /* モード7 */
-  rotate_right_at(100, 6);    /* No.6 */
-  press_switch_at(500);       /* モード7・No.6 は何もない：決定しない（2026-11-10 に No.3〜5 ができたので、No.3 から変えた） */
-  rotate_right_at(1000, -7);  /* No.6 - 7 = No.15（迷路呼び出し） */
+  rotate_right_at(100, 7);    /* No.7 */
+  press_switch_at(500);       /* モード7・No.7 は何もない：決定しない（2026-11-10 にモードを並べ直したので、No.6 から変えた） */
+  rotate_right_at(1000, 15);  /* No.7 + 15 = 22 → 一周して No.6（迷路呼び出し） */
   press_switch_at(1500);
   hand_at(2500, 500);
   mode_run_once();
 
-  check_leds_at(300, "0111110", "モード7・No.6 は LED2〜6 が点く");
-  check_leds_at(1200, "1111111", "モード7・No.15 は全部点く");
-  check(mode_get_mode() == 7 && mode_get_number() == 15, "モード7・No.15 になる");
-  check(s_flash_maze_load_count == 1, "迷路呼び出しが 1 回だけ呼ばれる（No.6 では決定しない）");
+  check_leds_at(300, "0111111", "モード7・No.7 は LED2〜7 が点く");
+  check_leds_at(1200, "0111110", "モード7・No.6 は LED2〜6 が点く");
+  check(mode_get_mode() == 7 && mode_get_number() == 6, "モード7・No.6 になる");
+  check(s_flash_maze_load_count == 1, "迷路呼び出しが 1 回だけ呼ばれる（No.7 では決定しない）");
 }
 
 /* 前センサの手は、3 回続けて（0.03 秒）読んだときだけ「かざした」とみなす。短く触れただけでは始まらない */
@@ -1036,9 +1036,9 @@ static void test_turn_test(void)
   mode_run_once();
   check(s_venue_reset_count == 1 && s_scale_measure_count == 1 && s_reference_measure_count == 1,
         "モード7 No.5 で、元に戻すが 1 回呼ばれる（測るほうは呼ばれない）");
-  check(mode_has_action(7, 1) && mode_has_action(7, 2) && mode_has_action(7, 5) && !mode_has_action(7, 6)
-        && mode_has_action(7, 15),
-        "モード7 は No.1〜5 と No.15 を決定できる");
+  check(mode_has_action(7, 1) && mode_has_action(7, 2) && mode_has_action(7, 5) && mode_has_action(7, 6)
+        && !mode_has_action(7, 7) && !mode_has_action(7, 15),
+        "モード7 は No.1〜6 だけ決定できる（迷路呼び出しは 2026-11-10 に No.15 から No.6 へ移した）");
 
   /* 吸引 ON（モード6 No.3）も、スタート待ちのあとに始まる */
   reset_world();
@@ -1051,32 +1051,37 @@ static void test_turn_test(void)
   mode_run_once();
   check(s_suction_count == 1, "モード6 No.3 で、吸引 ON が 1 回呼ばれる");
 
-  /* 吸引ありの加速度テスト（モード4 No.4〜11）も、スタート待ちのあとに始まる */
+  /* 加速度テスト（モード4 No.1〜13）も、スタート待ちのあとに始まる */
   reset_world();
   mode_init();
   s_accel_test_count = 0;
   s_accel_test_number = 0;
   rotate_left_at(100, 4);    /* モード4 */
-  rotate_right_at(100, 9);   /* No.9 */
+  rotate_right_at(100, 3);   /* No.3（吸引なし 3000mm/s²） */
   press_switch_at(500);
   hand_at(1500, 500);
   mode_run_once();
-  check(s_accel_test_count == 1 && s_accel_test_number == 9, "モード4 No.9 で、加速度テストが No.9 で 1 回呼ばれる");
-  check(mode_has_action(4, 1) && mode_has_action(4, 3) && mode_has_action(4, 4) && mode_has_action(4, 11)
-        && !mode_has_action(4, 2) && !mode_has_action(4, 12),
-        "モード4 は No.1・3・4〜11 だけ決定できる");
+  check(s_accel_test_count == 1 && s_accel_test_number == 3, "モード4 No.3 で、加速度テストが No.3 で 1 回呼ばれる");
+  check(s_suction_force_count == 0, "モード4 No.3 では、吸引の力は呼ばれない（2026-11-10 にモード6 No.4 へ移した）");
+  check(mode_has_action(4, 1) && mode_has_action(4, 5) && mode_has_action(4, 6) && mode_has_action(4, 13)
+        && !mode_has_action(4, 14),
+        "モード4 は No.1〜13 だけ決定できる");
 
-  /* 吸引の力（モード4 No.3）も、スタート待ちのあとに始まる。加速度テストは呼ばれない */
+  /* 吸引の力（モード6 No.4）も、スタート待ちのあとに始まる。加速度テストは呼ばれない */
   reset_world();
   mode_init();
   s_suction_force_count = 0;
   s_accel_test_count = 0;
-  rotate_left_at(100, 4);    /* モード4 */
-  rotate_right_at(100, 3);   /* No.3 */
+  rotate_left_at(100, 6);    /* モード6 */
+  rotate_right_at(100, 4);   /* No.4 */
   press_switch_at(500);
   hand_at(1500, 500);
   mode_run_once();
-  check(s_suction_force_count == 1 && s_accel_test_count == 0, "モード4 No.3 で、吸引の力が 1 回呼ばれる");
+  check(s_suction_force_count == 1 && s_accel_test_count == 0, "モード6 No.4 で、吸引の力が 1 回呼ばれる");
+  check(mode_has_action(6, 1) && mode_has_action(6, 5) && !mode_has_action(6, 6) && !mode_has_action(6, 7),
+        "モード6 は No.1〜5 だけ決定できる");
+  check(mode_has_action(2, 1) && mode_has_action(2, 4) && !mode_has_action(2, 5),
+        "モード2 は No.1〜4 だけ決定できる");
 }
 
 /* 壁までの距離の表示（モード5 No.3）も、No.1 と同じくスタート待ちをしない */
@@ -1097,7 +1102,7 @@ static void test_distance_view(void)
   check(s_sensor_view_count == 0, "センサ値の表示（No.1）は呼ばれない");
 }
 
-/* エンコーダの歪みを測る（モード6 No.6）は、ほかと同じくスタート待ちのあとに始まる */
+/* エンコーダの歪みを測る（モード6 No.5）は、ほかと同じくスタート待ちのあとに始まる */
 static void test_encoder_cal(void)
 {
   printf("[6] エンコーダの歪みを測る\n");
@@ -1105,7 +1110,7 @@ static void test_encoder_cal(void)
   mode_init();
 
   rotate_left_at(100, 6);    /* モード6 */
-  rotate_right_at(100, 6);   /* No.6 */
+  rotate_right_at(100, 5);   /* No.5 */
   press_switch_at(500);      /* 決定 */
   hand_at(1500, 500);        /* スタート */
   mode_run_once();
@@ -1148,7 +1153,7 @@ static void test_straight(void)
   check(s_encoder_cal_count == 0 && s_explore_count == 0 && s_pivot_count == 0, "ほかのモードは呼ばれない");
 }
 
-/* その場 180° 旋回（モード2 No.4）は、ほかと同じくスタート待ちのあとに始まる */
+/* その場 180° 旋回（モード2 No.3）は、ほかと同じくスタート待ちのあとに始まる */
 static void test_pivot(void)
 {
   printf("[6] その場 180° 旋回\n");
@@ -1156,7 +1161,7 @@ static void test_pivot(void)
   mode_init();
 
   rotate_left_at(100, 2);    /* モード2 */
-  rotate_right_at(100, 4);   /* No.4 */
+  rotate_right_at(100, 3);   /* No.3 */
   press_switch_at(500);      /* 決定 */
   hand_at(1500, 500);        /* スタート */
   mode_run_once();
@@ -1182,7 +1187,7 @@ static void test_slalom(void)
   check(s_pivot_count == 0 && s_explore_count == 0, "ほかのモードは呼ばれない");
 }
 
-/* 壁に沿って直進（モード6 No.7）は、ほかと同じくスタート待ちのあとに始まる */
+/* 壁に沿って直進（モード6 No.2）は、ほかと同じくスタート待ちのあとに始まる */
 static void test_along_wall(void)
 {
   printf("[6] 壁に沿って直進\n");
@@ -1190,7 +1195,7 @@ static void test_along_wall(void)
   mode_init();
 
   rotate_left_at(100, 6);    /* モード6 */
-  rotate_right_at(100, 7);   /* No.7 */
+  rotate_right_at(100, 2);   /* No.2 */
   press_switch_at(500);      /* 決定 */
   hand_at(1500, 500);        /* スタート */
   mode_run_once();
@@ -1199,7 +1204,7 @@ static void test_along_wall(void)
   check(s_straight_count == 0 && s_encoder_cal_count == 0, "ほかのモードは呼ばれない");
 }
 
-/* U ターン（モード2 No.2）と壁合わせだけ（モード2 No.5）は、ほかと同じくスタート待ちのあとに始まる */
+/* U ターン（モード2 No.2）と壁合わせだけ（モード2 No.4）は、ほかと同じくスタート待ちのあとに始まる */
 static void test_uturn_and_align(void)
 {
   printf("[6] U ターン、壁合わせだけ\n");
@@ -1215,11 +1220,11 @@ static void test_uturn_and_align(void)
   reset_world();
   mode_init();
   rotate_left_at(100, 2);    /* モード2 */
-  rotate_right_at(100, 5);   /* No.5 */
+  rotate_right_at(100, 4);   /* No.4 */
   press_switch_at(500);
   hand_at(1500, 500);
   mode_run_once();
-  check(s_align_count == 1 && s_uturn_count == 0 && s_pivot_count == 0, "No.5 で壁合わせだけが 1 回呼ばれる");
+  check(s_align_count == 1 && s_uturn_count == 0 && s_pivot_count == 0, "No.4 で壁合わせだけが 1 回呼ばれる");
 }
 
 /* モード7 No.2 を選んで、x = 20、y = 3 を入れる */
@@ -1293,7 +1298,7 @@ static void test_output(void)
   check_leds_at(s_now_ms - LOADING_MS - 500, "1111111", "出し終わったら、全部を 1 秒点ける（うまくいった）");
 }
 
-/* 迷路呼び出し（モード7 No.15）：保存した迷路があれば全部を 1 秒点け、なければ外側の 4 個を速く点滅させる */
+/* 迷路呼び出し（モード7 No.6）：保存した迷路があれば全部を 1 秒点け、なければ外側の 4 個を速く点滅させる */
 static void test_load_maze(void)
 {
   printf("[6] 迷路呼び出し\n");
@@ -1301,7 +1306,7 @@ static void test_load_maze(void)
   mode_init();
   s_flash_has_maze = true;
   rotate_left_at(100, -1);    /* モード7 */
-  rotate_right_at(100, -1);   /* No.15 */
+  rotate_right_at(100, 6);    /* No.6 */
   press_switch_at(500);
   hand_at(1500, 500);
   mode_run_once();
@@ -1312,7 +1317,7 @@ static void test_load_maze(void)
   mode_init();
   s_flash_has_maze = false;
   rotate_left_at(100, -1);    /* モード7 */
-  rotate_right_at(100, -1);   /* No.15 */
+  rotate_right_at(100, 6);    /* No.6 */
   press_switch_at(500);
   hand_at(1500, 500);
   mode_run_once();

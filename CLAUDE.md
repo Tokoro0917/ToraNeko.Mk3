@@ -27,5 +27,8 @@
 - ファームウェアのビルドは `software/main-controller/TORANEKO.Mk3/` で `cmake --preset Debug && cmake --build --preset Debug`。push 前に必ずビルドを通す（`App/` は `-Wall -Wextra` で警告なし）
 - `software/reference/` のコード（KOGUMA）は参照用。編集しない
 - 実機の出力は `software/main-controller/logs/` に残してある（ビューア `software/main-controller/tools/viewer.html` で保存したもの。形は `logs/README.md`）。値を決めるときは、まずここのデータを見る
-- モードを足したり、中身・番号を変えたりしたら、`software/main-controller/README.md` の「モード一覧」と `MODES.md` を同じコミットで直す
+- **モードを足したり、中身・番号・置き方を変えたりしたら、必ず同じコミットで次の 3 つを直す**（小さな変更でも。README の「モード一覧」は、作者が実機を触るときに見る早見表なので、いちばん大事）
+  - `software/main-controller/README.md` の「モード一覧」
+  - `software/main-controller/MODES.md` の、そのモードの節
+  - `TORANEKO.Mk3/App/sys/mode.c` の先頭のコメント（今あるモードの一覧）
 - CubeMX の生成コード（`Core/`、`Drivers/`、`cmake/stm32cubemx/`）は `USER CODE` 欄以外を編集しない
