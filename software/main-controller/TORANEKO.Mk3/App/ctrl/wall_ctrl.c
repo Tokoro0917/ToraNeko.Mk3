@@ -30,7 +30,7 @@
 #include "drv/wall.h"
 
 #define FRONT_LEFT_WALL_THRESHOLD  300   /* 左前：これより大きければ前に壁 */
-#define FRONT_RIGHT_WALL_THRESHOLD 900   /* 右前：同じく */
+#define FRONT_RIGHT_WALL_THRESHOLD 700   /* 右前：同じく（2026-11-10 に 900 → 700。横の壁がないところから行き止まりに入ると、入口で右前が 900 を下回って前の壁を見落とし、ぶつかっていた） */
 #define LEFT_WALL_THRESHOLD        500   /* 左：これより大きければ左に壁 */
 #define RIGHT_WALL_THRESHOLD       400   /* 右：これより大きければ右に壁 */
 /* 区画のまん中にいるときの、横のセンサの値。壁に沿って走る補正の目標。
