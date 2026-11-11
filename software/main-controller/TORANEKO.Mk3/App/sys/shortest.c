@@ -67,6 +67,7 @@
 #include "config/run_params.h"
 #include "config/turn_params.h"
 #include "ctrl/run.h"
+#include "ctrl/trajectory.h"
 #include "ctrl/wall_ctrl.h"
 #include "drv/fan.h"
 #include "maze/dijkstra.h"
@@ -433,10 +434,11 @@ static float speed_limit_ahead_mm_s(int first, float accel, float diag_accel)
 }
 
 /* No.4〜7：直進の終わりの速さ [mm/s]。速さ start_mm_s から distance_mm で上げられる速さ、最高速 max_speed、
- * その先を見た上限 limit_mm_s の、いちばん遅いもの（上げきれない速さを頼むと、着いたときに速さが飛んでしまうので） */
+ * その先を見た上限 limit_mm_s の、いちばん遅いもの（上げきれない速さを頼むと、着いたときに速さが飛んでしまうので）。
+ * 上げられる速さは、速いところでモーターの加速度が小さくなる分も入れて出す（ctrl/trajectory.c。2026-11-11） */
 static float straight_end_speed_mm_s(float start_mm_s, float distance_mm, float accel, float max_speed, float limit_mm_s)
 {
-  float reachable_mm_s = sqrtf(start_mm_s * start_mm_s + 2.0f * accel * distance_mm);
+  float reachable_mm_s = trajectory_reachable_speed_mm_s(start_mm_s, distance_mm, accel, max_speed);
   float end_mm_s = slower_mm_s(reachable_mm_s, max_speed);
   end_mm_s = slower_mm_s(end_mm_s, limit_mm_s);
   return end_mm_s;

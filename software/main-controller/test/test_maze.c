@@ -43,6 +43,7 @@
 #include "maze/path.h"
 #include "maze/search.h"
 #include "ctrl/run.h"
+#include "ctrl/trajectory.h"
 #include "ctrl/wall_ctrl.h"
 #include "sys/explore.h"
 #include "sys/failsafe.h"
@@ -2507,12 +2508,15 @@ static void fast_move(float distance_mm)
   s_fast_y_mm = s_fast_y_mm + distance_mm * sinf(heading_rad);
 }
 
+#define SPEED_NO_LIMIT_FOR_TEST_MM_S 100000.0f  /* 上げられる速さを出すときの、最高速の頭打ちなし */
+
 /* 直進の終わりの速さが、距離で上げられる速さ以下で、最高速以下か、始めの速さから遅くしきれるかを調べ、進む */
 static void fast_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2)
 {
   float start_mm2_s2 = s_fast_speed_mm_s * s_fast_speed_mm_s;
   float end_mm2_s2 = end_speed_mm_s * end_speed_mm_s;
-  float reachable = sqrtf(start_mm2_s2 + 2.0f * accel_mm_s2 * distance_mm);
+  /* 上げられる速さは、本物と同じく、速いところでモーターの加速度が小さくなる分も入れる（ctrl/trajectory.c。2026-11-11） */
+  float reachable = trajectory_reachable_speed_mm_s(s_fast_speed_mm_s, distance_mm, accel_mm_s2, SPEED_NO_LIMIT_FOR_TEST_MM_S);
   if (end_speed_mm_s > reachable + 0.01f) {
     fast_error("直進の終わりの速さが、その距離では上げきれない");
   }

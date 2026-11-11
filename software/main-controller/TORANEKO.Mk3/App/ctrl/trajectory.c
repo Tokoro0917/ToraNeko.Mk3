@@ -12,6 +12,13 @@
  * 中では「量」「速さ」「加速度」とだけ呼んで、同じ計算を使う。
  * スラロームは、前に進む速さを一定（s_forward_speed_mm_s）にしたまま、角速度を台形にする。
  *
+ * ■ 直進の加速度は速さで変わる（2026-11-11）
+ * 直進で速くするときの加速度は、決めた加速度と「モーターが出せる加速度」の小さいほうにする
+ * （trajectory_straight_accel_mm_s2()。式と値は config/ctrl_gains.h の ACCEL_LIMIT_VOLTAGE_V の説明）。
+ * 速く走っているほど、モーターが出せる加速度は小さくなる。今の加速度（6000mm/s² くらい）では、決めた加速度のまま変わらない。
+ * 遅くするとき（減速）は、決めた加速度のまま。その場旋回・スラロームの角加速度も、決めた値のまま。
+ * 最短走行は、直進の終わりの速さを決めるときに、同じ考え方で「上げられる速さ」を出す（trajectory_reachable_speed_mm_s()）。
+ *
  * ■ 減速の始めどき
  * 速さ v から終わりの速さ v_end まで、加速度 a で遅くするのに要る量は (v² − v_end²) ÷ (2a)。
  * 残りの量がこれ以下になったら減速する。減速中は、残りの量 r から速さを
@@ -38,9 +45,11 @@
 
 #include <math.h>
 
+#include "config/ctrl_gains.h"
 #include "config/robot_params.h"
 
 #define MIN_DISTANCE_MM 0.01f  /* 直進の距離のいちばん小さい値 [mm]（あいだに進んだ分を引いて 0 以下になったとき） */
+#define REACH_STEP_MM   1.0f   /* 上げられる速さを出すときに、1 回に進める距離 [mm]（trajectory_reachable_speed_mm_s()） */
 
 /* 割り込みの中で書き換える（volatile の理由は sys/scheduler.c の先頭のコメント） */
 static volatile bool s_running = false;    /* 動きの途中か */
@@ -170,21 +179,90 @@ static float braking_amount(float speed)
   return (speed * speed - end * end) / (2.0f * s_accel_limit);
 }
 
+/* 速さ speed_mm_s のときに、モーターが出せる直進の加速度 [mm/s²]（config/ctrl_gains.h の ACCEL_LIMIT_VOLTAGE_V の説明）。
+ * 加速に回せる電圧が残っていなければ 0 */
+static float motor_accel_limit_mm_s2(float speed_mm_s)
+{
+  float friction_v = FF_FRICTION_V + FF_SUCTION_FRICTION_V;
+  float voltage_v = ACCEL_LIMIT_VOLTAGE_V - friction_v - speed_mm_s * FF_SPEED_V_PER_MM_S;
+  if (voltage_v <= 0.0f) {
+    return 0.0f;
+  }
+  return voltage_v / FF_ACCEL_V_PER_MM_S2;
+}
+
+/* 速さ speed_mm_s のときに、直進で速くする加速度 [mm/s²]。決めた加速度 accel_mm_s2 と、モーターが出せる加速度の小さいほう */
+float trajectory_straight_accel_mm_s2(float speed_mm_s, float accel_mm_s2)
+{
+  float motor_mm_s2 = motor_accel_limit_mm_s2(speed_mm_s);
+  if (motor_mm_s2 < accel_mm_s2) {
+    return motor_mm_s2;
+  }
+  return accel_mm_s2;
+}
+
+/* 速さ start_mm_s から、決めた加速度 accel_mm_s2 で distance_mm の直進をしたときに、上げられる速さ [mm/s]
+ * （max_speed_mm_s で頭打ち）。速いところで加速度が小さくなる分も入れる（sys/shortest.c が、直進の終わりの速さを決めるのに使う）。
+ *   1. 加速度が変わらないとしたときの速さ √(start² + 2 × 加速度 × 距離) を出す。そこまでモーターの上限が効かなければ、それが答え
+ *      （モーターの上限は速いほど小さいので、いちばん速いところで効かなければ、途中でも効かない。今の加速度では、いつもここで終わる）
+ *   2. 効くなら、REACH_STEP_MM ずつ進めて足していく。1 回ぶんの終わりの速さのときの（小さいほうの）加速度を使うので、
+ *      本当より少し遅めに出る（実際の走りが、頼んだ終わりの速さに届かないことがないように） */
+float trajectory_reachable_speed_mm_s(float start_mm_s, float distance_mm, float accel_mm_s2, float max_speed_mm_s)
+{
+  /* 1. 加速度が変わらないとき */
+  float constant_mm_s = sqrtf(start_mm_s * start_mm_s + 2.0f * accel_mm_s2 * distance_mm);
+  if (constant_mm_s > max_speed_mm_s) {
+    constant_mm_s = max_speed_mm_s;
+  }
+  if (motor_accel_limit_mm_s2(constant_mm_s) >= accel_mm_s2) {
+    return constant_mm_s;
+  }
+
+  /* 2. 少しずつ進めて足していく（速さは 2 乗で持つ。1 回で「速さの 2 乗」が 2 × 加速度 × 距離 だけ増える） */
+  float speed_mm2_s2 = start_mm_s * start_mm_s;
+  float moved_mm = 0.0f;
+  while (moved_mm < distance_mm) {
+    float step_mm = REACH_STEP_MM;
+    if (distance_mm - moved_mm < step_mm) {
+      step_mm = distance_mm - moved_mm;
+    }
+    float speed_mm_s = sqrtf(speed_mm2_s2);
+    float first_try_mm2_s2 = speed_mm2_s2 + 2.0f * trajectory_straight_accel_mm_s2(speed_mm_s, accel_mm_s2) * step_mm;
+    float end_accel_mm_s2 = trajectory_straight_accel_mm_s2(sqrtf(first_try_mm2_s2), accel_mm_s2);
+    speed_mm2_s2 = speed_mm2_s2 + 2.0f * end_accel_mm_s2 * step_mm;
+    moved_mm = moved_mm + step_mm;
+    if (speed_mm2_s2 >= max_speed_mm_s * max_speed_mm_s) {
+      return max_speed_mm_s;
+    }
+  }
+  return sqrtf(speed_mm2_s2);
+}
+
+/* 今の動きで、1 周期のあいだに速くする加速度。直進は速さで変わる（先頭のコメント）。旋回・スラロームは決めた値のまま */
+static float accel_now(void)
+{
+  if (s_kind == TRAJECTORY_STRAIGHT) {
+    return trajectory_straight_accel_mm_s2(s_speed, s_accel_limit);
+  }
+  return s_accel_limit;
+}
+
 /* 目標の速さを 1 周期ぶん進める（加速・そのまま・減速のどれかにする） */
 static void update_speed(void)
 {
   float remaining = s_goal_amount - s_amount;
-  float step = s_accel_limit * CTRL_PERIOD_S;  /* 1 周期で変える速さ */
+  float accel = accel_now();             /* 速くするときの加速度 */
+  float step = accel * CTRL_PERIOD_S;    /* 1 周期で速くする速さ */
 
   if (remaining <= braking_amount(s_speed)) {
-    /* 減速：残りの量でちょうど終わりの速さになる速さにする */
+    /* 減速：残りの量でちょうど終わりの速さになる速さにする（決めた加速度のまま） */
     float end = s_end_speed;
     s_speed = sqrtf(end * end + 2.0f * s_accel_limit * remaining);
     s_accel = -s_accel_limit;
   } else if (s_speed + step <= s_max_speed) {
     /* 加速 */
     s_speed = s_speed + step;
-    s_accel = s_accel_limit;
+    s_accel = accel;
   } else {
     /* 最高速のまま */
     s_speed = s_max_speed;

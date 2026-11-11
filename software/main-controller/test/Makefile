@@ -25,7 +25,8 @@ MAZE_SOURCES = \
 	$(APP_DIR)/maze/search.c \
 	$(APP_DIR)/maze/path.c \
 	$(APP_DIR)/sys/explore.c \
-	$(APP_DIR)/sys/shortest.c
+	$(APP_DIR)/sys/shortest.c \
+	$(APP_DIR)/ctrl/trajectory.c
 
 MODE_SOURCES = \
 	$(APP_DIR)/sys/mode.c \

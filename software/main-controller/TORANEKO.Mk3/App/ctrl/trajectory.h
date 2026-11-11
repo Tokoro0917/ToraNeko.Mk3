@@ -37,4 +37,8 @@ float trajectory_get_angle_deg(void);
 float trajectory_get_overrun_mm(void);
 void trajectory_add_distance(float delta_mm);
 
+/* 直進の加速度の上限（速さで変わる。trajectory.c の「■ 直進の加速度は速さで変わる」） */
+float trajectory_straight_accel_mm_s2(float speed_mm_s, float accel_mm_s2);
+float trajectory_reachable_speed_mm_s(float start_mm_s, float distance_mm, float accel_mm_s2, float max_speed_mm_s);
+
 #endif /* CTRL_TRAJECTORY_H */
