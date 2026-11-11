@@ -2577,12 +2577,14 @@ void run_fast_diag_straight(float distance_mm, float max_speed_mm_s, float end_s
 }
 
 /* ターンごとの速さ（ctrl/run.c と同じく、config/turn_params.h の *_SPEED_MM_S） */
-/* ターンの値の組（ctrl/run.c と同じ。1：800・600mm/s、2：7 つとも 1000mm/s） */
+/* ターンの値の組（ctrl/run.c と同じ。1：800・600mm/s、2：7 つとも 1000mm/s、3：ゆるいターン 1200・きついターン 1000mm/s） */
 static int s_fast_turn_set = 1;
 void run_fast_set_turn_set(int set)
 {
   if (set == 2) {
     s_fast_turn_set = 2;
+  } else if (set == 3) {
+    s_fast_turn_set = 3;
   } else {
     s_fast_turn_set = 1;
   }
@@ -2612,10 +2614,28 @@ static float turn_speed_set2_mm_s(run_fast_turn_t turn)
   return T1000_V90_SPEED_MM_S;
 }
 
+/* 組 3 のターンの速さ（ゆるいターンは config/turn_params.h の T1200_…_SPEED_MM_S、きついターンは組 2 と同じ） */
+static float turn_speed_set3_mm_s(run_fast_turn_t turn)
+{
+  if (turn == RUN_FAST_TURN_BIG90) {
+    return T1200_BIG90_SPEED_MM_S;
+  }
+  if (turn == RUN_FAST_TURN_IN45) {
+    return T1200_IN45_SPEED_MM_S;
+  }
+  if (turn == RUN_FAST_TURN_OUT45) {
+    return T1200_OUT45_SPEED_MM_S;
+  }
+  return turn_speed_set2_mm_s(turn);
+}
+
 float run_fast_turn_speed_mm_s(run_fast_turn_t turn)
 {
   if (s_fast_turn_set == 2) {
     return turn_speed_set2_mm_s(turn);
+  }
+  if (s_fast_turn_set == 3) {
+    return turn_speed_set3_mm_s(turn);
   }
   if (turn == RUN_FAST_TURN_BIG90) {
     return BIG90_SPEED_MM_S;
@@ -2827,10 +2847,10 @@ static bool run_shortest_and_check(int number)
   return s_fast_error_count == 0;
 }
 
-/* ランダムな迷路（ゴールが 2×2 のもの）と、壁のない迷路で、No.4〜6 を走らせる */
+/* ランダムな迷路（ゴールが 2×2 のもの）と、壁のない迷路で、No.4〜7 を走らせる */
 static void test_shortest_diagonal(int maze_count)
 {
-  printf("[10] 最短走行の大回り・斜め（No.4〜6）：ランダムな迷路 %d 個\n", maze_count);
+  printf("[10] 最短走行の大回り・斜め（No.4〜7）：ランダムな迷路 %d 個\n", maze_count);
   int tried = 0;
   int fail_count = 0;
   s_fast_slow_turn_count = 0;
@@ -2852,6 +2872,9 @@ static void test_shortest_diagonal(int maze_count)
     if (!run_shortest_and_check(6)) {
       fail_count = fail_count + 1;
     }
+    if (!run_shortest_and_check(7)) {
+      fail_count = fail_count + 1;
+    }
     if (s_fast_turn_set != 1) {
       fast_error("走り終わったのに、ターンの組が 1 に戻っていない");
       fail_count = fail_count + 1;
@@ -2860,7 +2883,7 @@ static void test_shortest_diagonal(int maze_count)
   printf("  走らせた迷路 %d 個、うまくいかなかった走行 %d 回\n", tried, fail_count);
   printf("  そのターンの速さで曲がったターン %d 回、遅く曲がったターン %d 回（スタートの直後・ターンが続くとき・ゴールで止まるとき）\n",
          s_fast_full_turn_count, s_fast_slow_turn_count);
-  check(tried > 0 && fail_count == 0, "No.4〜6 で、ターンが迷路の形どおりに始まり、速さに無理がなく、ゴールの区画で止まる。走り終わると組 1 に戻る");
+  check(tried > 0 && fail_count == 0, "No.4〜7 で、ターンが迷路の形どおりに始まり、速さに無理がなく、ゴールの区画で止まる。走り終わると組 1 に戻る");
 
   make_open_true_maze();
   copy_true_maze_to_map();
@@ -2868,8 +2891,8 @@ static void test_shortest_diagonal(int maze_count)
   s_goal_y = 7;
   s_goal_width = 2;
   s_goal_height = 2;
-  check(run_shortest_and_check(4) && run_shortest_and_check(5) && run_shortest_and_check(6),
-        "壁のない迷路で (7,7) へ、No.4〜6 が正しく走る");
+  check(run_shortest_and_check(4) && run_shortest_and_check(5) && run_shortest_and_check(6) && run_shortest_and_check(7),
+        "壁のない迷路で (7,7) へ、No.4〜7 が正しく走る");
 }
 
 /* ---------------------------------------------------------------------------

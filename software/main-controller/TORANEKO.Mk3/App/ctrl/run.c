@@ -818,7 +818,7 @@ static void fast_turn(float speed_mm_s, fast_turn_values_t turn, bool is_left)
   wait_until_done();
 }
 
-/* 大回り・斜めのターンで使う、ターンの値の組（1 か 2。config/turn_params.h の「■ ターンの組」）。
+/* 大回り・斜めのターンで使う、ターンの値の組（1・2・3 のどれか。config/turn_params.h の「■ ターンの組」）。
  * run_fast_set_turn_set() で変える。はじめは組 1 */
 static int s_turn_set = 1;
 
@@ -874,21 +874,46 @@ static fast_turn_values_t fast_turn_values_set2(run_fast_turn_t turn)
   return values;
 }
 
+/* 組 3（ゆるいターン 1200mm/s・きついターン 1000mm/s）のターン turn の値。ゆるいターン 3 つは
+ * config/turn_params.h の T1200_… から取り出し、きついターン 4 つは組 2 と同じ値を使う */
+static fast_turn_values_t fast_turn_values_set3(run_fast_turn_t turn)
+{
+  if (turn == RUN_FAST_TURN_BIG90) {
+    fast_turn_values_t big90 = {90.0f, T1200_BIG90_SPEED_MM_S, T1200_BIG90_OMEGA_DEG_S, T1200_BIG90_ALPHA_DEG_S2, T1200_BIG90_PRE_MM + T1200_BIG90_PRE_ADJUST_MM, T1200_BIG90_POST_MM + T1200_BIG90_POST_ADJUST_MM};
+    return big90;
+  }
+  if (turn == RUN_FAST_TURN_IN45) {
+    fast_turn_values_t in45 = {45.0f, T1200_IN45_SPEED_MM_S, T1200_IN45_OMEGA_DEG_S, T1200_IN45_ALPHA_DEG_S2, T1200_IN45_PRE_MM + T1200_IN45_PRE_ADJUST_MM, T1200_IN45_POST_MM + T1200_IN45_POST_ADJUST_MM};
+    return in45;
+  }
+  if (turn == RUN_FAST_TURN_OUT45) {
+    fast_turn_values_t out45 = {45.0f, T1200_OUT45_SPEED_MM_S, T1200_OUT45_OMEGA_DEG_S, T1200_OUT45_ALPHA_DEG_S2, T1200_OUT45_PRE_MM + T1200_OUT45_PRE_ADJUST_MM, T1200_OUT45_POST_MM + T1200_OUT45_POST_ADJUST_MM};
+    return out45;
+  }
+  return fast_turn_values_set2(turn);  /* きついターン（大回り 180°・斜め入り 135°・斜め出 135°・V90°）は組 2 と同じ */
+}
+
 /* 今の組（s_turn_set）のターン turn の値 */
 static fast_turn_values_t fast_turn_values(run_fast_turn_t turn)
 {
   if (s_turn_set == 2) {
     return fast_turn_values_set2(turn);
   }
+  if (s_turn_set == 3) {
+    return fast_turn_values_set3(turn);
+  }
   return fast_turn_values_set1(turn);
 }
 
-/* 大回り・斜めのターンで使う、ターンの値の組を選ぶ（1：800・600mm/s、2：7 つとも 1000mm/s）。
- * 1・2 のほかを渡したときは組 1 にする。最短走行（sys/shortest.c）は、走り終わったら組 1 に戻す */
+/* 大回り・斜めのターンで使う、ターンの値の組を選ぶ（1：800・600mm/s、2：7 つとも 1000mm/s、
+ * 3：ゆるいターン 1200mm/s・きついターン 1000mm/s）。
+ * 1・2・3 のほかを渡したときは組 1 にする。最短走行（sys/shortest.c）は、走り終わったら組 1 に戻す */
 void run_fast_set_turn_set(int set)
 {
   if (set == 2) {
     s_turn_set = 2;
+  } else if (set == 3) {
+    s_turn_set = 3;
   } else {
     s_turn_set = 1;
   }
