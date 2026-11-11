@@ -15,12 +15,10 @@
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す。2026-11-10 に、番号の穴をなくし、
  *   似たものを同じモードに集めるように並べ直した。作者が決めた）
  *   モード0 No.1〜4  探索（往復・片道・未知壁探索・未知壁探索＋既知区間加速）
- *   モード0 No.5・6  ゴールから始める探索（最短走行のあと、置き直さずに、ゴールから未知壁探索をしてスタートへ戻る。
- *                    No.6 は既知区間加速あり）。最短走行がゴールで止まった位置を覚えていなければ「できなかった」を出す
  *   モード1 No.1〜6  最短走行（No.1〜3 は曲がるところが探索と同じ小回りで、直進の速さが No.1 → 3 で速くなる。
  *                    No.4〜6 は大回り・斜めのターンで曲がる）。
  *                    決定したときに道がなければ、「できなかった」を出して選び直す。
- *                    ゴールで止まったら、入ってきた向きを向いて、止まった位置を覚える（モード0 No.5・6 で使う）
+ *                    ゴールで止まったら、入ってきた向きを向いて、止まった位置を覚える
  *   モード2 No.1     スラローム 90°（探索の速さで左に曲がり、左の区画のまん中で止まる）
  *   モード2 No.2     U ターン（行き止まりで止まり、前壁合わせ、180°、戻って止まる）
  *   モード2 No.3     その場 180° 旋回（左に回って止まる。旋回の制御の係数を合わせる）
@@ -97,8 +95,8 @@ int mode_get_number(void)
 bool mode_has_action(int mode, int number)
 {
   if (mode == 0) {
-    if (number >= 1 && number <= 6) {
-      return true;  /* 探索（No.5・6 はゴールから始める探索） */
+    if (number >= 1 && number <= 4) {
+      return true;  /* 探索 */
     }
     return false;
   }
@@ -191,37 +189,19 @@ static void select_mode(void)
  * モード0：探索
  * ------------------------------------------------------------------------- */
 
-/* ゴールから始める探索（No.5・6）か */
-static bool is_explore_from_goal(int number)
-{
-  if (number == 5 || number == 6) {
-    return true;
-  }
-  return false;
-}
-
-/* 探索走行をする（No.1 往復、No.2 片道、No.3 未知壁探索、No.4 未知壁探索＋既知区間加速、
- * No.5 ゴールから未知壁探索、No.6 ゴールから未知壁探索＋既知区間加速） */
+/* 探索走行をする（No.1 往復、No.2 片道、No.3 未知壁探索、No.4 未知壁探索＋既知区間加速） */
 static void run_explore(int number)
 {
   explore_type_t type = EXPLORE_ROUND_TRIP;
   if (number == 2) {
     type = EXPLORE_ONE_WAY;
-  } else if (number == 3 || number == 5) {
+  } else if (number == 3) {
     type = EXPLORE_UNKNOWN_WALLS;
-  } else if (number == 4 || number == 6) {
+  } else if (number == 4) {
     type = EXPLORE_UNKNOWN_WALLS_KNOWN;
   }
 
-  explore_result_t result;
-  if (is_explore_from_goal(number)) {
-    /* 最短走行がゴールで止まったときに覚えた位置から始める。一度使ったら忘れる（走ると、もうそこにいないため） */
-    explore_start_pose_t pose = shortest_get_end_pose();
-    shortest_forget_end_pose();
-    result = explore_run_from_goal(type, pose, goal_get_x(), goal_get_y(), GOAL_WIDTH, GOAL_HEIGHT);
-  } else {
-    result = explore_run(type, goal_get_x(), goal_get_y(), GOAL_WIDTH, GOAL_HEIGHT);
-  }
+  explore_result_t result = explore_run(type, goal_get_x(), goal_get_y(), GOAL_WIDTH, GOAL_HEIGHT);
 
   if (result == EXPLORE_RESULT_DONE) {
     ui_signal_ok();  /* 走り終わった（迷路の保存は explore_run() の中で済んでいる） */
@@ -244,7 +224,7 @@ static void run_shortest(int number)
   shortest_result_t result = shortest_run(number, goal_get_x(), goal_get_y());
 
   if (result == SHORTEST_RESULT_DONE) {
-    ui_signal_ok();  /* ゴールで止まり、入ってきた向きを向いた。スタートへは手で戻すか、モード0 No.5・6 で探索しながら戻る */
+    ui_signal_ok();  /* ゴールで止まり、入ってきた向きを向いた。スタートへは手で戻す */
   } else if (result == SHORTEST_RESULT_FAILSAFE) {
     /* 7 個全部を点滅させて、スイッチが押されるまで待ち、フェイルセーフを解除する */
     ui_wait_failsafe_reset();
@@ -360,23 +340,6 @@ static void run_selected(void)
   }
 }
 
-/* 選んだモードを走らせても、最短走行がゴールで止まった位置を覚えたままにするか。
- * 機体を動かさないもの（ログ出力などの設定、センサ値の表示・記録）と、その位置を使うもの（モード0 No.5・6。使ったら自分で忘れる）は
- * 覚えたまま。ほかは機体を動かすので忘れる（そのあとにゴールから探索すると、いない場所から走り出してしまうため） */
-static bool keeps_end_pose(int mode, int number)
-{
-  if (mode == 7) {
-    return true;
-  }
-  if (mode == 5 && number <= 3) {
-    return true;
-  }
-  if (mode == 0 && is_explore_from_goal(number)) {
-    return true;
-  }
-  return false;
-}
-
 /* モードを選んで、スタートして、走らせる。走り終わったら戻る（起動後、繰り返し呼ぶ）。
  * スタート待ちでスイッチが押されたときは、走らずに戻る（次に呼ばれたときに選び直す）。
  * どの道から戻るときも、最後に「ロード中」を出す */
@@ -390,8 +353,6 @@ void mode_run_once(void)
     sensor_view_run();  /* スタート待ちをしない */
   } else if (s_mode == 5 && s_number == 3) {
     sensor_view_distance_run();  /* スタート待ちをしない（前センサの値を見たいので） */
-  } else if (s_mode == 0 && is_explore_from_goal(s_number) && !shortest_get_end_pose().is_set) {
-    ui_signal_error();  /* ゴールから始める探索で、最短走行がゴールで止まった位置を覚えていない。走らずに選び直す */
   } else if (s_mode == 7 && s_number == 2) {
     venue_measure_scale_run();  /* スタート待ちをしない（手をかざすと、置いた位置がずれやすい） */
   } else if (s_mode == 7 && s_number == 3) {
@@ -399,9 +360,6 @@ void mode_run_once(void)
   } else if (s_mode == 7 && s_number == 4) {
     venue_reset_run();  /* スタート待ちをしない（動かないので） */
   } else if (ui_wait_start(s_mode, s_number)) {
-    if (!keeps_end_pose(s_mode, s_number)) {
-      shortest_forget_end_pose();  /* 機体を動かすので、最短走行がゴールで止まった位置は、もう使えない */
-    }
     run_selected();
   }
 

@@ -44,12 +44,12 @@
  * 次の区画がゴールの外のとき・あいだに壁があるときは、足さない（今までどおり、最初の区画で止まる）
  *
  * ■ ゴールで止まったあと（2026-11-11。作者の案。No.1〜6 とも）
- * ゴールの区画のまん中で止まったら、次の順に動いて、置き直さずにゴールから探索（モード0 No.5・6）を始められるようにする
- * （turn_back_at_goal()）。
+ * ゴールの区画のまん中で止まったら、次の順に動く（turn_back_at_goal()）。
  *   1. 止まった区画の前・左・右の壁を、センサで見る（探索で、この区画の壁を使うため）
  *   2. 前に壁があれば前壁合わせをしながら、その場で左に 90° を 2 回回って、入ってきた向きを向く
  *      （探索でスタートに戻ったときと同じ動き。ctrl/run.c の run_search_turn_back_at_center()）
- *   3. 止まった区画・入ってきた向き・見た壁を覚える（shortest_get_end_pose()。電源を切ると消える）
+ *   3. 止まった区画・入ってきた向き・見た壁を覚える（shortest_get_end_pose()。電源を切ると消える。今は覚えるだけで、
+ *      使うところはない。2026-11-11 にゴールから始める探索〈モード0 No.5・6〉を作ったが、使わないことにして消した）
  * 最後がターンで止まったとき（ゴールの次の区画へ進めず、最後のターンのあとで止まったとき。ふつうは起きない）は、
  * 止まった位置が区画のまん中からずれているかもしれないので、何もしない（覚えない）
  *
@@ -80,8 +80,8 @@
 
 static path_t s_path;  /* 最短経路（大きいので、関数の中ではなくここに置く） */
 
-/* ゴールで止まったときに覚えた位置（先頭のコメントの「■ ゴールで止まったあと」）。ゴールから始める探索で使う */
-static explore_start_pose_t s_end_pose = { false, 0, 0, DIR_NORTH, false, false, false };
+/* ゴールで止まったときに覚えた位置（先頭のコメントの「■ ゴールで止まったあと」） */
+static shortest_end_pose_t s_end_pose = { false, 0, 0, DIR_NORTH, false, false, false };
 
 /* 大回り・斜めで走る No. か（No.4〜6） */
 static bool uses_diagonal(int number)
@@ -503,15 +503,9 @@ static void turn_back_at_goal(void)
 }
 
 /* 最後の最短走行で、ゴールで止まったときに覚えた位置（覚えていなければ is_set が false） */
-explore_start_pose_t shortest_get_end_pose(void)
+shortest_end_pose_t shortest_get_end_pose(void)
 {
   return s_end_pose;
-}
-
-/* 覚えた位置を忘れる（機体を動かしたら、もうその位置にいないため。sys/mode.c が呼ぶ） */
-void shortest_forget_end_pose(void)
-{
-  s_end_pose.is_set = false;
 }
 
 /* 最短走行をする（流れは先頭のコメント）。number は No.（走り方と速さを選ぶ） */

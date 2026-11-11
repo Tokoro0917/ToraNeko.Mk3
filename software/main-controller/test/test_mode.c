@@ -249,10 +249,6 @@ static int s_explore_count = 0;           /* 探索が呼ばれた回数 */
 static explore_type_t s_explore_type = EXPLORE_ROUND_TRIP;
 static int s_explore_goal[4];             /* 渡されたゴール（x、y、幅、高さ） */
 static uint32_t s_explore_time_ms = 0;    /* 呼ばれた時刻 */
-static bool s_end_pose_set = false;       /* 最短走行がゴールで止まった位置を覚えていることにするか */
-static int s_from_goal_count = 0;         /* ゴールから始める探索が呼ばれた回数 */
-static explore_type_t s_from_goal_type = EXPLORE_ROUND_TRIP;
-static bool s_from_goal_pose_set = false; /* ゴールから始める探索に渡された位置を、覚えていたか */
 
 /* テストを始める前に、仮の時計・入力・LED・Flash・探索を最初の状態にする */
 static void reset_world(void)
@@ -298,10 +294,6 @@ static void reset_world(void)
   s_shortest_goal_y = -1;
   s_shortest_time_ms = 0;
   s_explore_time_ms = 0;
-  s_end_pose_set = false;
-  s_from_goal_count = 0;
-  s_from_goal_type = EXPLORE_ROUND_TRIP;
-  s_from_goal_pose_set = false;
 }
 
 /* ---------------------------------------------------------------------------
@@ -574,34 +566,6 @@ explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int go
   return s_explore_result;
 }
 
-/* ゴールから始める探索：走らずに、呼ばれたことと、渡された位置を覚えていたかを覚える */
-explore_result_t explore_run_from_goal(explore_type_t type, explore_start_pose_t pose,
-                                       int goal_x, int goal_y, int goal_width, int goal_height)
-{
-  (void)goal_x;  /* 使わない引数 */
-  (void)goal_y;
-  (void)goal_width;
-  (void)goal_height;
-  s_from_goal_count = s_from_goal_count + 1;
-  s_from_goal_type = type;
-  s_from_goal_pose_set = pose.is_set;
-  return s_explore_result;
-}
-
-/* 最短走行がゴールで止まった位置：覚えているかだけを決めておく（ほかの値は使わない） */
-explore_start_pose_t shortest_get_end_pose(void)
-{
-  explore_start_pose_t pose = { false, 3, 4, DIR_EAST, false, false, false };
-  pose.is_set = s_end_pose_set;
-  return pose;
-}
-
-/* 最短走行がゴールで止まった位置を忘れる */
-void shortest_forget_end_pose(void)
-{
-  s_end_pose_set = false;
-}
-
 /* 最短走行の道があるか：決めておいた答えを返す */
 bool shortest_has_route(int number, int goal_x, int goal_y)
 {
@@ -619,7 +583,6 @@ shortest_result_t shortest_run(int number, int goal_x, int goal_y)
   s_shortest_goal_x = goal_x;
   s_shortest_goal_y = goal_y;
   s_shortest_time_ms = s_now_ms;
-  s_end_pose_set = true;  /* 本物と同じく、ゴールで止まった位置を覚える */
   return SHORTEST_RESULT_DONE;
 }
 
@@ -794,7 +757,7 @@ static void test_explore_known(void)
   mode_run_once();
 
   check(s_explore_count == 1 && s_explore_type == EXPLORE_UNKNOWN_WALLS_KNOWN, "No.4 は未知壁探索＋既知区間加速");
-  check(mode_has_action(0, 5) && mode_has_action(0, 6) && !mode_has_action(0, 7), "モード0 は No.5・6（ゴールから始める探索。2026-11-11）まで決定できる");
+  check(!mode_has_action(0, 5), "モード0 の No.5 は決定できない");
   check(mode_has_action(1, 4) && mode_has_action(1, 6) && !mode_has_action(1, 7), "モード1 は No.1〜6 を決定できる");
 }
 
@@ -970,71 +933,6 @@ static void test_shortest(void)
   check(s_shortest_goal_x == goal_get_x() && s_shortest_goal_y == goal_get_y(), "今のゴールを渡す");
   check(s_shortest_time_ms >= 3000, "スタート待ち（手を離して 1 秒）のあとに走る");
   check(s_explore_count == 0, "探索は呼ばれない");
-}
-
-/* ゴールから始める探索（モード0 No.5・6）：最短走行がゴールで止まった位置を覚えているときだけ走る。
- * 機体を動かすモードを走らせたら忘れ、動かさないモード（ログ出力など）では覚えたまま */
-static void test_explore_from_goal(void)
-{
-  printf("[5] ゴールから始める探索\n");
-
-  /* 覚えていない：走らずに「できなかった」 */
-  reset_world();
-  mode_init();
-  rotate_right_at(100, 5);   /* モード0 No.5 */
-  press_switch_at(500);
-  mode_run_once();
-  check(s_from_goal_count == 0 && s_explore_count == 0, "覚えていなければ、ゴールから始める探索は走らない");
-  check_leds_at(840, "1100011", "決定の点滅のあと、外側の 4 個が点く（できなかった）");
-
-  /* 最短走行のあと：No.5 は未知壁探索、No.6 は未知壁探索＋既知区間加速で、覚えた位置から走る。走ったら忘れる */
-  reset_world();
-  mode_init();
-  s_end_pose_set = true;     /* 最短走行がゴールで止まったあと */
-  rotate_right_at(100, 5);   /* モード0 No.5 */
-  press_switch_at(500);
-  hand_at(1500, 500);
-  mode_run_once();
-  check(s_from_goal_count == 1 && s_from_goal_type == EXPLORE_UNKNOWN_WALLS && s_from_goal_pose_set,
-        "No.5 で、覚えた位置から未知壁探索が 1 回呼ばれる");
-  check(s_explore_count == 0, "スタートからの探索は呼ばれない");
-  check(!s_end_pose_set, "走ったら、覚えた位置を忘れる");
-
-  reset_world();
-  mode_init();
-  s_end_pose_set = true;
-  rotate_right_at(100, 6);   /* モード0 No.6 */
-  press_switch_at(500);
-  hand_at(1500, 500);
-  mode_run_once();
-  check(s_from_goal_count == 1 && s_from_goal_type == EXPLORE_UNKNOWN_WALLS_KNOWN, "No.6 は未知壁探索＋既知区間加速");
-
-  /* 最短走行をすると覚える。ログ出力（モード7 No.1）では覚えたまま */
-  reset_world();
-  mode_init();
-  rotate_left_at(100, 1);    /* モード1 */
-  rotate_right_at(100, 1);   /* No.1 */
-  press_switch_at(500);
-  hand_at(1500, 500);
-  mode_run_once();
-  check(s_shortest_count == 1 && s_end_pose_set, "最短走行のあとは、ゴールで止まった位置を覚えている");
-  rotate_left_at(s_now_ms + 100, -2);  /* モード7 */
-  press_switch_at(s_now_ms + 500);     /* No.1 のまま決定 */
-  hand_at(s_now_ms + 1500, 500);
-  mode_run_once();
-  check(s_output_count == 1 && s_end_pose_set, "ログ出力では、覚えた位置を忘れない");
-
-  /* 機体を動かすモード（モード6 No.1 直進）を走らせたら忘れる */
-  reset_world();
-  mode_init();
-  s_end_pose_set = true;
-  rotate_left_at(100, 6);    /* モード6 */
-  rotate_right_at(100, 1);   /* No.1 */
-  press_switch_at(500);
-  hand_at(1500, 500);
-  mode_run_once();
-  check(s_straight_count == 1 && !s_end_pose_set, "機体を動かすモードを走らせたら、覚えた位置を忘れる");
-  check(mode_has_action(0, 6) && !mode_has_action(0, 7), "モード0 は No.1〜6 だけ決定できる");
 }
 
 /* 最短走行で道がないときは、走らずに「できなかった」を出して選び直す */
@@ -1456,7 +1354,6 @@ int main(void)
   test_turn_test();
   test_shortest();
   test_shortest_no_route();
-  test_explore_from_goal();
   test_straight();
   test_pivot();
   test_slalom();

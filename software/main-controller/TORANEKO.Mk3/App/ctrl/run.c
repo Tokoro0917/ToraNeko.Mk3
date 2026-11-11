@@ -557,20 +557,6 @@ void run_search_start(void)
   mark_return();
 }
 
-/* 止まっている（区画のまん中）ところから、探索を始める準備をする（最短走行のあと、ゴールから探索するとき。sys/explore.c）。
- * スタートからの発進（run_search_start()）と同じく、ジャイロのゼロ点を測り直し、今の向きを迷路の向きの基準にする。
- * 最短走行のあと、前壁合わせをしながら向きを変えて止まっているので、今の向きは迷路の向きにそろっている。
- * 発進はしない。モーターの出力を 0 にして止まったまま戻る（run.h の約束 2。このあと run_search_go_from_center() で発進する） */
-void run_search_start_at_center(void)
-{
-  if (failsafe_is_stopped()) {
-    return;
-  }
-  start_control();
-  control_set_heading_auto_reset(true);  /* run_search_start() と同じ */
-  control_stop();  /* 止まったまま待つ（向きの基準は覚えたまま。発進するときに control_restart() で制御を始め直す） */
-}
-
 /* 走っている → 1 区画まっすぐ進み、次の区画の入口の辺へ（壁切れで前後の位置を直す） */
 void run_search_straight(void)
 {

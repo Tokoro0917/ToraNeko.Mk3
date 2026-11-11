@@ -13,7 +13,6 @@
  *   - U ターン（止まって、後ろを向いて発進する）
  *   - 未知壁探索で計算するとき（ダイクストラは重いので、止まっているときだけ計算する。KOGUMA と同じ）
  *   - 終わり（スタートに戻ったとき、片道でゴールに着いたとき）
- *   - ゴールから始める探索（No.5・6）は、止まっているところから始まる（explore_run_from_goal()）
  *
  * ■ ゴールとスタートで止まるところ
  *   - ゴールは、ゴールの区画（2×2 のどれか）の入口の辺（区画の境目）に着いたところで「着いた」とみなす。
@@ -453,55 +452,6 @@ explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int go
   }
 
   /* 5. 帰り：スタートまで戻って止まり、迷路を保存してから、次にすぐスタートできるように北を向く */
-  search_set_target(0, 0, 1, 1);
-  result = run_to_target();
-  if (result != EXPLORE_RESULT_DONE) {
-    return finish_early(result);
-  }
-  return finish_at_start();
-}
-
-/* 最短走行のあと、ゴールで止まっているところから探索をする（explore.h の「■ ゴールから始める探索」）。
- * pose は、最短走行が覚えた、止まっている区画と入ってきた向き（今は、その反対を向いている）。
- * type が未知壁探索（No.3・4 と同じ走り方）なら、まず未知壁探索をしてから、スタートへ戻る。それ以外なら、すぐスタートへ戻る */
-explore_result_t explore_run_from_goal(explore_type_t type, explore_start_pose_t pose,
-                                       int goal_x, int goal_y, int goal_width, int goal_height)
-{
-  explore_result_t result;
-
-  s_use_known = false;
-  if (type == EXPLORE_UNKNOWN_WALLS_KNOWN) {
-    s_use_known = true;
-    type = EXPLORE_UNKNOWN_WALLS;
-  }
-
-  /* この走行で記録した壁だけを、フェイルセーフのときに戻すようにする */
-  maze_map_clear_recent_cells();
-
-  /* 1. 止まっている区画の壁を記録する（最短走行で止まったときに、入ってきた向きで見た前・左・右）。
-   *    入ってきた辺は、通ってきたので「壁なし」にする（最短経路は、まだ見ていない壁を通ることもあるため） */
-  maze_map_record_walls(pose.x, pose.y, pose.arrive_dir, pose.wall_front, pose.wall_left, pose.wall_right);
-  maze_map_set_wall(pose.x, pose.y, maze_turn_back(pose.arrive_dir), WALL_NONE);
-
-  /* 2. 止まったまま、探索を始める準備をする（ジャイロのゼロ点、迷路の向きの基準） */
-  s_x = pose.x;
-  s_y = pose.y;
-  s_dir = maze_turn_back(pose.arrive_dir);
-  s_stopped = true;
-  run_search_start_at_center();
-  if (failsafe_is_stopped()) {
-    return finish_early(EXPLORE_RESULT_FAILSAFE);
-  }
-
-  /* 3. 未知壁探索（止まっているところから計算して、見に行く） */
-  if (type == EXPLORE_UNKNOWN_WALLS) {
-    result = scan_unknown_walls(goal_x, goal_y, goal_width, goal_height);
-    if (result != EXPLORE_RESULT_DONE) {
-      return finish_early(result);
-    }
-  }
-
-  /* 4. 帰り：スタートまで戻って止まり、北を向いて、お尻を後ろの壁に当ててから、迷路を保存する */
   search_set_target(0, 0, 1, 1);
   result = run_to_target();
   if (result != EXPLORE_RESULT_DONE) {
