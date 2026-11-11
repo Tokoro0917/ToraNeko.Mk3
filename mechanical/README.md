@@ -30,6 +30,6 @@ mechanical/
 
 | ディレクトリ | 内容 |
 |---|---|
-| [maze/](./maze/) | ハーフサイズ迷路の壁 1 枚の STEP（`MicroMouseRefWall_1.step`。86.1 × 25 × 6mm） |
+| [maze/](./maze/) | 位置を変えられる壁を作るための壁の STEP（`MicroMouseRefWall_1.step`。86.1 × 25 × 6mm）。2 個を向かい合わせに立てると、その溝（5mm おき）に別の壁を差して、壁の位置を 5mm 刻みで変えられる |
 
 CADツールは **Fusion 360** を使用しています。
