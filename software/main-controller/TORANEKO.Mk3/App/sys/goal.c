@@ -1,6 +1,6 @@
 /*
  * goal.c
- * ゴールの位置（MODES.md のモード7 No.2）。Flash に保存し、電源を入れたときに読む
+ * ゴールの位置（MODES.md のモード7 No.14）。Flash に保存し、電源を入れたときに読む
  */
 #include "sys/goal.h"
 

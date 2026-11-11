@@ -15,9 +15,12 @@
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す。2026-11-10 に、番号の穴をなくし、
  *   似たものを同じモードに集めるように並べ直した。作者が決めた）
  *   モード0 No.1〜4  探索（往復・片道・未知壁探索・未知壁探索＋既知区間加速）
+ *   モード0 No.5・6  ゴールから始める探索（最短走行のあと、置き直さずに、ゴールから未知壁探索をしてスタートへ戻る。
+ *                    No.6 は既知区間加速あり）。最短走行がゴールで止まった位置を覚えていなければ「できなかった」を出す
  *   モード1 No.1〜6  最短走行（No.1〜3 は曲がるところが探索と同じ小回りで、直進の速さが No.1 → 3 で速くなる。
  *                    No.4〜6 は大回り・斜めのターンで曲がる）。
- *                    決定したときに道がなければ、「できなかった」を出して選び直す
+ *                    決定したときに道がなければ、「できなかった」を出して選び直す。
+ *                    ゴールで止まったら、入ってきた向きを向いて、止まった位置を覚える（モード0 No.5・6 で使う）
  *   モード2 No.1     スラローム 90°（探索の速さで左に曲がり、左の区画のまん中で止まる）
  *   モード2 No.2     U ターン（行き止まりで止まり、前壁合わせ、180°、戻って止まる）
  *   モード2 No.3     その場 180° 旋回（左に回って止まる。旋回の制御の係数を合わせる）
@@ -35,12 +38,13 @@
  *   モード6 No.4     吸引の力（吸引の強さを段ごとに上げて回す。はかりで測る）
  *   モード6 No.5     エンコーダの歪みを測る（タイヤを浮かせて、左右のモーターを回す）
  *   モード7 No.1     ログ出力（迷路と走行ログを PC へ出す）
- *   モード7 No.2     ゴールの位置を入れる
- *   モード7 No.3     倍率合わせ（区画の境目で測って、感度の倍率を Flash に保存する。置いた位置がずれないように、
+ *   モード7 No.2     倍率合わせ（区画の境目で測って、感度の倍率を Flash に保存する。置いた位置がずれないように、
  *                    スタート待ちをせず、決定してから 2 秒後に測る）
- *   モード7 No.4     壁制御の目標（区画の中心で測って、横の壁に沿う補正の目標を Flash に保存する。No.3 と同じく 2 秒後に測る）
- *   モード7 No.5     倍率と壁制御の目標を元に戻す（倍率 1、目標は家の値にして保存する。決定するとすぐ）
- *   モード7 No.6     迷路呼び出し（Flash に保存した迷路を RAM に戻す）
+ *   モード7 No.3     壁制御の目標（区画の中心で測って、横の壁に沿う補正の目標を Flash に保存する。No.2 と同じく 2 秒後に測る）
+ *   モード7 No.4     倍率と壁制御の目標を元に戻す（倍率 1、目標は家の値にして保存する。決定するとすぐ）
+ *   モード7 No.14    ゴールの位置を入れる
+ *   モード7 No.15    迷路呼び出し（Flash に保存した迷路を RAM に戻す）
+ *   （ゴールの位置と迷路呼び出しは、2026-11-11 に作者の案で No.14・15 へ移し、あいたところを詰めた）
  * Flash に書く・読む操作（ゴール、倍率、目標、迷路呼び出し）は、モード7 にまとめる（2026-11-10。作者が決めた）。
  * No.0 と、まだ何もない番号では、スイッチを押しても決定しない（何も起きない）。
  */
@@ -93,8 +97,8 @@ int mode_get_number(void)
 bool mode_has_action(int mode, int number)
 {
   if (mode == 0) {
-    if (number >= 1 && number <= 4) {
-      return true;  /* 探索 */
+    if (number >= 1 && number <= 6) {
+      return true;  /* 探索（No.5・6 はゴールから始める探索） */
     }
     return false;
   }
@@ -135,8 +139,11 @@ bool mode_has_action(int mode, int number)
     return false;
   }
   if (mode == 7) {
-    if (number >= 1 && number <= 6) {
-      return true;  /* ログ出力、ゴールの位置、倍率合わせ、壁制御の目標、元に戻す、迷路呼び出し */
+    if (number >= 1 && number <= 4) {
+      return true;  /* ログ出力、倍率合わせ、壁制御の目標、元に戻す */
+    }
+    if (number == 14 || number == 15) {
+      return true;  /* ゴールの位置、迷路呼び出し */
     }
     return false;
   }
@@ -184,19 +191,37 @@ static void select_mode(void)
  * モード0：探索
  * ------------------------------------------------------------------------- */
 
-/* 探索走行をする（No.1 往復、No.2 片道、No.3 未知壁探索、No.4 未知壁探索＋既知区間加速） */
+/* ゴールから始める探索（No.5・6）か */
+static bool is_explore_from_goal(int number)
+{
+  if (number == 5 || number == 6) {
+    return true;
+  }
+  return false;
+}
+
+/* 探索走行をする（No.1 往復、No.2 片道、No.3 未知壁探索、No.4 未知壁探索＋既知区間加速、
+ * No.5 ゴールから未知壁探索、No.6 ゴールから未知壁探索＋既知区間加速） */
 static void run_explore(int number)
 {
   explore_type_t type = EXPLORE_ROUND_TRIP;
   if (number == 2) {
     type = EXPLORE_ONE_WAY;
-  } else if (number == 3) {
+  } else if (number == 3 || number == 5) {
     type = EXPLORE_UNKNOWN_WALLS;
-  } else if (number == 4) {
+  } else if (number == 4 || number == 6) {
     type = EXPLORE_UNKNOWN_WALLS_KNOWN;
   }
 
-  explore_result_t result = explore_run(type, goal_get_x(), goal_get_y(), GOAL_WIDTH, GOAL_HEIGHT);
+  explore_result_t result;
+  if (is_explore_from_goal(number)) {
+    /* 最短走行がゴールで止まったときに覚えた位置から始める。一度使ったら忘れる（走ると、もうそこにいないため） */
+    explore_start_pose_t pose = shortest_get_end_pose();
+    shortest_forget_end_pose();
+    result = explore_run_from_goal(type, pose, goal_get_x(), goal_get_y(), GOAL_WIDTH, GOAL_HEIGHT);
+  } else {
+    result = explore_run(type, goal_get_x(), goal_get_y(), GOAL_WIDTH, GOAL_HEIGHT);
+  }
 
   if (result == EXPLORE_RESULT_DONE) {
     ui_signal_ok();  /* 走り終わった（迷路の保存は explore_run() の中で済んでいる） */
@@ -219,7 +244,7 @@ static void run_shortest(int number)
   shortest_result_t result = shortest_run(number, goal_get_x(), goal_get_y());
 
   if (result == SHORTEST_RESULT_DONE) {
-    ui_signal_ok();  /* ゴールで止まった。スタートへは手で戻す */
+    ui_signal_ok();  /* ゴールで止まり、入ってきた向きを向いた。スタートへは手で戻すか、モード0 No.5・6 で探索しながら戻る */
   } else if (result == SHORTEST_RESULT_FAILSAFE) {
     /* 7 個全部を点滅させて、スイッチが押されるまで待ち、フェイルセーフを解除する */
     ui_wait_failsafe_reset();
@@ -249,7 +274,7 @@ static int input_goal_value(int value, int value_max)
   }
 }
 
-/* ゴールの位置（左下の区画の x・y）を入れて、Flash に保存する（MODES.md のモード7 No.2）。
+/* ゴールの位置（左下の区画の x・y）を入れて、Flash に保存する（MODES.md のモード7 No.14）。
  * 使えない位置（スタートの区画を含む）なら、保存せずに x の入力に戻る */
 static void input_goal(void)
 {
@@ -267,7 +292,7 @@ static void input_goal(void)
   }
 }
 
-/* Flash に保存した迷路を RAM に戻す（MODES.md のモード7 No.6 迷路呼び出し） */
+/* Flash に保存した迷路を RAM に戻す（MODES.md のモード7 No.15 迷路呼び出し） */
 static void load_maze(void)
 {
   if (flash_load_maze()) {
@@ -277,18 +302,18 @@ static void load_maze(void)
   }
 }
 
-/* 出力と設定（No.1 ログ出力、No.2 ゴールの位置、No.6 迷路呼び出し。No.3〜5 はスタート待ちをしないので mode_run_once() で呼ぶ） */
+/* 出力と設定（No.1 ログ出力、No.14 ゴールの位置、No.15 迷路呼び出し。No.2〜4 はスタート待ちをしないので mode_run_once() で呼ぶ） */
 static void run_setting(int number)
 {
   if (number == 1) {
     adjust_print_last_result();  /* 最後に走らせた調整の動きの結果（走ったときはケーブルを挿していないので、ここで出す） */
     sensor_record_print();       /* 最後に測ったセンサ値の記録（モード5 No.2） */
-    venue_print();               /* 今の会場ごとの感度の倍率と、壁制御の目標（モード7 No.3・4） */
+    venue_print();               /* 今の会場ごとの感度の倍率と、壁制御の目標（モード7 No.2・3） */
     output_all(goal_get_x(), goal_get_y());
     ui_signal_ok();  /* 出し終わった */
-  } else if (number == 2) {
+  } else if (number == 14) {
     input_goal();
-  } else if (number == 6) {
+  } else if (number == 15) {
     load_maze();
   }
 }
@@ -335,6 +360,23 @@ static void run_selected(void)
   }
 }
 
+/* 選んだモードを走らせても、最短走行がゴールで止まった位置を覚えたままにするか。
+ * 機体を動かさないもの（ログ出力などの設定、センサ値の表示・記録）と、その位置を使うもの（モード0 No.5・6。使ったら自分で忘れる）は
+ * 覚えたまま。ほかは機体を動かすので忘れる（そのあとにゴールから探索すると、いない場所から走り出してしまうため） */
+static bool keeps_end_pose(int mode, int number)
+{
+  if (mode == 7) {
+    return true;
+  }
+  if (mode == 5 && number <= 3) {
+    return true;
+  }
+  if (mode == 0 && is_explore_from_goal(number)) {
+    return true;
+  }
+  return false;
+}
+
 /* モードを選んで、スタートして、走らせる。走り終わったら戻る（起動後、繰り返し呼ぶ）。
  * スタート待ちでスイッチが押されたときは、走らずに戻る（次に呼ばれたときに選び直す）。
  * どの道から戻るときも、最後に「ロード中」を出す */
@@ -348,13 +390,18 @@ void mode_run_once(void)
     sensor_view_run();  /* スタート待ちをしない */
   } else if (s_mode == 5 && s_number == 3) {
     sensor_view_distance_run();  /* スタート待ちをしない（前センサの値を見たいので） */
-  } else if (s_mode == 7 && s_number == 3) {
+  } else if (s_mode == 0 && is_explore_from_goal(s_number) && !shortest_get_end_pose().is_set) {
+    ui_signal_error();  /* ゴールから始める探索で、最短走行がゴールで止まった位置を覚えていない。走らずに選び直す */
+  } else if (s_mode == 7 && s_number == 2) {
     venue_measure_scale_run();  /* スタート待ちをしない（手をかざすと、置いた位置がずれやすい） */
-  } else if (s_mode == 7 && s_number == 4) {
+  } else if (s_mode == 7 && s_number == 3) {
     venue_measure_reference_run();  /* 同じ */
-  } else if (s_mode == 7 && s_number == 5) {
+  } else if (s_mode == 7 && s_number == 4) {
     venue_reset_run();  /* スタート待ちをしない（動かないので） */
   } else if (ui_wait_start(s_mode, s_number)) {
+    if (!keeps_end_pose(s_mode, s_number)) {
+      shortest_forget_end_pose();  /* 機体を動かすので、最短走行がゴールで止まった位置は、もう使えない */
+    }
     run_selected();
   }
 

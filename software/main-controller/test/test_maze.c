@@ -1932,6 +1932,60 @@ void run_search_stop_at_center(void)
   s_sim_stop_count = s_sim_stop_count + 1;
 }
 
+/* 止まっている（区画のまん中）ところから、探索を始める準備をする（ゴールから始める探索。動かない） */
+static int s_sim_start_at_center_count = 0;  /* 呼ばれた回数 */
+void run_search_start_at_center(void)
+{
+  if (s_sim_failsafe) {
+    return;
+  }
+  if (!s_sim_stopped) {
+    sim_error("走っているのに、まん中から探索を始める準備をした");
+  }
+  if (s_sim_at_start) {
+    sim_error("スタートに置いたのに、まん中から探索を始める準備をした");
+  }
+  s_sim_start_at_center_count = s_sim_start_at_center_count + 1;
+}
+
+/* 最短走行の仮の機体（その 2。下の 10.）の位置と向き。最短走行がゴールで止まったあと、壁を見たり、
+ * 反対を向いたりするときに使うので、ここで先に作っておく */
+static bool s_fast_mode = false;        /* true なら、最短走行を走らせている（壁の答えと、反対を向く動きは、その 2 が受ける） */
+static float s_fast_x_mm = 0.0f;       /* 仮の機体 その 2 の位置（区画 (0,0) の左下の角が原点）と向き（北が 90°） */
+static float s_fast_y_mm = 0.0f;
+static float s_fast_heading_deg = 90.0f;
+static int s_fast_turn_back_count = 0; /* ゴールで止まったあと、反対を向いた回数 */
+static int s_fast_error_count = 0;     /* おかしな頼まれ方をした回数 */
+static bool s_fast_stopped = false;    /* 最後に止まったか */
+static void fast_error(const char *message);
+
+/* 仮の機体 その 2 の向きを、迷路の向き（北・東・南・西）にする */
+static direction_t fast_direction(void)
+{
+  float heading_deg = fmodf(s_fast_heading_deg + 3600.0f, 360.0f);
+  if (fabsf(heading_deg - 90.0f) < 1.0f) {
+    return DIR_NORTH;
+  }
+  if (fabsf(heading_deg - 180.0f) < 1.0f) {
+    return DIR_WEST;
+  }
+  if (fabsf(heading_deg - 270.0f) < 1.0f) {
+    return DIR_SOUTH;
+  }
+  return DIR_EAST;
+}
+
+/* 仮の機体 その 2 がいる区画 */
+static int fast_cell_x(void)
+{
+  return (int)floorf(s_fast_x_mm / CELL_MM);
+}
+
+static int fast_cell_y(void)
+{
+  return (int)floorf(s_fast_y_mm / CELL_MM);
+}
+
 /* 止まっている → 向きを変えて発進し、次の区画の入口の辺へ行く */
 void run_search_go_from_center(run_turn_t turn)
 {
@@ -1959,6 +2013,15 @@ void run_search_go_from_center(run_turn_t turn)
 static int s_sim_turn_back_count = 0;  /* 呼ばれた回数 */
 void run_search_turn_back_at_center(void)
 {
+  if (s_fast_mode) {
+    /* 最短走行がゴールで止まったあと：止まっていて、区画のまん中にいるかを調べてから、反対を向く */
+    if (!s_fast_stopped) {
+      fast_error("最短走行で、走っているのに、その場で反対を向いた");
+    }
+    s_fast_heading_deg = s_fast_heading_deg + 180.0f;
+    s_fast_turn_back_count = s_fast_turn_back_count + 1;
+    return;
+  }
   if (!sim_begin_motion()) {
     return;
   }
@@ -1988,6 +2051,9 @@ void run_search_back_to_wall(void)
 /* 壁を見る。explore.c は前・左・右の順に見てから記録するので、前を見たときに「記録する直前の地図」を写しておく */
 bool wall_ctrl_has_wall_front(void)
 {
+  if (s_fast_mode) {
+    return s_true_wall[fast_cell_x()][fast_cell_y()][fast_direction()];  /* 最短走行がゴールで止まったとき */
+  }
   if (s_sim_stopped) {
     sim_error("止まっているのに壁を見た");
   }
@@ -2009,6 +2075,9 @@ bool wall_ctrl_has_wall_front(void)
 /* 左の壁があるか（本当の迷路を見て答える） */
 bool wall_ctrl_has_wall_left(void)
 {
+  if (s_fast_mode) {
+    return s_true_wall[fast_cell_x()][fast_cell_y()][maze_turn_left(fast_direction())];
+  }
   if (s_sim_all_walls) {
     return true;
   }
@@ -2018,6 +2087,9 @@ bool wall_ctrl_has_wall_left(void)
 /* 右の壁があるか（本当の迷路を見て答える） */
 bool wall_ctrl_has_wall_right(void)
 {
+  if (s_fast_mode) {
+    return s_true_wall[fast_cell_x()][fast_cell_y()][maze_turn_right(fast_direction())];
+  }
   if (s_sim_all_walls) {
     return true;
   }
@@ -2430,14 +2502,9 @@ static void test_explore_random(int maze_count)
  * ターンで進む位置は、test_turn.c と同じ「終わりの位置」の表（左へ・前へ [mm]）で進める。
  * ------------------------------------------------------------------------- */
 
-static float s_fast_x_mm = 0.0f;       /* 仮の機体 その 2 の位置（区画 (0,0) の左下の角が原点）と向き（北が 90°） */
-static float s_fast_y_mm = 0.0f;
-static float s_fast_heading_deg = 90.0f;
 static float s_fast_speed_mm_s = 0.0f;
-static int s_fast_error_count = 0;     /* おかしな頼まれ方をした回数 */
 static int s_fast_slow_turn_count = 0; /* そのターンの速さより遅く曲がった回数（スタートの直後、ターンが続くときなど） */
 static int s_fast_full_turn_count = 0; /* そのターンの速さで曲がった回数 */
-static bool s_fast_stopped = false;    /* 最後に止まったか */
 
 /* 仮の機体 その 2 の、おかしな頼まれ方を数える（最初の数回だけ表示する） */
 static void fast_error(const char *message)
@@ -2730,8 +2797,11 @@ void run_fast_diag_stop(float distance_mm, float max_speed_mm_s, float accel_mm_
 static bool run_shortest_and_check(int number)
 {
   s_fast_error_count = 0;
+  s_fast_turn_back_count = 0;
   s_sim_failsafe = false;
+  s_fast_mode = true;
   shortest_result_t result = shortest_run(number, s_goal_x, s_goal_y);
+  s_fast_mode = false;
   if (result != SHORTEST_RESULT_DONE) {
     printf("  No.%d：走り終わらなかった（結果 %d）\n", number, result);
     return false;
@@ -2751,11 +2821,24 @@ static bool run_shortest_and_check(int number)
   if (fabsf(in_cell_x_mm - HALF_CELL_MM) > 1.0f || fabsf(in_cell_y_mm - HALF_CELL_MM) > 1.0f) {
     fast_error("区画のまん中で止まっていない");
   }
-  float heading_rad = s_fast_heading_deg * 3.14159265f / 180.0f;
-  int behind_x = (int)floorf((s_fast_x_mm - CELL_MM * cosf(heading_rad)) / CELL_MM);
-  int behind_y = (int)floorf((s_fast_y_mm - CELL_MM * sinf(heading_rad)) / CELL_MM);
+  /* 2026-11-11：止まったら、入ってきた向きを向く（反対を向く）。いま向いている先が、入ってきた区画（ゴールの最初の区画） */
+  if (s_fast_turn_back_count != 1) {
+    fast_error("ゴールで止まったあと、反対を向いていない");
+  }
+  int behind_x = maze_next_x(cell_x, fast_direction());
+  int behind_y = maze_next_y(cell_y, fast_direction());
   if (!is_in_goal(behind_x, behind_y)) {
     fast_error("ゴールの最初の区画で止まった（もう 1 区画進んでいない）");
+  }
+  /* 止まった区画・入ってきた向き・そこで見た壁を覚えている（ゴールから始める探索で使う） */
+  explore_start_pose_t pose = shortest_get_end_pose();
+  direction_t arrive_dir = maze_turn_back(fast_direction());
+  if (!pose.is_set || pose.x != cell_x || pose.y != cell_y || pose.arrive_dir != arrive_dir) {
+    fast_error("ゴールで止まった区画と、入ってきた向きを覚えていない");
+  } else if (pose.wall_front != s_true_wall[cell_x][cell_y][arrive_dir]
+             || pose.wall_left != s_true_wall[cell_x][cell_y][maze_turn_left(arrive_dir)]
+             || pose.wall_right != s_true_wall[cell_x][cell_y][maze_turn_right(arrive_dir)]) {
+    fast_error("ゴールで止まった区画で見た壁が、本当の壁と違う");
   }
   return s_fast_error_count == 0;
 }
@@ -3089,6 +3172,96 @@ static void print_dijkstra_time(int maze_count)
          1000.0 * step_total_s / maze_count, 1000.0 * turn_total_s / maze_count);
 }
 
+/* ---------------------------------------------------------------------------
+ * 10b. 最短走行のあと、ゴールから始める探索（モード0 No.5・6。2026-11-11）
+ *
+ * 片道の探索でゴールまでの道を知ってから、最短走行（No.4）でゴールへ行き、止まった区画・入ってきた向き・見た壁を覚える。
+ * そこから置き直さずに explore_run_from_goal() を走らせ、未知壁探索をしてスタートへ戻ることを確かめる。
+ * ------------------------------------------------------------------------- */
+
+/* 仮の機体（探索）を、最短走行がゴールで止まった位置に置く（入ってきた向きの反対を向いて、区画のまん中で止まっている） */
+static void sim_place_at_end_pose(explore_start_pose_t pose)
+{
+  sim_place_at_start(-1);
+  s_sim_x = pose.x;
+  s_sim_y = pose.y;
+  s_sim_dir = maze_turn_back(pose.arrive_dir);
+  s_sim_stopped = true;
+  s_sim_at_start = false;
+  s_sim_turn_back_count = 0;
+  s_sim_back_to_wall_count = 0;
+  s_sim_start_at_center_count = 0;
+}
+
+/* 1 つの迷路で、片道 → 最短走行 → ゴールから始める探索（type）を走らせ、正しく終われば true */
+static bool explore_from_goal_and_check(explore_type_t type)
+{
+  int best_cost = best_route_cost();
+  if (!explore_and_check(EXPLORE_ONE_WAY, false)) {
+    return false;  /* 片道でゴールまでの道を知る */
+  }
+  if (!run_shortest_and_check(4)) {
+    return false;  /* ゴールで止まって、反対を向き、位置を覚える */
+  }
+  explore_start_pose_t pose = shortest_get_end_pose();
+  sim_place_at_end_pose(pose);
+  explore_result_t result = explore_run_from_goal(type, pose, s_goal_x, s_goal_y, s_goal_width, s_goal_height);
+
+  bool ok = true;
+  if (result != EXPLORE_RESULT_DONE || s_sim_error_count != 0) {
+    ok = false;
+  }
+  if (s_sim_start_at_center_count != 1) {
+    ok = false;  /* 止まったまま、探索を始める準備を 1 回する */
+  }
+  if (s_sim_x != 0 || s_sim_y != 0 || s_sim_dir != DIR_NORTH || !s_sim_stopped) {
+    ok = false;  /* スタートで、北を向いて止まる */
+  }
+  if (s_sim_turn_back_count != 1 || s_sim_back_to_wall_count != 1) {
+    ok = false;  /* スタートで反対を向き、お尻を後ろの壁に当てる */
+  }
+  map_copy_t now;
+  copy_map(&now);
+  if (s_sim_save_count != 1 || !same_map(&s_sim_flash, &now)) {
+    ok = false;  /* 最後に 1 回だけ保存する */
+  }
+  if (count_wrong_walls() != 0) {
+    ok = false;  /* 最短走行で止まった区画の壁も、本当の壁どおりに記録する */
+  }
+  if (recorded_route_cost() != best_cost) {
+    ok = false;  /* 未知壁探索をしたので、最短経路は全部の壁を知っているときと同じ */
+  }
+  return ok;
+}
+
+/* ランダムな迷路（ゴールが 2×2 のもの）で、ゴールから始める探索を試す */
+static void test_explore_from_goal(int maze_count)
+{
+  printf("[10b] 最短走行のあと、ゴールから始める探索：ランダムな迷路 %d 個\n", maze_count);
+  int tried = 0;
+  int fail_count = 0;
+  bool use_known = false;
+  for (int maze_index = 0; maze_index < maze_count; maze_index++) {
+    s_random_seed = (unsigned int)(maze_index + 70001);
+    make_random_true_maze();
+    if (s_goal_width != GOAL_WIDTH || s_goal_height != GOAL_HEIGHT) {
+      continue;  /* shortest.c はゴールの大きさを GOAL_WIDTH × GOAL_HEIGHT に決めている */
+    }
+    tried = tried + 1;
+    explore_type_t type = EXPLORE_UNKNOWN_WALLS;
+    if (use_known) {
+      type = EXPLORE_UNKNOWN_WALLS_KNOWN;  /* 1 つおきに既知区間加速あり（No.6） */
+    }
+    use_known = !use_known;
+    if (!explore_from_goal_and_check(type)) {
+      fail_count = fail_count + 1;
+    }
+  }
+  printf("  試した迷路 %d 個、うまくいかなかった %d 個\n", tried, fail_count);
+  check(tried > 0 && fail_count == 0,
+        "最短走行のあと、ゴールから未知壁探索をしてスタートへ戻り、北を向いて止まる。最短経路は全部の壁を知っているときと同じ");
+}
+
 int main(void)
 {
   test_maze_map();
@@ -3119,6 +3292,7 @@ int main(void)
   test_explore_side_align("mazes/maze32_center2x2.txt");
   test_explore_side_align("mazes/maze32_offset3x3.txt");
   test_shortest_diagonal(300);
+  test_explore_from_goal(200);
   test_turn_cost_table();
   test_turn_cost_random(300, 4);
   test_turn_cost_random(300, 5);

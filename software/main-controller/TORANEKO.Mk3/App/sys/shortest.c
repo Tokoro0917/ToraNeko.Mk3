@@ -27,6 +27,7 @@
  *      もう 1 区画進めないとき（ふつうは起きない）は、最後が直進ならゴールの最初の区画のまん中で、最後がターンなら
  *      区画のまん中に着いたところから SHORTEST_STOP_ACCEL_MM_S2 で、SHORTEST_STOP_DISTANCE_MM 以内で止まる
  *   5. 吸引を止める
+ *   6. 止まった区画の壁を見て、入ってきた向きを向き、位置を覚える（下の「■ ゴールで止まったあと」）
  *   小回り（MOTION_TURN_LEFT・RIGHT）は経路に残らない（PC で 500 個の迷路を調べて 0 個）が、残ったら走らずに「道がない」にする
  *
  * 経路は、その走り方と速さで本当にかかる時間が短いものを選ぶ（ダイクストラの走行時間のコスト。maze/dijkstra.c）。
@@ -42,6 +43,16 @@
  * まん中」になり、止まるまでに 1 区画ぶんの余裕ができる（ターンで入ったときに、ターンの速さを落とさなくてよい）。
  * 次の区画がゴールの外のとき・あいだに壁があるときは、足さない（今までどおり、最初の区画で止まる）
  *
+ * ■ ゴールで止まったあと（2026-11-11。作者の案。No.1〜6 とも）
+ * ゴールの区画のまん中で止まったら、次の順に動いて、置き直さずにゴールから探索（モード0 No.5・6）を始められるようにする
+ * （turn_back_at_goal()）。
+ *   1. 止まった区画の前・左・右の壁を、センサで見る（探索で、この区画の壁を使うため）
+ *   2. 前に壁があれば前壁合わせをしながら、その場で左に 90° を 2 回回って、入ってきた向きを向く
+ *      （探索でスタートに戻ったときと同じ動き。ctrl/run.c の run_search_turn_back_at_center()）
+ *   3. 止まった区画・入ってきた向き・見た壁を覚える（shortest_get_end_pose()。電源を切ると消える）
+ * 最後がターンで止まったとき（ゴールの次の区画へ進めず、最後のターンのあとで止まったとき。ふつうは起きない）は、
+ * 止まった位置が区画のまん中からずれているかもしれないので、何もしない（覚えない）
+ *
  * ■ スタートの位置
  * 経路は、スタート区画 (0,0) の南の辺から始まる。機体は、お尻を後ろの壁に付けて置くので、
  * タイヤの軸は南の辺より HALF_CELL_MM − START_OFFSET_MM（35mm）前にある。最初の直進は、その分だけ短くする。
@@ -49,10 +60,12 @@
 #include "sys/shortest.h"
 
 #include <math.h>
+#include <stdbool.h>
 
 #include "config/run_params.h"
 #include "config/turn_params.h"
 #include "ctrl/run.h"
+#include "ctrl/wall_ctrl.h"
 #include "drv/fan.h"
 #include "maze/dijkstra.h"
 #include "maze/maze_map.h"
@@ -66,6 +79,9 @@
 #define SPEED_NO_LIMIT_MM_S      100000.0f /* 「速さの上限なし」を表す、どの速さより大きい値 [mm/s] */
 
 static path_t s_path;  /* 最短経路（大きいので、関数の中ではなくここに置く） */
+
+/* ゴールで止まったときに覚えた位置（先頭のコメントの「■ ゴールで止まったあと」）。ゴールから始める探索で使う */
+static explore_start_pose_t s_end_pose = { false, 0, 0, DIR_NORTH, false, false, false };
 
 /* 大回り・斜めで走る No. か（No.4〜6） */
 static bool uses_diagonal(int number)
@@ -456,9 +472,52 @@ static void start_suction(int number)
   ui_wait_ms(SHORTEST_SUCTION_WAIT_MS);
 }
 
+/* ゴールで止まったあと（先頭のコメントの「■ ゴールで止まったあと」）：止まった区画の壁を見て、入ってきた向きを向き、
+ * その位置を覚える。最後がターンなら、止まった位置がずれているかもしれないので、何もしない */
+static void turn_back_at_goal(void)
+{
+  int last = s_path.count - 1;
+  if (s_path.steps[last].motion != MOTION_STRAIGHT) {
+    return;
+  }
+
+  /* 1. 止まった区画の壁を見る（まだ、入ってきた向きを向いている） */
+  bool wall_front = wall_ctrl_has_wall_front();
+  bool wall_left = wall_ctrl_has_wall_left();
+  bool wall_right = wall_ctrl_has_wall_right();
+
+  /* 2. 前壁合わせをしながら、入ってきた向きを向く */
+  run_search_turn_back_at_center();
+  if (failsafe_is_stopped()) {
+    return;  /* 回っている途中でぶつかった：覚えない */
+  }
+
+  /* 3. 覚える */
+  s_end_pose.x = s_path.end_x;
+  s_end_pose.y = s_path.end_y;
+  s_end_pose.arrive_dir = s_path.end_dir;
+  s_end_pose.wall_front = wall_front;
+  s_end_pose.wall_left = wall_left;
+  s_end_pose.wall_right = wall_right;
+  s_end_pose.is_set = true;
+}
+
+/* 最後の最短走行で、ゴールで止まったときに覚えた位置（覚えていなければ is_set が false） */
+explore_start_pose_t shortest_get_end_pose(void)
+{
+  return s_end_pose;
+}
+
+/* 覚えた位置を忘れる（機体を動かしたら、もうその位置にいないため。sys/mode.c が呼ぶ） */
+void shortest_forget_end_pose(void)
+{
+  s_end_pose.is_set = false;
+}
+
 /* 最短走行をする（流れは先頭のコメント）。number は No.（走り方と速さを選ぶ） */
 shortest_result_t shortest_run(int number, int goal_x, int goal_y)
 {
+  s_end_pose.is_set = false;  /* 前の最短走行で覚えた位置は、もう使えない */
   if (!make_path(number, goal_x, goal_y)) {
     return SHORTEST_RESULT_NO_ROUTE;
   }
@@ -487,6 +546,11 @@ shortest_result_t shortest_run(int number, int goal_x, int goal_y)
   if (failsafe_is_stopped()) {
     run_fast_stop(0.0f, 0.0f, accel);  /* 制御とログを止める（フェイルセーフのときは、動かさずに止めるだけ） */
     return SHORTEST_RESULT_FAILSAFE;
+  }
+
+  turn_back_at_goal();  /* 止まった区画の壁を見て、入ってきた向きを向き、位置を覚える */
+  if (failsafe_is_stopped()) {
+    return SHORTEST_RESULT_FAILSAFE;  /* 回っている途中でぶつかった */
   }
   return SHORTEST_RESULT_DONE;
 }

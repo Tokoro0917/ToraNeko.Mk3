@@ -11,6 +11,8 @@
  *   止まっている：区画の真ん中で止まっている
  *
  *   run_search_start()            スタート区画から走り出し、北隣の区画 (0, 1) の入口の辺まで進む
+ *   run_search_start_at_center()  止まっている（区画のまん中）ところから探索を始める準備をする。発進はしない
+ *                                 （最短走行のあと、ゴールから探索するとき。このあと run_search_go_from_center() で発進する。2026-11-11）
  *   run_search_straight()         走っている → 1 区画まっすぐ進み、次の区画の入口の辺へ
  *   run_search_known_straight(n)  走っている → 見たことのある区画を n 区画まっすぐ速く進み、その先の区画の入口の辺へ
  *                                 （既知区間加速。探索の速さで着く）
@@ -22,7 +24,8 @@
  *   run_search_go_from_center()   止まっている → 前に壁があれば前壁合わせをし、その場で向きを変えて発進し、
  *                                 次の区画の入口の辺へ（U ターンは「止まる」と「後ろを向いて発進」でできている）
  *   run_search_turn_back_at_center()  止まっている → 前壁合わせ・左 90°・前壁合わせ・左 90° で反対を向いて止まる
- *                                 （スタート区画に戻ったとき、次にすぐスタートできるように北を向く。2026-11-10）
+ *                                 （スタート区画に戻ったとき、次にすぐスタートできるように北を向く。2026-11-10。
+ *                                 最短走行でゴールに止まったとき、入ってきた向きを向くのにも使う。2026-11-11）
  *   run_search_back_to_wall()     止まっている → まっすぐ後ろへゆっくり下がり、お尻を後ろの壁に押し当てて止まる
  *                                 （北を向いたあとに使う。走り出す前の置き方と同じになる。2026-11-10）
  *
@@ -50,6 +53,7 @@ typedef enum {
 } run_turn_t;
 
 void run_search_start(void);
+void run_search_start_at_center(void);
 void run_search_straight(void);
 void run_search_known_straight(int cells);
 void run_search_turn_left(void);

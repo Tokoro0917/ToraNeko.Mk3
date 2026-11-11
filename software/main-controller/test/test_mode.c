@@ -249,6 +249,10 @@ static int s_explore_count = 0;           /* 探索が呼ばれた回数 */
 static explore_type_t s_explore_type = EXPLORE_ROUND_TRIP;
 static int s_explore_goal[4];             /* 渡されたゴール（x、y、幅、高さ） */
 static uint32_t s_explore_time_ms = 0;    /* 呼ばれた時刻 */
+static bool s_end_pose_set = false;       /* 最短走行がゴールで止まった位置を覚えていることにするか */
+static int s_from_goal_count = 0;         /* ゴールから始める探索が呼ばれた回数 */
+static explore_type_t s_from_goal_type = EXPLORE_ROUND_TRIP;
+static bool s_from_goal_pose_set = false; /* ゴールから始める探索に渡された位置を、覚えていたか */
 
 /* テストを始める前に、仮の時計・入力・LED・Flash・探索を最初の状態にする */
 static void reset_world(void)
@@ -294,6 +298,10 @@ static void reset_world(void)
   s_shortest_goal_y = -1;
   s_shortest_time_ms = 0;
   s_explore_time_ms = 0;
+  s_end_pose_set = false;
+  s_from_goal_count = 0;
+  s_from_goal_type = EXPLORE_ROUND_TRIP;
+  s_from_goal_pose_set = false;
 }
 
 /* ---------------------------------------------------------------------------
@@ -566,6 +574,34 @@ explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int go
   return s_explore_result;
 }
 
+/* ゴールから始める探索：走らずに、呼ばれたことと、渡された位置を覚えていたかを覚える */
+explore_result_t explore_run_from_goal(explore_type_t type, explore_start_pose_t pose,
+                                       int goal_x, int goal_y, int goal_width, int goal_height)
+{
+  (void)goal_x;  /* 使わない引数 */
+  (void)goal_y;
+  (void)goal_width;
+  (void)goal_height;
+  s_from_goal_count = s_from_goal_count + 1;
+  s_from_goal_type = type;
+  s_from_goal_pose_set = pose.is_set;
+  return s_explore_result;
+}
+
+/* 最短走行がゴールで止まった位置：覚えているかだけを決めておく（ほかの値は使わない） */
+explore_start_pose_t shortest_get_end_pose(void)
+{
+  explore_start_pose_t pose = { false, 3, 4, DIR_EAST, false, false, false };
+  pose.is_set = s_end_pose_set;
+  return pose;
+}
+
+/* 最短走行がゴールで止まった位置を忘れる */
+void shortest_forget_end_pose(void)
+{
+  s_end_pose_set = false;
+}
+
 /* 最短走行の道があるか：決めておいた答えを返す */
 bool shortest_has_route(int number, int goal_x, int goal_y)
 {
@@ -583,6 +619,7 @@ shortest_result_t shortest_run(int number, int goal_x, int goal_y)
   s_shortest_goal_x = goal_x;
   s_shortest_goal_y = goal_y;
   s_shortest_time_ms = s_now_ms;
+  s_end_pose_set = true;  /* 本物と同じく、ゴールで止まった位置を覚える */
   return SHORTEST_RESULT_DONE;
 }
 
@@ -757,7 +794,7 @@ static void test_explore_known(void)
   mode_run_once();
 
   check(s_explore_count == 1 && s_explore_type == EXPLORE_UNKNOWN_WALLS_KNOWN, "No.4 は未知壁探索＋既知区間加速");
-  check(!mode_has_action(0, 5), "モード0 の No.5 は決定できない");
+  check(mode_has_action(0, 5) && mode_has_action(0, 6) && !mode_has_action(0, 7), "モード0 は No.5・6（ゴールから始める探索。2026-11-11）まで決定できる");
   check(mode_has_action(1, 4) && mode_has_action(1, 6) && !mode_has_action(1, 7), "モード1 は No.1〜6 を決定できる");
 }
 
@@ -804,17 +841,17 @@ static void test_wrap(void)
   mode_init();
 
   rotate_left_at(100, -1);    /* モード7 */
-  rotate_right_at(100, 7);    /* No.7 */
-  press_switch_at(500);       /* モード7・No.7 は何もない：決定しない（2026-11-10 にモードを並べ直したので、No.6 から変えた） */
-  rotate_right_at(1000, 15);  /* No.7 + 15 = 22 → 一周して No.6（迷路呼び出し） */
+  rotate_right_at(100, 5);    /* No.5 */
+  press_switch_at(500);       /* モード7・No.5 は何もない：決定しない（2026-11-11 にモード7 を並べ直したので、No.7 から変えた） */
+  rotate_right_at(1000, -6);  /* No.5 - 6 = -1 → 一周して No.15（迷路呼び出し） */
   press_switch_at(1500);
   hand_at(2500, 500);
   mode_run_once();
 
-  check_leds_at(300, "0111111", "モード7・No.7 は LED2〜7 が点く");
-  check_leds_at(1200, "0111110", "モード7・No.6 は LED2〜6 が点く");
-  check(mode_get_mode() == 7 && mode_get_number() == 6, "モード7・No.6 になる");
-  check(s_flash_maze_load_count == 1, "迷路呼び出しが 1 回だけ呼ばれる（No.7 では決定しない）");
+  check_leds_at(300, "0111101", "モード7・No.5 は LED2〜5 と LED7 が点く");
+  check_leds_at(1200, "1111111", "モード7・No.15 は全部点く");
+  check(mode_get_mode() == 7 && mode_get_number() == 15, "モード7・No.15 になる");
+  check(s_flash_maze_load_count == 1, "迷路呼び出しが 1 回だけ呼ばれる（No.5 では決定しない）");
 }
 
 /* 前センサの手は、3 回続けて（0.03 秒）読んだときだけ「かざした」とみなす。短く触れただけでは始まらない */
@@ -935,6 +972,71 @@ static void test_shortest(void)
   check(s_explore_count == 0, "探索は呼ばれない");
 }
 
+/* ゴールから始める探索（モード0 No.5・6）：最短走行がゴールで止まった位置を覚えているときだけ走る。
+ * 機体を動かすモードを走らせたら忘れ、動かさないモード（ログ出力など）では覚えたまま */
+static void test_explore_from_goal(void)
+{
+  printf("[5] ゴールから始める探索\n");
+
+  /* 覚えていない：走らずに「できなかった」 */
+  reset_world();
+  mode_init();
+  rotate_right_at(100, 5);   /* モード0 No.5 */
+  press_switch_at(500);
+  mode_run_once();
+  check(s_from_goal_count == 0 && s_explore_count == 0, "覚えていなければ、ゴールから始める探索は走らない");
+  check_leds_at(840, "1100011", "決定の点滅のあと、外側の 4 個が点く（できなかった）");
+
+  /* 最短走行のあと：No.5 は未知壁探索、No.6 は未知壁探索＋既知区間加速で、覚えた位置から走る。走ったら忘れる */
+  reset_world();
+  mode_init();
+  s_end_pose_set = true;     /* 最短走行がゴールで止まったあと */
+  rotate_right_at(100, 5);   /* モード0 No.5 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+  check(s_from_goal_count == 1 && s_from_goal_type == EXPLORE_UNKNOWN_WALLS && s_from_goal_pose_set,
+        "No.5 で、覚えた位置から未知壁探索が 1 回呼ばれる");
+  check(s_explore_count == 0, "スタートからの探索は呼ばれない");
+  check(!s_end_pose_set, "走ったら、覚えた位置を忘れる");
+
+  reset_world();
+  mode_init();
+  s_end_pose_set = true;
+  rotate_right_at(100, 6);   /* モード0 No.6 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+  check(s_from_goal_count == 1 && s_from_goal_type == EXPLORE_UNKNOWN_WALLS_KNOWN, "No.6 は未知壁探索＋既知区間加速");
+
+  /* 最短走行をすると覚える。ログ出力（モード7 No.1）では覚えたまま */
+  reset_world();
+  mode_init();
+  rotate_left_at(100, 1);    /* モード1 */
+  rotate_right_at(100, 1);   /* No.1 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+  check(s_shortest_count == 1 && s_end_pose_set, "最短走行のあとは、ゴールで止まった位置を覚えている");
+  rotate_left_at(s_now_ms + 100, -2);  /* モード7 */
+  press_switch_at(s_now_ms + 500);     /* No.1 のまま決定 */
+  hand_at(s_now_ms + 1500, 500);
+  mode_run_once();
+  check(s_output_count == 1 && s_end_pose_set, "ログ出力では、覚えた位置を忘れない");
+
+  /* 機体を動かすモード（モード6 No.1 直進）を走らせたら忘れる */
+  reset_world();
+  mode_init();
+  s_end_pose_set = true;
+  rotate_left_at(100, 6);    /* モード6 */
+  rotate_right_at(100, 1);   /* No.1 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+  check(s_straight_count == 1 && !s_end_pose_set, "機体を動かすモードを走らせたら、覚えた位置を忘れる");
+  check(mode_has_action(0, 6) && !mode_has_action(0, 7), "モード0 は No.1〜6 だけ決定できる");
+}
+
 /* 最短走行で道がないときは、走らずに「できなかった」を出して選び直す */
 static void test_shortest_no_route(void)
 {
@@ -1006,19 +1108,27 @@ static void test_turn_test(void)
   mode_run_once();
   check(s_edge_test_count == 1 && s_edge_test_number == 6, "モード5 No.6 で、壁切れ・柱の見え方テストが No.6 で 1 回呼ばれる");
   check(mode_has_action(5, 4) && mode_has_action(5, 6) && !mode_has_action(5, 7),
-        "モード5 の No.4〜6 は決定できて、No.7 はできない（感度合わせは 2026-11-10 にモード7 No.3 へ移した）");
+        "モード5 の No.4〜6 は決定できて、No.7 はできない（感度合わせは 2026-11-10 にモード7 へ移した）");
 
-  /* 倍率合わせ（モード7 No.3）・壁制御の目標（No.4）は、置いた位置がずれないように、スタート待ちをせずにすぐ始まる */
+  /* 倍率合わせ（モード7 No.2）・壁制御の目標（No.3）は、置いた位置がずれないように、スタート待ちをせずにすぐ始まる */
   reset_world();
   mode_init();
   s_scale_measure_count = 0;
   s_reference_measure_count = 0;
   s_venue_reset_count = 0;
   rotate_left_at(100, 7);    /* モード7 */
-  rotate_right_at(100, 3);   /* No.3 */
+  rotate_right_at(100, 2);   /* No.2 */
   press_switch_at(500);      /* 決定（手はかざさない） */
   mode_run_once();
-  check(s_scale_measure_count == 1 && s_reference_measure_count == 0, "モード7 No.3 で、倍率合わせが、手をかざさなくても 1 回呼ばれる");
+  check(s_scale_measure_count == 1 && s_reference_measure_count == 0, "モード7 No.2 で、倍率合わせが、手をかざさなくても 1 回呼ばれる");
+
+  reset_world();
+  mode_init();
+  rotate_left_at(100, 7);    /* モード7 */
+  rotate_right_at(100, 3);   /* No.3 */
+  press_switch_at(500);      /* 決定 */
+  mode_run_once();
+  check(s_reference_measure_count == 1 && s_scale_measure_count == 1, "モード7 No.3 で、壁制御の目標が 1 回呼ばれる（倍率合わせは呼ばれない）");
 
   reset_world();
   mode_init();
@@ -1026,19 +1136,11 @@ static void test_turn_test(void)
   rotate_right_at(100, 4);   /* No.4 */
   press_switch_at(500);      /* 決定 */
   mode_run_once();
-  check(s_reference_measure_count == 1 && s_scale_measure_count == 1, "モード7 No.4 で、壁制御の目標が 1 回呼ばれる（倍率合わせは呼ばれない）");
-
-  reset_world();
-  mode_init();
-  rotate_left_at(100, 7);    /* モード7 */
-  rotate_right_at(100, 5);   /* No.5 */
-  press_switch_at(500);      /* 決定 */
-  mode_run_once();
   check(s_venue_reset_count == 1 && s_scale_measure_count == 1 && s_reference_measure_count == 1,
-        "モード7 No.5 で、元に戻すが 1 回呼ばれる（測るほうは呼ばれない）");
-  check(mode_has_action(7, 1) && mode_has_action(7, 2) && mode_has_action(7, 5) && mode_has_action(7, 6)
-        && !mode_has_action(7, 7) && !mode_has_action(7, 15),
-        "モード7 は No.1〜6 だけ決定できる（迷路呼び出しは 2026-11-10 に No.15 から No.6 へ移した）");
+        "モード7 No.4 で、元に戻すが 1 回呼ばれる（測るほうは呼ばれない）");
+  check(mode_has_action(7, 1) && mode_has_action(7, 4) && !mode_has_action(7, 5) && !mode_has_action(7, 13)
+        && mode_has_action(7, 14) && mode_has_action(7, 15),
+        "モード7 は No.1〜4 と No.14・15 だけ決定できる（ゴールと迷路呼び出しは 2026-11-11 に No.14・15 へ移した）");
 
   /* 吸引 ON（モード6 No.3）も、スタート待ちのあとに始まる */
   reset_world();
@@ -1227,7 +1329,7 @@ static void test_uturn_and_align(void)
   check(s_align_count == 1 && s_uturn_count == 0 && s_pivot_count == 0, "No.4 で壁合わせだけが 1 回呼ばれる");
 }
 
-/* モード7 No.2 を選んで、x = 20、y = 3 を入れる */
+/* モード7 No.14 を選んで、x = 20、y = 3 を入れる */
 static void test_goal_input(void)
 {
   printf("[6] ゴールの位置を入れる\n");
@@ -1235,7 +1337,7 @@ static void test_goal_input(void)
   mode_init();   /* Flash にゴールがないので、最初は基準のゴール (7, 7) */
 
   rotate_left_at(100, -1);    /* モード7 */
-  rotate_right_at(100, 2);    /* No.2 */
+  rotate_right_at(100, -2);   /* No.14 */
   press_switch_at(1000);      /* 決定 */
   hand_at(2000, 500);         /* スタート：3530 ms ごろから x の入力 */
   rotate_right_at(5000, 13);  /* x = 7 + 13 = 20 */
@@ -1259,7 +1361,7 @@ static void test_goal_input_invalid(void)
   mode_init();
 
   rotate_left_at(100, -1);
-  rotate_right_at(100, 2);
+  rotate_right_at(100, -2);    /* No.14 */
   press_switch_at(2000);
   hand_at(4000, 500);          /* x の入力は 5830 ms ごろから */
   rotate_right_at(8000, -7);   /* x = 0 */
@@ -1298,7 +1400,7 @@ static void test_output(void)
   check_leds_at(s_now_ms - LOADING_MS - 500, "1111111", "出し終わったら、全部を 1 秒点ける（うまくいった）");
 }
 
-/* 迷路呼び出し（モード7 No.6）：保存した迷路があれば全部を 1 秒点け、なければ外側の 4 個を速く点滅させる */
+/* 迷路呼び出し（モード7 No.15）：保存した迷路があれば全部を 1 秒点け、なければ外側の 4 個を速く点滅させる */
 static void test_load_maze(void)
 {
   printf("[6] 迷路呼び出し\n");
@@ -1306,7 +1408,7 @@ static void test_load_maze(void)
   mode_init();
   s_flash_has_maze = true;
   rotate_left_at(100, -1);    /* モード7 */
-  rotate_right_at(100, 6);    /* No.6 */
+  rotate_right_at(100, -1);   /* No.15 */
   press_switch_at(500);
   hand_at(1500, 500);
   mode_run_once();
@@ -1317,7 +1419,7 @@ static void test_load_maze(void)
   mode_init();
   s_flash_has_maze = false;
   rotate_left_at(100, -1);    /* モード7 */
-  rotate_right_at(100, 6);    /* No.6 */
+  rotate_right_at(100, -1);   /* No.15 */
   press_switch_at(500);
   hand_at(1500, 500);
   mode_run_once();
@@ -1354,6 +1456,7 @@ int main(void)
   test_turn_test();
   test_shortest();
   test_shortest_no_route();
+  test_explore_from_goal();
   test_straight();
   test_pivot();
   test_slalom();
