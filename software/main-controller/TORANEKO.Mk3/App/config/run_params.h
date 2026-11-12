@@ -157,6 +157,23 @@
 #define SUCTION_TEST_STEPS    7     /* 段の数（7 段目が 7.0V。drv/fan.c の上限 FAN_LIMIT_V と同じ。LED も 7 個） */
 #define SUCTION_TEST_HOLD_MS  5000  /* 1 段を回す時間 [ms]（はかりの表示が落ち着いてから読めるように） */
 
+/* ---- グリップの上限（最短走行の直進の加速度。2026-11-11。sys/shortest.c の grip_accel_limit_mm_s2()） ----
+ * 吸引すると床に押しつけられて、滑りにくくなる。滑り始める加速度は、だいたい
+ *   滑り始める加速度 = 吸引なしで滑り始める加速度 ×（機体の重さ + 吸引の力）÷ 機体の重さ
+ * （2026-11-03 の加速度テストで、吸引 55g のとき、この式で約 11000mm/s²、測ると 12000mm/s² から滑り始めた）。
+ * 最短走行の直進の加速度（No. ごとの SHORTEST*_ACCEL_MM_S2・*_DIAG_ACCEL_MM_S2）は、これに GRIP_MARGIN をかけた値を超えないようにする。
+ * 吸引の力は、その No. の吸引の電圧から、下の表（2026-11-10 に測った）で出す（あいだは直線でつなぐ。7V より上は 7V の値）。
+ * 今の値だと、吸引なしで約 2900、5V で約 17300、7V で約 21700mm/s²。 */
+#define GRIP_NO_SUCTION_SLIP_MM_S2 3600.0f  /* 吸引なしで滑り始める加速度 [mm/s²]（2026-11-03 の加速度テスト。μ 約 0.37） */
+#define GRIP_MARGIN                0.8f     /* 滑り始める加速度の何割まで使うか */
+#define SUCTION_FORCE_1V_G  10.0f   /* 吸引の電圧ごとの吸引の力 [g]（2026-11-10 に測った。上の SUCTION_TEST の説明） */
+#define SUCTION_FORCE_2V_G  50.0f
+#define SUCTION_FORCE_3V_G  80.0f
+#define SUCTION_FORCE_4V_G  110.0f
+#define SUCTION_FORCE_5V_G  130.0f
+#define SUCTION_FORCE_6V_G  150.0f
+#define SUCTION_FORCE_7V_G  170.0f
+
 /* ---- その場旋回 ---- */
 
 #define PIVOT_OMEGA_DEG_S  720.0f   /* 最高の角速度 [deg/s]（KOGUMA は 2000。まずゆっくり） */

@@ -55,6 +55,13 @@
  * 最後がターンで止まったとき（ゴールの次の区画へ進めず、最後のターンのあとで止まったとき。ふつうは起きない）は、
  * 止まった位置が区画のまん中からずれているかもしれないので、何もしない（覚えない）
  *
+ * ■ 直進の加速度とグリップの上限（2026-11-11）
+ * 直進・斜めの直進の加速度は、No. ごとに決めた値（config/run_params.h の SHORTEST*_ACCEL_MM_S2）と、
+ * その No. の吸引の電圧から出した「タイヤが滑らない加速度」（グリップの上限。grip_accel_limit_mm_s2()）の小さいほうにする。
+ * 吸引を強くすると上限が上がり、弱くすると下がる（式と値は config/run_params.h の「グリップの上限」）。
+ * 今の値では、No.3（3000mm/s²、吸引なし）だけが上限の約 2880mm/s² で抑えられ、No.4〜7（5.0V で上限 約 17300mm/s²）は決めた値のまま。
+ * 速くするときは、さらにモーターが出せる加速度でも抑えられる（ctrl/trajectory.c）
+ *
  * ■ スタートの位置
  * 経路は、スタート区画 (0,0) の南の辺から始まる。機体は、お尻を後ろの壁に付けて置くので、
  * タイヤの軸は南の辺より HALF_CELL_MM − START_OFFSET_MM（35mm）前にある。最初の直進は、その分だけ短くする。
@@ -64,6 +71,7 @@
 #include <math.h>
 #include <stdbool.h>
 
+#include "config/robot_params.h"
 #include "config/run_params.h"
 #include "config/turn_params.h"
 #include "ctrl/run.h"
@@ -119,8 +127,8 @@ static float max_speed_mm_s(int number)
   return SHORTEST1_MAX_SPEED_MM_S;
 }
 
-/* No. ごとの、直進の加速度 [mm/s²] */
-static float accel_mm_s2(int number)
+/* No. ごとの、決めた直進の加速度 [mm/s²]（config/run_params.h の SHORTEST*_ACCEL_MM_S2。グリップの上限で抑える前） */
+static float set_accel_mm_s2(int number)
 {
   if (number == 2) {
     return SHORTEST2_ACCEL_MM_S2;
@@ -158,8 +166,8 @@ static float diag_max_speed_mm_s(int number)
   return SHORTEST4_DIAG_MAX_SPEED_MM_S;
 }
 
-/* No. ごとの、斜めの直進の加速度 [mm/s²]（No.4〜7 だけ使う） */
-static float diag_accel_mm_s2(int number)
+/* No. ごとの、決めた斜めの直進の加速度 [mm/s²]（No.4〜7 だけ使う。グリップの上限で抑える前） */
+static float set_diag_accel_mm_s2(int number)
 {
   if (number == 5) {
     return SHORTEST5_DIAG_ACCEL_MM_S2;
@@ -186,6 +194,75 @@ static float suction_voltage_v(int number)
     return SHORTEST7_SUCTION_V;
   }
   return SHORTEST4_SUCTION_V;
+}
+
+/* 2 つの点 (v0, g0)・(v1, g1) を直線でつないだときの、v のところの値（吸引の力の表のあいだを埋める） */
+static float between_g(float v, float v0, float g0, float v1, float g1)
+{
+  return g0 + (g1 - g0) * (v - v0) / (v1 - v0);
+}
+
+/* 吸引の電圧 suction_v [V] のときの、吸引の力 [g]（config/run_params.h の SUCTION_FORCE_*。あいだは直線でつなぐ） */
+static float suction_force_g(float suction_v)
+{
+  if (suction_v <= 0.0f) {
+    return 0.0f;
+  }
+  if (suction_v <= 1.0f) {
+    return between_g(suction_v, 0.0f, 0.0f, 1.0f, SUCTION_FORCE_1V_G);
+  }
+  if (suction_v <= 2.0f) {
+    return between_g(suction_v, 1.0f, SUCTION_FORCE_1V_G, 2.0f, SUCTION_FORCE_2V_G);
+  }
+  if (suction_v <= 3.0f) {
+    return between_g(suction_v, 2.0f, SUCTION_FORCE_2V_G, 3.0f, SUCTION_FORCE_3V_G);
+  }
+  if (suction_v <= 4.0f) {
+    return between_g(suction_v, 3.0f, SUCTION_FORCE_3V_G, 4.0f, SUCTION_FORCE_4V_G);
+  }
+  if (suction_v <= 5.0f) {
+    return between_g(suction_v, 4.0f, SUCTION_FORCE_4V_G, 5.0f, SUCTION_FORCE_5V_G);
+  }
+  if (suction_v <= 6.0f) {
+    return between_g(suction_v, 5.0f, SUCTION_FORCE_5V_G, 6.0f, SUCTION_FORCE_6V_G);
+  }
+  if (suction_v <= 7.0f) {
+    return between_g(suction_v, 6.0f, SUCTION_FORCE_6V_G, 7.0f, SUCTION_FORCE_7V_G);
+  }
+  return SUCTION_FORCE_7V_G;  /* 7V より上は測っていないので、7V の値 */
+}
+
+/* No. ごとの、グリップの上限 [mm/s²]（config/run_params.h の「グリップの上限」の説明）。
+ * 吸引するのは No.4〜7 だけなので、No.1〜3 は吸引なしの値 */
+static float grip_accel_limit_mm_s2(int number)
+{
+  float suction_v = 0.0f;
+  if (uses_diagonal(number)) {
+    suction_v = suction_voltage_v(number);
+  }
+  float force_g = suction_force_g(suction_v);
+  float slip_mm_s2 = GRIP_NO_SUCTION_SLIP_MM_S2 * (ROBOT_MASS_G + force_g) / ROBOT_MASS_G;
+  return slip_mm_s2 * GRIP_MARGIN;
+}
+
+/* No. ごとの、直進の加速度 [mm/s²]。決めた加速度と、グリップの上限の小さいほう（減速も同じ値。滑るのは減速でも同じため） */
+static float accel_mm_s2(int number)
+{
+  float grip_mm_s2 = grip_accel_limit_mm_s2(number);
+  if (grip_mm_s2 < set_accel_mm_s2(number)) {
+    return grip_mm_s2;
+  }
+  return set_accel_mm_s2(number);
+}
+
+/* No. ごとの、斜めの直進の加速度 [mm/s²]（No.4〜7 だけ使う）。決めた加速度と、グリップの上限の小さいほう */
+static float diag_accel_mm_s2(int number)
+{
+  float grip_mm_s2 = grip_accel_limit_mm_s2(number);
+  if (grip_mm_s2 < set_diag_accel_mm_s2(number)) {
+    return grip_mm_s2;
+  }
+  return set_diag_accel_mm_s2(number);
 }
 
 /* No. ごとの、ターンの値の組（No.6 は組 2〈7 つとも 1000mm/s〉、No.7 は組 3〈ゆるいターン 1200mm/s・きついターン 1000mm/s〉、
