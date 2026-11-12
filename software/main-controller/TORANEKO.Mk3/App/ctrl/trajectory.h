@@ -16,6 +16,7 @@ typedef enum {
 
 void trajectory_reset(void);
 void trajectory_start_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2);
+void trajectory_start_straight_back(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
 void trajectory_start_pivot(float angle_deg, float max_omega_deg_s, float alpha_deg_s2);
 void trajectory_start_slalom(float angle_deg, float speed_mm_s, float max_omega_deg_s, float alpha_deg_s2);
 void trajectory_update(void);
@@ -35,5 +36,9 @@ float trajectory_get_alpha_deg_s2(void);
 float trajectory_get_angle_deg(void);
 float trajectory_get_overrun_mm(void);
 void trajectory_add_distance(float delta_mm);
+
+/* 直進の加速度の上限（速さで変わる。trajectory.c の「■ 直進の加速度は速さで変わる」） */
+float trajectory_straight_accel_mm_s2(float speed_mm_s, float accel_mm_s2);
+float trajectory_reachable_speed_mm_s(float start_mm_s, float distance_mm, float accel_mm_s2, float max_speed_mm_s);
 
 #endif /* CTRL_TRAJECTORY_H */

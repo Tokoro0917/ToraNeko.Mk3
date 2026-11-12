@@ -6,5 +6,6 @@
 #define SYS_SUCTION_H
 
 void suction_ramp_up(void);
+void suction_ramp_up_to(float voltage_v);
 
 #endif /* SYS_SUCTION_H */

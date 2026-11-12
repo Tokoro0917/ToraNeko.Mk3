@@ -41,7 +41,7 @@
  * 942 のままだと、右の壁から遠いと読んで、まん中より右に寄ったところで落ち着いていた。
  * 2026-11-10 に作者が、ほかの迷路で 1205・758 にしたが、それは感度合わせの倍率が間違っていた（横の値が小さく直されていた）
  * のを埋め合わせたものだった。同じ日に、会場では、区画の中心に置いて測った値を目標にできるようにした
- * （モード7 No.4。下の wall_reference_left()）。ここの値は、会場で測っていないときに使う、家の迷路の値 */
+ * （モード7 No.3。下の wall_reference_left()）。ここの値は、会場で測っていないときに使う、家の迷路の値 */
 #define LEFT_WALL_REFERENCE  WALL_HOME_CENTER_LEFT   /* 1460（ctrl/wall_ctrl.h） */
 #define RIGHT_WALL_REFERENCE WALL_HOME_CENTER_RIGHT  /* 815 */
 
@@ -118,7 +118,7 @@ sensor_scale_t wall_ctrl_get_sensor_scale(void)
 }
 
 /* 横の壁に沿って走る補正の目標（wall_ctrl.h の wall_reference_t）。会場で測った値（そのままの値）。
- * メインの処理（モード7 No.4、電源を入れたとき）で書き、制御周期の割り込みでも読むので volatile にする */
+ * メインの処理（モード7 No.3、電源を入れたとき）で書き、制御周期の割り込みでも読むので volatile にする */
 static volatile bool s_reference_is_set = false;
 static volatile float s_reference_left_raw = 0.0f;
 static volatile float s_reference_right_raw = 0.0f;

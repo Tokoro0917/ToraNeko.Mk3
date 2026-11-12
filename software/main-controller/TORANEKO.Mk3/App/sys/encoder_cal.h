@@ -1,6 +1,6 @@
 /*
  * encoder_cal.h
- * エンコーダの歪みを測る（モード6 No.6。MODES.md）
+ * エンコーダの歪みを測る（モード6 No.5。MODES.md）
  */
 #ifndef SYS_ENCODER_CAL_H
 #define SYS_ENCODER_CAL_H

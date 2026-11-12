@@ -20,7 +20,7 @@
  *
  * ■ 歪みの補正
  * 読んだ角度は、磁石の付け方のずれなどで本当の角度から少しずれている。config/encoder_correction.h の表で
- * 直した角度で、回った量（total）を数える。表はモード6 No.6（sys/encoder_cal.c）で測って作る。
+ * 直した角度で、回った量（total）を数える。表はモード6 No.5（sys/encoder_cal.c）で測って作る。
  * get_left_angle・get_right_angle は、直す前の読んだままの角度を返す（表を作るときに使うため）。
  *
  * ■ 割り込み

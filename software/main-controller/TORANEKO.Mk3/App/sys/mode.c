@@ -12,32 +12,40 @@
  *   フェイルセーフを解除したとき）「ロード中」（約 1 秒）を出す。このあいだはスイッチを押しても何も起きないので、
  *   続けて押したスイッチが、次の決定にならない（2026-10-22 に決定）
  *
- * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す）
+ * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す。2026-11-10 に、番号の穴をなくし、
+ *   似たものを同じモードに集めるように並べ直した。作者が決めた）
  *   モード0 No.1〜4  探索（往復・片道・未知壁探索・未知壁探索＋既知区間加速）
- *   モード1 No.1〜5  最短走行（No.1〜3 は曲がるところが探索と同じ小回りで、直進の速さが No.1 → 3 で速くなる。
- *                    No.4・5 は大回り・斜めのターンで曲がる）。
- *                    決定したときに道がなければ、「できなかった」を出して選び直す
+ *   モード1 No.1〜7  最短走行（No.1〜3 は曲がるところが探索と同じ小回りで、直進の速さが No.1 → 3 で速くなる。
+ *                    No.4〜7 は大回り・斜めのターンで曲がる。No.6 はターンが 7 つとも 1000mm/s、
+ *                    No.7 はゆるいターン 1200mm/s・きついターン 1000mm/s）。直進の加速度は、吸引の強さから出した
+ *                    グリップの上限で抑える（sys/shortest.c）。
+ *                    決定したときに道がなければ、「できなかった」を出して選び直す。
+ *                    ゴールで止まったら、入ってきた向きを向いて、止まった位置を覚える
  *   モード2 No.1     スラローム 90°（探索の速さで左に曲がり、左の区画のまん中で止まる）
  *   モード2 No.2     U ターン（行き止まりで止まり、前壁合わせ、180°、戻って止まる）
- *   モード2 No.4     その場 180° 旋回（左に回って止まる。旋回の制御の係数を合わせる）
- *   モード2 No.5     壁合わせだけ（前の壁で位置と向きを直す）
+ *   モード2 No.3     その場 180° 旋回（左に回って止まる。旋回の制御の係数を合わせる）
+ *   モード2 No.4     壁合わせだけ（前の壁で位置と向きを直す）
  *   モード3 No.1〜7  最短走行のターンを 1 つずつ（大回り 90°・180°、斜め入り 45°・135°、斜め出 45°・135°、V90°。左だけ）
+ *   モード3 No.8・9  斜めの直進のテスト（No.8 は斜めの補正なし、No.9 はあり）
+ *   モード4 No.1〜13 加速度テスト（No.1〜5 は吸引なし 2000〜4000mm/s²、No.6〜13 は吸引あり 4000〜21000mm/s²）
  *   モード5 No.1     センサ値の表示（スイッチを押すと終わる）
  *   モード5 No.2     センサ値の記録（区画のまん中で 1 秒測り、平均をモード7 No.1 で出す）
  *   モード5 No.3     壁までの距離の表示（センサの値と距離 [mm] を出し続ける。スイッチを押すと終わる）
  *   モード5 No.4〜6  壁切れ・柱の見え方テスト
- *   モード6 No.1     直進（ゆっくり 360mm 走って止まる。タイヤの直径と、制御の係数を合わせる）
+ *   モード6 No.1     直進（ゆっくり 280mm 走って止まる。タイヤの直径と、制御の係数を合わせる）
+ *   モード6 No.2     壁に沿って直進（横の壁に沿って走る補正を入れて、4 区画走って止まる）
  *   モード6 No.3     吸引 ON（吸引ファンを回し、スイッチを押すまで吸い続ける）
- *   モード6 No.6     エンコーダの歪みを測る
- *   モード6 No.7     壁に沿って直進（横の壁に沿って走る補正を入れて、4 区画走って止まる）（タイヤを浮かせて、左右のモーターを回す）
+ *   モード6 No.4     吸引の力（吸引の強さを段ごとに上げて回す。はかりで測る）
+ *   モード6 No.5     エンコーダの歪みを測る（タイヤを浮かせて、左右のモーターを回す）
  *   モード7 No.1     ログ出力（迷路と走行ログを PC へ出す）
- *   モード7 No.2     ゴールの位置を入れる
- *   モード7 No.3     倍率合わせ（区画の境目で測って、感度の倍率を Flash に保存する。置いた位置がずれないように、
+ *   モード7 No.2     倍率合わせ（区画の境目で測って、感度の倍率を Flash に保存する。置いた位置がずれないように、
  *                    スタート待ちをせず、決定してから 2 秒後に測る）
- *   モード7 No.4     壁制御の目標（区画の中心で測って、横の壁に沿う補正の目標を Flash に保存する。No.3 と同じく 2 秒後に測る）
- *   モード7 No.5     倍率と壁制御の目標を元に戻す（倍率 1、目標は家の値にして保存する。決定するとすぐ）
- * Flash に書く操作（ゴール、倍率、目標、迷路呼び出し）は、モード7 にまとめる（2026-11-10。作者が決めた）。
+ *   モード7 No.3     壁制御の目標（区画の中心で測って、横の壁に沿う補正の目標を Flash に保存する。No.2 と同じく 2 秒後に測る）
+ *   モード7 No.4     倍率と壁制御の目標を元に戻す（倍率 1、目標は家の値にして保存する。決定するとすぐ）
+ *   モード7 No.14    ゴールの位置を入れる
  *   モード7 No.15    迷路呼び出し（Flash に保存した迷路を RAM に戻す）
+ *   （ゴールの位置と迷路呼び出しは、2026-11-11 に作者の案で No.14・15 へ移し、あいたところを詰めた）
+ * Flash に書く・読む操作（ゴール、倍率、目標、迷路呼び出し）は、モード7 にまとめる（2026-11-10。作者が決めた）。
  * No.0 と、まだ何もない番号では、スイッチを押しても決定しない（何も起きない）。
  */
 #include "sys/mode.h"
@@ -95,7 +103,7 @@ bool mode_has_action(int mode, int number)
     return false;
   }
   if (mode == 1) {
-    if (number >= 1 && number <= 6) {
+    if (number >= 1 && number <= 7) {
       return true;  /* 最短走行 */
     }
     return false;
@@ -107,71 +115,35 @@ bool mode_has_action(int mode, int number)
     return false;
   }
   if (mode == 2) {
-    if (number == 1) {
-      return true;  /* スラローム 90° */
-    }
-    if (number == 2) {
-      return true;  /* U ターン */
-    }
-    if (number == 4) {
-      return true;  /* その場 180° 旋回 */
-    }
-    if (number == 5) {
-      return true;  /* 壁合わせだけ */
+    if (number >= 1 && number <= 4) {
+      return true;  /* スラローム 90°、U ターン、その場 180° 旋回、壁合わせだけ */
     }
     return false;
   }
   if (mode == 4) {
-    if (number == 1) {
-      return true;  /* 吸引なしの加速度テスト */
-    }
-    if (number == 3) {
-      return true;  /* 吸引の力 */
-    }
-    if (number >= 4 && number <= 11) {
-      return true;  /* 吸引ありの加速度テスト */
+    if (number >= 1 && number <= 13) {
+      return true;  /* 加速度テスト（No.1〜5 は吸引なし、No.6〜13 は吸引あり） */
     }
     return false;
   }
   if (mode == 5) {
-    if (number == 1) {
-      return true;  /* センサ値の表示 */
-    }
-    if (number == 2) {
-      return true;  /* センサ値の記録 */
-    }
-    if (number == 3) {
-      return true;  /* 壁までの距離の表示 */
-    }
-    if (number >= 4 && number <= 6) {
-      return true;  /* 壁切れ・柱の見え方テスト */
+    if (number >= 1 && number <= 6) {
+      return true;  /* センサ値の表示・記録、壁までの距離の表示、壁切れ・柱の見え方テスト */
     }
     return false;
   }
   if (mode == 6) {
-    if (number == 1) {
-      return true;  /* 直進 */
-    }
-    if (number == 3) {
-      return true;  /* 吸引 ON */
-    }
-    if (number == 6) {
-      return true;  /* エンコーダの歪みを測る */
-    }
-    if (number == 7) {
-      return true;  /* 壁に沿って直進 */
+    if (number >= 1 && number <= 5) {
+      return true;  /* 直進、壁に沿って直進、吸引 ON、吸引の力、エンコーダの歪み */
     }
     return false;
   }
   if (mode == 7) {
-    if (number == 1 || number == 2) {
-      return true;  /* ログ出力、ゴールの位置 */
+    if (number >= 1 && number <= 4) {
+      return true;  /* ログ出力、倍率合わせ、壁制御の目標、元に戻す */
     }
-    if (number >= 3 && number <= 5) {
-      return true;  /* 倍率合わせ、壁制御の目標、元に戻す */
-    }
-    if (number == 15) {
-      return true;  /* 迷路呼び出し */
+    if (number == 14 || number == 15) {
+      return true;  /* ゴールの位置、迷路呼び出し */
     }
     return false;
   }
@@ -254,7 +226,7 @@ static void run_shortest(int number)
   shortest_result_t result = shortest_run(number, goal_get_x(), goal_get_y());
 
   if (result == SHORTEST_RESULT_DONE) {
-    ui_signal_ok();  /* ゴールで止まった。スタートへは手で戻す */
+    ui_signal_ok();  /* ゴールで止まり、入ってきた向きを向いた。スタートへは手で戻す */
   } else if (result == SHORTEST_RESULT_FAILSAFE) {
     /* 7 個全部を点滅させて、スイッチが押されるまで待ち、フェイルセーフを解除する */
     ui_wait_failsafe_reset();
@@ -284,7 +256,7 @@ static int input_goal_value(int value, int value_max)
   }
 }
 
-/* ゴールの位置（左下の区画の x・y）を入れて、Flash に保存する（MODES.md のモード7 No.2）。
+/* ゴールの位置（左下の区画の x・y）を入れて、Flash に保存する（MODES.md のモード7 No.14）。
  * 使えない位置（スタートの区画を含む）なら、保存せずに x の入力に戻る */
 static void input_goal(void)
 {
@@ -312,16 +284,16 @@ static void load_maze(void)
   }
 }
 
-/* 出力と設定（No.1 ログ出力、No.2 ゴールの位置、No.15 迷路呼び出し。No.3〜5 はスタート待ちをしないので mode_run_once() で呼ぶ） */
+/* 出力と設定（No.1 ログ出力、No.14 ゴールの位置、No.15 迷路呼び出し。No.2〜4 はスタート待ちをしないので mode_run_once() で呼ぶ） */
 static void run_setting(int number)
 {
   if (number == 1) {
     adjust_print_last_result();  /* 最後に走らせた調整の動きの結果（走ったときはケーブルを挿していないので、ここで出す） */
     sensor_record_print();       /* 最後に測ったセンサ値の記録（モード5 No.2） */
-    venue_print();               /* 今の会場ごとの感度の倍率と、壁制御の目標（モード7 No.3・4） */
+    venue_print();               /* 今の会場ごとの感度の倍率と、壁制御の目標（モード7 No.2・3） */
     output_all(goal_get_x(), goal_get_y());
     ui_signal_ok();  /* 出し終わった */
-  } else if (number == 2) {
+  } else if (number == 14) {
     input_goal();
   } else if (number == 15) {
     load_maze();
@@ -343,14 +315,12 @@ static void run_selected(void)
     adjust_slalom_90();
   } else if (s_mode == 2 && s_number == 2) {
     adjust_uturn();
-  } else if (s_mode == 2 && s_number == 4) {
+  } else if (s_mode == 2 && s_number == 3) {
     adjust_pivot_180();
-  } else if (s_mode == 2 && s_number == 5) {
+  } else if (s_mode == 2 && s_number == 4) {
     adjust_front_align();
   } else if (s_mode == 3) {
     turn_test_run(s_number);
-  } else if (s_mode == 4 && s_number == 3) {
-    adjust_suction_force();
   } else if (s_mode == 4) {
     adjust_accel_test(s_number);
   } else if (s_mode == 5 && s_number == 2) {
@@ -359,12 +329,14 @@ static void run_selected(void)
     edge_test_run(s_number);
   } else if (s_mode == 6 && s_number == 1) {
     adjust_straight();
+  } else if (s_mode == 6 && s_number == 2) {
+    adjust_straight_along_wall();
   } else if (s_mode == 6 && s_number == 3) {
     adjust_suction_on();
-  } else if (s_mode == 6 && s_number == 6) {
+  } else if (s_mode == 6 && s_number == 4) {
+    adjust_suction_force();
+  } else if (s_mode == 6 && s_number == 5) {
     encoder_cal_run();
-  } else if (s_mode == 6 && s_number == 7) {
-    adjust_straight_along_wall();
   } else if (s_mode == 7) {
     run_setting(s_number);
   }
@@ -383,11 +355,11 @@ void mode_run_once(void)
     sensor_view_run();  /* スタート待ちをしない */
   } else if (s_mode == 5 && s_number == 3) {
     sensor_view_distance_run();  /* スタート待ちをしない（前センサの値を見たいので） */
-  } else if (s_mode == 7 && s_number == 3) {
+  } else if (s_mode == 7 && s_number == 2) {
     venue_measure_scale_run();  /* スタート待ちをしない（手をかざすと、置いた位置がずれやすい） */
-  } else if (s_mode == 7 && s_number == 4) {
+  } else if (s_mode == 7 && s_number == 3) {
     venue_measure_reference_run();  /* 同じ */
-  } else if (s_mode == 7 && s_number == 5) {
+  } else if (s_mode == 7 && s_number == 4) {
     venue_reset_run();  /* スタート待ちをしない（動かないので） */
   } else if (ui_wait_start(s_mode, s_number)) {
     run_selected();

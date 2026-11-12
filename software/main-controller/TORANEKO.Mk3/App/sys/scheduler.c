@@ -52,7 +52,7 @@ static volatile bool s_has_last_start = false;         /* 前の回の時刻が�
 static void run_control(void)
 {
   encoder_update();
-  encoder_cal_record();  /* エンコーダの歪みを測っているときだけ、角度を記録する（モード6 No.6） */
+  encoder_cal_record();  /* エンコーダの歪みを測っているときだけ、角度を記録する（モード6 No.5） */
   imu_update();
   odometry_update();     /* エンコーダから、速さと距離を求める */
   control_update();      /* 走っているときだけ、目標の速さ・向きになるようにモーターの電圧を決める */

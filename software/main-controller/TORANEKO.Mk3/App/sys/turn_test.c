@@ -14,7 +14,7 @@
  *      吸引なしでは 4000mm/s² で前後に滑っていて、500mm/s のターンの横向きの加速度 3000〜5800mm/s² では滑る）
  *   2. ジャイロのゼロ点を測り直す（約 0.5 秒。吸ったまま測る）
  *   3. そのターンの速さ（config/turn_params.h の *_SPEED_MM_S。組 1 は、ゆるいターン 800mm/s、きついターン 600mm/s。
- *      組 2 は 7 つとも 1000mm/s。どちらの組かは config/turn_params.h の TURN_TEST_TURN_SET で選ぶ）まで
+ *      組 2 は 7 つとも 1000mm/s、組 3 はゆるいターン 1200mm/s・きついターン 1000mm/s。どの組かは config/turn_params.h の TURN_TEST_TURN_SET で選ぶ）まで
  *      速くしながら、ターンの始まりまで進む
  *        No.1〜4：スタート区画から、次の区画のまん中まで（START_OFFSET_MM + 1 区画 = 100mm）
  *        No.5〜7：区画の辺のまん中から、斜めに 1 つぶん（63.6mm）進んで、次の辺のまん中まで
@@ -78,7 +78,7 @@ static void prepare(void)
 {
   run_fast_set_turn_set(TURN_TEST_TURN_SET);  /* 走らせる組（config/turn_params.h） */
   run_fast_set_diag_correction(false);  /* ターンの調整では、斜めの補正を入れない（先頭のコメント） */
-  suction_ramp_up();  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
+  suction_ramp_up_to(TURN_TEST_SUCTION_V);  /* 0.5 秒かけて吸引を上げる（sys/suction.c。電圧は config/turn_params.h） */
   ui_wait_ms(TURN_TEST_SUCTION_WAIT_MS);
   run_fast_start();   /* ジャイロのゼロ点を測り直してから、制御を始める */
   log_start(TURN_TEST_LOG_INTERVAL_MS);  /* ターンを細かく見たいので、ログは 1ms ごとにし直す */

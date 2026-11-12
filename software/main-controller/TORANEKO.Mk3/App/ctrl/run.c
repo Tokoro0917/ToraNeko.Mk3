@@ -81,7 +81,6 @@
 #include "ctrl/trajectory.h"
 #include "ctrl/wall_ctrl.h"
 #include "drv/imu.h"
-#include "drv/motor.h"
 #include "drv/timebase.h"
 #include "sys/failsafe.h"
 #include "sys/log.h"
@@ -656,17 +655,25 @@ void run_search_turn_back_at_center(void)
 }
 
 /* 止まっている → まっすぐ後ろへゆっくり下がって、お尻を後ろの壁に押し当てて止まる（スタート区画に戻ったときの最後。sys/explore.c）。
- * 制御（目標の速さに合わせる計算）は止めたまま、左右のモーターに同じ電圧を後ろ向きに BACK_TO_WALL_MS だけかける
- * （config/run_params.h の BACK_TO_WALL_*）。機体は後ろへ進む目標を作れないので、電圧を直接かける（sys/encoder_cal.c と同じやり方）。
- * 壁に当たると止まり、押し当てているあいだに、お尻が壁に沿う。これで、走り出す前の置き方（お尻を後ろの壁に付ける）と同じになる */
+ * 速さの制御をしながら（左右のタイヤを同じ速さで回す）、区画のまん中から START_OFFSET_MM + BACK_TO_WALL_PRESS_MM 下がる
+ * （config/run_params.h の BACK_TO_WALL_*）。壁に当たって止まると、頼んだ位置との差の分だけ後ろへ押し続けるので、
+ * BACK_TO_WALL_PRESS_MS 待つあいだに、お尻が壁に沿う。これで、走り出す前の置き方（お尻を後ろの壁に付ける）と同じになる。
+ * 横の壁に沿う補正は切る（前へ進むときの向きで計算しているため）。終わったら、モーターの出力を 0 にして止まっている */
 void run_search_back_to_wall(void)
 {
   if (failsafe_is_stopped()) {
     return;
   }
-  motor_set_voltage(-BACK_TO_WALL_V, -BACK_TO_WALL_V);  /* - が後ろ向き */
-  timebase_wait_ms(BACK_TO_WALL_MS);
-  motor_stop();
+  control_restart();                 /* 止まっているので、制御を始め直す（向きは、今の向きをまっすぐにする） */
+  control_set_wall_control(false);   /* 横の壁に沿う補正は使わない */
+  trajectory_start_straight_back(START_OFFSET_MM + BACK_TO_WALL_PRESS_MM, BACK_TO_WALL_SPEED_MM_S,
+                                 BACK_TO_WALL_ACCEL_MM_S2);
+  wait_until_done();
+  if (failsafe_is_stopped()) {
+    return;
+  }
+  timebase_wait_ms(BACK_TO_WALL_PRESS_MS);  /* 押し当てたまま待つ */
+  control_stop();                           /* 制御をやめて、モーターを止める */
 }
 
 /* 止まっている → 前に壁があれば前壁合わせをして、その場で向きを変えて（turn）、
@@ -811,7 +818,7 @@ static void fast_turn(float speed_mm_s, fast_turn_values_t turn, bool is_left)
   wait_until_done();
 }
 
-/* 大回り・斜めのターンで使う、ターンの値の組（1 か 2。config/turn_params.h の「■ ターンの組」）。
+/* 大回り・斜めのターンで使う、ターンの値の組（1・2・3 のどれか。config/turn_params.h の「■ ターンの組」）。
  * run_fast_set_turn_set() で変える。はじめは組 1 */
 static int s_turn_set = 1;
 
@@ -867,21 +874,46 @@ static fast_turn_values_t fast_turn_values_set2(run_fast_turn_t turn)
   return values;
 }
 
+/* 組 3（ゆるいターン 1200mm/s・きついターン 1000mm/s）のターン turn の値。ゆるいターン 3 つは
+ * config/turn_params.h の T1200_… から取り出し、きついターン 4 つは組 2 と同じ値を使う */
+static fast_turn_values_t fast_turn_values_set3(run_fast_turn_t turn)
+{
+  if (turn == RUN_FAST_TURN_BIG90) {
+    fast_turn_values_t big90 = {90.0f, T1200_BIG90_SPEED_MM_S, T1200_BIG90_OMEGA_DEG_S, T1200_BIG90_ALPHA_DEG_S2, T1200_BIG90_PRE_MM + T1200_BIG90_PRE_ADJUST_MM, T1200_BIG90_POST_MM + T1200_BIG90_POST_ADJUST_MM};
+    return big90;
+  }
+  if (turn == RUN_FAST_TURN_IN45) {
+    fast_turn_values_t in45 = {45.0f, T1200_IN45_SPEED_MM_S, T1200_IN45_OMEGA_DEG_S, T1200_IN45_ALPHA_DEG_S2, T1200_IN45_PRE_MM + T1200_IN45_PRE_ADJUST_MM, T1200_IN45_POST_MM + T1200_IN45_POST_ADJUST_MM};
+    return in45;
+  }
+  if (turn == RUN_FAST_TURN_OUT45) {
+    fast_turn_values_t out45 = {45.0f, T1200_OUT45_SPEED_MM_S, T1200_OUT45_OMEGA_DEG_S, T1200_OUT45_ALPHA_DEG_S2, T1200_OUT45_PRE_MM + T1200_OUT45_PRE_ADJUST_MM, T1200_OUT45_POST_MM + T1200_OUT45_POST_ADJUST_MM};
+    return out45;
+  }
+  return fast_turn_values_set2(turn);  /* きついターン（大回り 180°・斜め入り 135°・斜め出 135°・V90°）は組 2 と同じ */
+}
+
 /* 今の組（s_turn_set）のターン turn の値 */
 static fast_turn_values_t fast_turn_values(run_fast_turn_t turn)
 {
   if (s_turn_set == 2) {
     return fast_turn_values_set2(turn);
   }
+  if (s_turn_set == 3) {
+    return fast_turn_values_set3(turn);
+  }
   return fast_turn_values_set1(turn);
 }
 
-/* 大回り・斜めのターンで使う、ターンの値の組を選ぶ（1：800・600mm/s、2：7 つとも 1000mm/s）。
- * 1・2 のほかを渡したときは組 1 にする。最短走行（sys/shortest.c）は、走り終わったら組 1 に戻す */
+/* 大回り・斜めのターンで使う、ターンの値の組を選ぶ（1：800・600mm/s、2：7 つとも 1000mm/s、
+ * 3：ゆるいターン 1200mm/s・きついターン 1000mm/s）。
+ * 1・2・3 のほかを渡したときは組 1 にする。最短走行（sys/shortest.c）は、走り終わったら組 1 に戻す */
 void run_fast_set_turn_set(int set)
 {
   if (set == 2) {
     s_turn_set = 2;
+  } else if (set == 3) {
+    s_turn_set = 3;
   } else {
     s_turn_set = 1;
   }

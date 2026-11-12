@@ -15,11 +15,17 @@
 
 #define SUCTION_RAMP_STEPS 10  /* 吸引を上げるときの段の数 */
 
-/* 吸引ファンを、SUCTION_RAMP_MS かけて SUCTION_VOLTAGE_V まで少しずつ上げる */
-void suction_ramp_up(void)
+/* 吸引ファンを、SUCTION_RAMP_MS かけて voltage_v [V] まで少しずつ上げる（最短走行の No. ごとの電圧など。2026-11-10） */
+void suction_ramp_up_to(float voltage_v)
 {
   for (int i = 1; i <= SUCTION_RAMP_STEPS; i++) {
-    fan_set_voltage(SUCTION_VOLTAGE_V * i / SUCTION_RAMP_STEPS);
+    fan_set_voltage(voltage_v * i / SUCTION_RAMP_STEPS);
     ui_wait_ms(SUCTION_RAMP_MS / SUCTION_RAMP_STEPS);
   }
+}
+
+/* 吸引ファンを、SUCTION_RAMP_MS かけて SUCTION_VOLTAGE_V（ふつうの電圧）まで少しずつ上げる */
+void suction_ramp_up(void)
+{
+  suction_ramp_up_to(SUCTION_VOLTAGE_V);
 }

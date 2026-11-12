@@ -67,12 +67,29 @@
 #define SHORTEST5_ACCEL_MM_S2         6000.0f
 #define SHORTEST5_DIAG_MAX_SPEED_MM_S 1200.0f
 #define SHORTEST5_DIAG_ACCEL_MM_S2    6000.0f
+/* No.4〜7 の吸引の電圧 [V]（2026-11-10。No. ごとに変えられるようにした。No.1〜3 は吸引しない）。
+ * 上限は drv/fan.c の FAN_LIMIT_V（7.0V）。2026-11-10 の吸引の力のテストで、5V 130g、6V 150g、7V 170g。
+ * 6V・7V はファンのモーターの定格（3.7V）の 2 倍近いので、熱くなりやすい。続けて何回も走らせない。
+ * 吸引を強くすると摩擦も増える（config/ctrl_gains.h の FF_SUCTION_FRICTION_V は 5V で決めた値）。
+ * ターンの前距離・後距離も、走るときと同じ電圧で合わせる（config/turn_params.h の TURN_TEST_SUCTION_V） */
+#define SHORTEST4_SUCTION_V 5.0f
+#define SHORTEST5_SUCTION_V 5.0f
+#define SHORTEST6_SUCTION_V 5.0f
+#define SHORTEST7_SUCTION_V 5.0f
+
 /* No.6（2026-11-10）：ターンは組 2（7 つとも 1000mm/s。config/turn_params.h の T1000_…）。直進は No.5 と同じ。
  * 斜めの直進の最高速は、ターンの速さ（1000mm/s）より速くする */
 #define SHORTEST6_MAX_SPEED_MM_S      1500.0f
 #define SHORTEST6_ACCEL_MM_S2         6000.0f
 #define SHORTEST6_DIAG_MAX_SPEED_MM_S 1200.0f
 #define SHORTEST6_DIAG_ACCEL_MM_S2    6000.0f
+
+/* No.7（2026-11-11）：ターンは組 3（ゆるいターン 1200mm/s・きついターン 1000mm/s。config/turn_params.h の T1200_…）。
+ * 直進・斜めの直進は No.6 と同じ。斜めの直進の最高速は、斜め出 45° の速さ（1200mm/s）と同じにした */
+#define SHORTEST7_MAX_SPEED_MM_S      1500.0f
+#define SHORTEST7_ACCEL_MM_S2         6000.0f
+#define SHORTEST7_DIAG_MAX_SPEED_MM_S 1200.0f
+#define SHORTEST7_DIAG_ACCEL_MM_S2    6000.0f
 
 /* ゴールにターンで入って終わるときに止まる加速度 [mm/s²] と、止まるまでの距離の上限 [mm]。
  * ゴールの区画のまん中から壁までは 45mm なので、40mm 以内で止まる。6000mm/s² で 40mm なら 693mm/s から止まれる。
@@ -132,13 +149,30 @@
 #define SUCTION_VOLTAGE_V 5.0f
 #define SUCTION_RAMP_MS   500   /* 0 から SUCTION_VOLTAGE_V まで上げるのにかける時間 [ms]（急に回して電池の電圧が落ちないように） */
 
-/* 吸引の力のテスト（モード4 No.3。2026-11-10）：1.0V から 1V ずつ 7.0V まで、1 段 5 秒ずつ回す。
+/* 吸引の力のテスト（モード6 No.4。2026-11-10）：1.0V から 1V ずつ 7.0V まで、1 段 5 秒ずつ回す。
  * 2026-11-10 に作者が測った（袋を貼り直し、一次スカートも変えたあと）：
  * 1V 10g、2V 50g、3V 80g、4V 110g、5V 130g、6V 150g、7V 170g（はかりの表示が減った分）。
- * 3V から上は 1V で約 20〜30g ずつ、電圧にほぼ比例して増える（電圧の 2 乗ではない。MODES.md のモード4 No.3） */
+ * 3V から上は 1V で約 20〜30g ずつ、電圧にほぼ比例して増える（電圧の 2 乗ではない。MODES.md のモード6 No.4） */
 #define SUCTION_TEST_STEP_V   1.0f  /* 1 段で上げる電圧 [V] */
 #define SUCTION_TEST_STEPS    7     /* 段の数（7 段目が 7.0V。drv/fan.c の上限 FAN_LIMIT_V と同じ。LED も 7 個） */
 #define SUCTION_TEST_HOLD_MS  5000  /* 1 段を回す時間 [ms]（はかりの表示が落ち着いてから読めるように） */
+
+/* ---- グリップの上限（最短走行の直進の加速度。2026-11-11。sys/shortest.c の grip_accel_limit_mm_s2()） ----
+ * 吸引すると床に押しつけられて、滑りにくくなる。滑り始める加速度は、だいたい
+ *   滑り始める加速度 = 吸引なしで滑り始める加速度 ×（機体の重さ + 吸引の力）÷ 機体の重さ
+ * （2026-11-03 の加速度テストで、吸引 55g のとき、この式で約 11000mm/s²、測ると 12000mm/s² から滑り始めた）。
+ * 最短走行の直進の加速度（No. ごとの SHORTEST*_ACCEL_MM_S2・*_DIAG_ACCEL_MM_S2）は、これに GRIP_MARGIN をかけた値を超えないようにする。
+ * 吸引の力は、その No. の吸引の電圧から、下の表（2026-11-10 に測った）で出す（あいだは直線でつなぐ。7V より上は 7V の値）。
+ * 今の値だと、吸引なしで約 2900、5V で約 17300、7V で約 21700mm/s²。 */
+#define GRIP_NO_SUCTION_SLIP_MM_S2 3600.0f  /* 吸引なしで滑り始める加速度 [mm/s²]（2026-11-03 の加速度テスト。μ 約 0.37） */
+#define GRIP_MARGIN                0.8f     /* 滑り始める加速度の何割まで使うか */
+#define SUCTION_FORCE_1V_G  10.0f   /* 吸引の電圧ごとの吸引の力 [g]（2026-11-10 に測った。上の SUCTION_TEST の説明） */
+#define SUCTION_FORCE_2V_G  50.0f
+#define SUCTION_FORCE_3V_G  80.0f
+#define SUCTION_FORCE_4V_G  110.0f
+#define SUCTION_FORCE_5V_G  130.0f
+#define SUCTION_FORCE_6V_G  150.0f
+#define SUCTION_FORCE_7V_G  170.0f
 
 /* ---- その場旋回 ---- */
 
@@ -154,11 +188,13 @@
 #define STOP_SETTLE_MS 100  /* 区画のまん中で止まってから、制御を続けて待つ時間 [ms]（ぴたりと止めるため） */
 
 /* ---- 探索でスタートに戻ったとき、お尻を後ろの壁に当てる（ctrl/run.c の run_search_back_to_wall()。2026-11-10） ----
- * 区画のまん中で北を向いたあと、左右のモーターに同じ電圧を後ろ向きにかけて、ゆっくり下がり、お尻を後ろの壁に押し当てる。
- * まん中から壁までは 10mm（START_OFFSET_MM）。下がる速さは、フィードフォワードの係数（config/ctrl_gains.h）から計算すると、
- * 0.22V で約 80mm/s（摩擦 0.15V を引いた 0.07V ÷ 0.000845V/(mm/s)）なので、0.13 秒くらいで壁に着き、残りの時間は押し当てる。
- * 押し当てているあいだに、お尻が壁に沿って、向きもそろう。強すぎるとはね返る・弱すぎると動かないので、実機で合わせる */
-#define BACK_TO_WALL_V  0.22f  /* 下がるときにかける電圧 [V]（左右とも） */
-#define BACK_TO_WALL_MS 500    /* 電圧をかけ続ける時間 [ms]（壁に着いてから押し当てる時間も入れて） */
+ * 区画のまん中で北を向いたあと、速さの制御をしながら、まっすぐ後ろへゆっくり下がり、お尻を後ろの壁に押し当てる。
+ * まん中から壁までは 10mm（START_OFFSET_MM）なので、それより BACK_TO_WALL_PRESS_MM だけ多く下がるように頼む。
+ * 壁に当たって止まると、頼んだ位置との差（数 mm）の分だけ制御が後ろへ押し続けるので、お尻が壁に沿って、向きもそろう。
+ * 2026-11-10 に最初は電圧を直接かけていたが、左右の摩擦の違いで片方のタイヤしか回らなかったので、速さの制御にした */
+#define BACK_TO_WALL_SPEED_MM_S 50.0f   /* 下がる速さ [mm/s] */
+#define BACK_TO_WALL_ACCEL_MM_S2 1000.0f  /* 速くする・遅くする加速度 [mm/s²] */
+#define BACK_TO_WALL_PRESS_MM   3.0f    /* 壁まで（START_OFFSET_MM）より多く下がるように頼む分 [mm]（押し当てる強さ） */
+#define BACK_TO_WALL_PRESS_MS   200     /* 下がり終わってから、押し当てたまま待つ時間 [ms] */
 
 #endif /* CONFIG_RUN_PARAMS_H */

@@ -290,6 +290,69 @@ static void test_add_distance(void)
         "もう進んだ量より短くはならない（すぐに終わる）");
 }
 
+/* 後ろへ進む直進（2026-11-10。探索でスタートに戻ったとき、お尻を後ろの壁に当てる）：速さ・距離が - になり、決めた距離で止まる */
+static void test_straight_back(void)
+{
+  printf("[9] 後ろへ進む直進\n");
+  trajectory_reset();
+  trajectory_start_straight_back(13.0f, 50.0f, 1000.0f);
+  bool always_backward = true;
+  int steps = 0;
+  while (!trajectory_is_done() && steps < 10000) {
+    trajectory_update();
+    if (trajectory_get_speed_mm_s() > 0.0f || trajectory_get_distance_mm() > 0.0f) {
+      always_backward = false;
+    }
+    steps = steps + 1;
+  }
+  check(always_backward, "速さと距離は、ずっと 0 か -");
+  check(fabsf(trajectory_get_distance_mm() + 13.0f) < 0.001f, "ちょうど 13mm 下がる（距離は -13）");
+  check(trajectory_get_speed_mm_s() == 0.0f, "下がり終わると止まる");
+  /* 次に前へ進む直進は、ふつうに + になる */
+  trajectory_start_straight(45.0f, 300.0f, 0.0f, 3000.0f);
+  trajectory_update();
+  check(trajectory_get_speed_mm_s() > 0.0f && trajectory_get_distance_mm() > 0.0f, "そのあとの前への直進は + に戻る");
+}
+
+/* 10. 直進の加速度は速さで変わる（2026-11-11）：決めた加速度と、モーターが出せる加速度の小さいほう */
+static void test_speed_dependent_accel(void)
+{
+  printf("[10] 直進の加速度は速さで変わる（モーターが出せる加速度で頭打ち）\n");
+
+  /* 決めた加速度が小さいとき（今の 6000mm/s²）は、どの速さでも決めた加速度のまま */
+  check(trajectory_straight_accel_mm_s2(0.0f, 6000.0f) == 6000.0f
+        && trajectory_straight_accel_mm_s2(1500.0f, 6000.0f) == 6000.0f,
+        "6000mm/s² なら、0mm/s でも 1500mm/s でも 6000mm/s² のまま");
+
+  /* 決めた加速度が大きいときは、モーターが出せる加速度で頭打ちになり、速いほど小さい */
+  float motor_0 = trajectory_straight_accel_mm_s2(0.0f, 1000000.0f);
+  float motor_1500 = trajectory_straight_accel_mm_s2(1500.0f, 1000000.0f);
+  float motor_3000 = trajectory_straight_accel_mm_s2(3000.0f, 1000000.0f);
+  float motor_6000 = trajectory_straight_accel_mm_s2(6000.0f, 1000000.0f);
+  printf("  モーターが出せる加速度：0mm/s で %.0f、1500mm/s で %.0f、3000mm/s で %.0f、6000mm/s で %.0f mm/s²\n",
+         motor_0, motor_1500, motor_3000, motor_6000);
+  check(motor_0 > motor_1500 && motor_1500 > motor_3000 && motor_6000 == 0.0f, "速いほど小さく、とても速いと 0");
+
+  /* 加速度が小さいときの「上げられる速さ」は、今までの √(v² + 2ad) と同じ */
+  float constant_mm_s = sqrtf(300.0f * 300.0f + 2.0f * 6000.0f * 270.0f);
+  check(fabsf(trajectory_reachable_speed_mm_s(300.0f, 270.0f, 6000.0f, 5000.0f) - constant_mm_s) < 0.01f,
+        "6000mm/s² なら、上げられる速さは今までと同じ");
+
+  /* 大きい加速度（60000mm/s²）で 2000mm 走る：上げられる速さは、加速度が変わらないとき（最高速で頭打ち）より遅い。
+   * その速さを終わりの速さに頼むと、実際の走りが、着く前にその速さに届く（着いたときに速さが飛ばない） */
+  float reach_mm_s = trajectory_reachable_speed_mm_s(0.0f, 2000.0f, 60000.0f, 6000.0f);
+  trajectory_reset();
+  trajectory_start_straight(2000.0f, 6000.0f, reach_mm_s, 60000.0f);
+  run_result_t result = run_until_done();
+  printf("  0mm/s から 2000mm（60000mm/s²）：上げられる速さ %.0f mm/s、実際にいちばん速かった目標の速さ %.0f mm/s、"
+         "1 周期でいちばん変わった速さ %.1f mm/s\n", reach_mm_s, result.top_speed, result.max_change);
+  check(reach_mm_s < 6000.0f && reach_mm_s > 3000.0f, "上げられる速さは、最高速 6000mm/s より遅く、3000mm/s より速い");
+  check(result.top_speed >= reach_mm_s - 1.0f && result.top_speed < reach_mm_s * 1.02f,
+        "実際の走りは、頼んだ終わりの速さに届く（少し速くなっても 2% まで）");
+  check(result.max_change < 40.0f, "着いたときに速さが飛ばない（1 周期で 60000 × 0.0005 = 30mm/s ほどしか変わらない）");
+  check(fabsf(trajectory_get_speed_mm_s() - reach_mm_s) < 0.01f, "頼んだ終わりの速さで終わる");
+}
+
 int main(void)
 {
   test_trapezoid();
@@ -300,6 +363,9 @@ int main(void)
   test_slalom();
   test_gap_between_moves();
   test_add_distance();
+
+  test_straight_back();
+  test_speed_dependent_accel();
 
   if (s_fail_count == 0) {
     printf("すべて成功\n");
