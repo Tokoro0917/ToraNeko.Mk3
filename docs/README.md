@@ -3,6 +3,7 @@
 ソフト・ハード・機構のいずれにも属さない横断的なドキュメントを格納します。
 
 - [overview.md](./overview.md) — ロボット（ToraNeko.Mk3）の概要・仕様
+- [next-machine-power-tps55289.md](./next-machine-power-tps55289.md) — 次の機体の電源メモ（TPS55289 で 2S を昇圧する案。Mk3 では使わない）
 
 例:
 
