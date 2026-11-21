@@ -818,7 +818,7 @@ static void fast_turn(float speed_mm_s, fast_turn_values_t turn, bool is_left)
   wait_until_done();
 }
 
-/* 大回り・斜めのターンで使う、ターンの値の組（1・2・3 のどれか。config/turn_params.h の「■ ターンの組」）。
+/* 大回り・斜めのターンで使う、ターンの値の組（1・2・3・4 のどれか。config/turn_params.h の「■ ターンの組」）。
  * run_fast_set_turn_set() で変える。はじめは組 1 */
 static int s_turn_set = 1;
 
@@ -893,6 +893,17 @@ static fast_turn_values_t fast_turn_values_set3(run_fast_turn_t turn)
   return fast_turn_values_set2(turn);  /* きついターン（大回り 180°・斜め入り 135°・斜め出 135°・V90°）は組 2 と同じ */
 }
 
+/* 組 4（2026-11-21 の大会で足した）：ゆるいターン（大回り 90°・斜め入り 45°・斜め出 45°）は組 2 の 1000mm/s、
+ * きついターン（大回り 180°・斜め入り 135°・斜め出 135°・V90°）は組 1 の 600mm/s（実機で合わせ終わった値）。
+ * 組 2 のきついターン（1000mm/s）は、V90 が続くところで柱に当たったことがあるので使わない */
+static fast_turn_values_t fast_turn_values_set4(run_fast_turn_t turn)
+{
+  if (turn == RUN_FAST_TURN_BIG90 || turn == RUN_FAST_TURN_IN45 || turn == RUN_FAST_TURN_OUT45) {
+    return fast_turn_values_set2(turn);
+  }
+  return fast_turn_values_set1(turn);
+}
+
 /* 今の組（s_turn_set）のターン turn の値 */
 static fast_turn_values_t fast_turn_values(run_fast_turn_t turn)
 {
@@ -902,18 +913,23 @@ static fast_turn_values_t fast_turn_values(run_fast_turn_t turn)
   if (s_turn_set == 3) {
     return fast_turn_values_set3(turn);
   }
+  if (s_turn_set == 4) {
+    return fast_turn_values_set4(turn);
+  }
   return fast_turn_values_set1(turn);
 }
 
 /* 大回り・斜めのターンで使う、ターンの値の組を選ぶ（1：800・600mm/s、2：7 つとも 1000mm/s、
- * 3：ゆるいターン 1200mm/s・きついターン 1000mm/s）。
- * 1・2・3 のほかを渡したときは組 1 にする。最短走行（sys/shortest.c）は、走り終わったら組 1 に戻す */
+ * 3：ゆるいターン 1200mm/s・きついターン 1000mm/s、4：ゆるいターン 1000mm/s・きついターン 600mm/s）。
+ * 1〜4 のほかを渡したときは組 1 にする。最短走行（sys/shortest.c）は、走り終わったら組 1 に戻す */
 void run_fast_set_turn_set(int set)
 {
   if (set == 2) {
     s_turn_set = 2;
   } else if (set == 3) {
     s_turn_set = 3;
+  } else if (set == 4) {
+    s_turn_set = 4;
   } else {
     s_turn_set = 1;
   }

@@ -74,7 +74,7 @@
 #define SHORTEST5_ACCEL_MM_S2         6000.0f
 #define SHORTEST5_DIAG_MAX_SPEED_MM_S 1200.0f
 #define SHORTEST5_DIAG_ACCEL_MM_S2    6000.0f
-/* No.4〜8 の吸引の電圧 [V]（2026-11-10。No. ごとに変えられるようにした。No.1〜3 は吸引しない）。
+/* No.4〜9 の吸引の電圧 [V]（2026-11-10。No. ごとに変えられるようにした。No.1〜3 は吸引しない）。
  * 上限は drv/fan.c の FAN_LIMIT_V（7.0V）。2026-11-10 の吸引の力のテストで、5V 130g、6V 150g、7V 170g。
  * 6V・7V はファンのモーターの定格（3.7V）の 2 倍近いので、熱くなりやすい。続けて何回も走らせない。
  * 吸引を強くすると摩擦も増える（config/ctrl_gains.h の FF_SUCTION_FRICTION_V は 5V で決めた値）。
@@ -84,6 +84,7 @@
 #define SHORTEST6_SUCTION_V 5.0f
 #define SHORTEST7_SUCTION_V 5.0f
 #define SHORTEST8_SUCTION_V 5.0f
+#define SHORTEST9_SUCTION_V 5.0f
 
 /* No.6（2026-11-10）：ターンは組 2（7 つとも 1000mm/s。config/turn_params.h の T1000_…）。直進は No.5 と同じ。
  * 斜めの直進の最高速は、ターンの速さ（1000mm/s）より速くする */
@@ -107,6 +108,14 @@
 #define SHORTEST8_ACCEL_MM_S2         10000.0f
 #define SHORTEST8_DIAG_MAX_SPEED_MM_S 1500.0f
 #define SHORTEST8_DIAG_ACCEL_MM_S2    8000.0f
+
+/* No.9（2026-11-21 の大会で作者の依頼で足した）：直進・斜めは No.8 と同じ。ターンは組 4
+ * （ゆるいターン 1000mm/s は組 2 の値、きついターン 600mm/s は組 1 の実機で合わせた値。ctrl/run.c の fast_turn_values_set4()）。
+ * ゆるいターンの 1000mm/s は、2026-11-10 の No.6 で 14 回曲がれた（ずれを足す分は組 1 のまま）。横向きの加速度は約 12800mm/s² */
+#define SHORTEST9_MAX_SPEED_MM_S      2000.0f
+#define SHORTEST9_ACCEL_MM_S2         10000.0f
+#define SHORTEST9_DIAG_MAX_SPEED_MM_S 1500.0f
+#define SHORTEST9_DIAG_ACCEL_MM_S2    8000.0f
 
 /* ゴールにターンで入って終わるときに止まる加速度 [mm/s²] と、止まるまでの距離の上限 [mm]。
  * ゴールの区画のまん中から壁までは 45mm なので、40mm 以内で止まる。6000mm/s² で 40mm なら 693mm/s から止まれる。
