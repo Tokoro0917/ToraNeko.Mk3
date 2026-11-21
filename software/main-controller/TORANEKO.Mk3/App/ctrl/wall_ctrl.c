@@ -66,8 +66,8 @@
 /* 区画のまん中にいるときの、前のセンサの値。前壁合わせの目標。
  * 2026-11-02 に、センサを付け直してから、3 枚とも壁ありの区画のまん中で、センサ値の記録（モード5 No.2）で 1 秒の平均を測った値
  * （左前 3333.7、右前 3391.8。付け直す前は 3244・3240） */
-#define FRONT_LEFT_REFERENCE  3334
-#define FRONT_RIGHT_REFERENCE 3392
+#define FRONT_LEFT_REFERENCE  3289
+#define FRONT_RIGHT_REFERENCE 3304
 
 /* 横の壁からのずれの上限（センサの値の差。約 2mm 分）。急に大きく曲げないようにする */
 #define SIDE_ERROR_LIMIT 600.0f
