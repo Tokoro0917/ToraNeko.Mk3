@@ -765,7 +765,7 @@ static void test_explore_known(void)
 
   check(s_explore_count == 1 && s_explore_type == EXPLORE_UNKNOWN_WALLS_KNOWN, "No.4 は未知壁探索＋既知区間加速");
   check(mode_has_action(0, 5) && mode_has_action(0, 6) && !mode_has_action(0, 7), "モード0 は No.1〜6（No.5・6 は全面探索。2026-11-21）を決定できる");
-  check(mode_has_action(1, 4) && mode_has_action(1, 9) && !mode_has_action(1, 10), "モード1 は No.1〜9 を決定できる");
+  check(mode_has_action(1, 4) && mode_has_action(1, 10) && !mode_has_action(1, 11), "モード1 は No.1〜10 を決定できる");
 }
 
 /* スタート待ちでスイッチを 1 秒以上押し続けると、手をかざさなくても始まる（前に壁があって、手が使えないとき） */
