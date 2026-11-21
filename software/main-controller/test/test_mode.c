@@ -491,6 +491,13 @@ void adjust_straight(void)
   s_straight_count = s_straight_count + 1;
 }
 
+/* 長い直進（モード6 No.6）：走らずに、呼ばれたことを覚える */
+static int s_straight_long_count = 0;
+void adjust_straight_long(void)
+{
+  s_straight_long_count = s_straight_long_count + 1;
+}
+
 /* センサ値の記録：測らずに、呼ばれたことを覚える */
 void sensor_record_run(void)
 {
@@ -1078,10 +1085,21 @@ static void test_turn_test(void)
   hand_at(1500, 500);
   mode_run_once();
   check(s_suction_force_count == 1 && s_accel_test_count == 0, "モード6 No.4 で、吸引の力が 1 回呼ばれる");
-  check(mode_has_action(6, 1) && mode_has_action(6, 5) && !mode_has_action(6, 6) && !mode_has_action(6, 7),
-        "モード6 は No.1〜5 だけ決定できる");
+  check(mode_has_action(6, 1) && mode_has_action(6, 6) && !mode_has_action(6, 7),
+        "モード6 は No.1〜6 だけ決定できる");
   check(mode_has_action(2, 1) && mode_has_action(2, 4) && !mode_has_action(2, 5),
         "モード2 は No.1〜4 だけ決定できる");
+
+  /* 長い直進（モード6 No.6。2026-11-21）も、スタート待ちのあとに始まる。短い直進（No.1）は呼ばれない */
+  reset_world();
+  mode_init();
+  s_straight_long_count = 0;
+  rotate_left_at(100, 6);    /* モード6 */
+  rotate_right_at(100, 6);   /* No.6 */
+  press_switch_at(500);
+  hand_at(1500, 500);
+  mode_run_once();
+  check(s_straight_long_count == 1 && s_straight_count == 0, "モード6 No.6 で、長い直進が 1 回呼ばれる");
 }
 
 /* 壁までの距離の表示（モード5 No.3）も、No.1 と同じくスタート待ちをしない */

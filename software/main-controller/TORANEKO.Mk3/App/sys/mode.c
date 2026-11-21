@@ -39,6 +39,7 @@
  *   モード6 No.3     吸引 ON（吸引ファンを回し、スイッチを押すまで吸い続ける）
  *   モード6 No.4     吸引の力（吸引の強さを段ごとに上げて回す。はかりで測る）
  *   モード6 No.5     エンコーダの歪みを測る（タイヤを浮かせて、左右のモーターを回す）
+ *   モード6 No.6     長い直進（16 区画 1360mm を走って止まる。タイヤの直径を合わせる。2026-11-21）
  *   モード7 No.1     ログ出力（迷路と走行ログを PC へ出す）
  *   モード7 No.2     倍率合わせ（区画の境目で測って、感度の倍率を Flash に保存する。置いた位置がずれないように、
  *                    スタート待ちをせず、決定してから 2 秒後に測る）
@@ -135,8 +136,8 @@ bool mode_has_action(int mode, int number)
     return false;
   }
   if (mode == 6) {
-    if (number >= 1 && number <= 5) {
-      return true;  /* 直進、壁に沿って直進、吸引 ON、吸引の力、エンコーダの歪み */
+    if (number >= 1 && number <= 6) {
+      return true;  /* 直進、壁に沿って直進、吸引 ON、吸引の力、エンコーダの歪み、長い直進 */
     }
     return false;
   }
@@ -344,6 +345,8 @@ static void run_selected(void)
     adjust_suction_force();
   } else if (s_mode == 6 && s_number == 5) {
     encoder_cal_run();
+  } else if (s_mode == 6 && s_number == 6) {
+    adjust_straight_long();
   } else if (s_mode == 7) {
     run_setting(s_number);
   }
