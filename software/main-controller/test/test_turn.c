@@ -101,6 +101,17 @@ static const turn_shape_t TURNS_1300[TURN_COUNT] = {
   {"V90°", "T1300_V90", 90.0f, 90.0f / SQRT2_F, 90.0f / SQRT2_F, T1300_V90_SPEED_MM_S, T1300_V90_ALPHA_DEG_S2, TURN_MARGIN_MM},
 };
 
+/* 組 6（ゆるいターン 1400mm/s・きついターン 1200mm/s。config/turn_params.h の T1400_…。2026-11-21）。形の決め方は組 1 と同じ */
+static const turn_shape_t TURNS_1400[TURN_COUNT] = {
+  {"大回り 90°", "T1400_BIG90", 90.0f, 90.0f, 90.0f, T1400_BIG90_SPEED_MM_S, T1400_BIG90_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"大回り 180°", "T1400_BIG180", 180.0f, 90.0f + T1400_BIG180_WIDTH_ADJUST_MM, 0.0f, T1400_BIG180_SPEED_MM_S, T1400_BIG180_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"斜め入り 45°", "T1400_IN45", 45.0f, 45.0f, 90.0f, T1400_IN45_SPEED_MM_S, T1400_IN45_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"斜め入り 135°", "T1400_IN135", 135.0f, 90.0f, 45.0f, T1400_IN135_SPEED_MM_S, T1400_IN135_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"斜め出 45°", "T1400_OUT45", 45.0f, 45.0f / SQRT2_F, 135.0f / SQRT2_F, T1400_OUT45_SPEED_MM_S, T1400_OUT45_ALPHA_DEG_S2, T1400_OUT45_STRAIGHT_MIN_MM},
+  {"斜め出 135°", "T1400_OUT135", 135.0f, 135.0f / SQRT2_F, 45.0f / SQRT2_F, T1400_OUT135_SPEED_MM_S, T1400_OUT135_ALPHA_DEG_S2, TURN_MARGIN_MM},
+  {"V90°", "T1400_V90", 90.0f, 90.0f / SQRT2_F, 90.0f / SQRT2_F, T1400_V90_SPEED_MM_S, T1400_V90_ALPHA_DEG_S2, TURN_MARGIN_MM},
+};
+
 /* 組 3 のゆるいターン 3 つ（1200mm/s。config/turn_params.h の T1200_…）。きついターンは組 2 と同じなので、ここにはない */
 #define TURN_1200_COUNT 3
 static const turn_shape_t TURNS_1200[TURN_1200_COUNT] = {
@@ -222,6 +233,7 @@ static int calculate(void)
   calculate_set(TURNS_1000, TURN_COUNT, "組 2（7 つとも 1000mm/s）");
   calculate_set(TURNS_1200, TURN_1200_COUNT, "組 3 のゆるいターン（1200mm/s。きついターンは組 2 と同じ）");
   calculate_set(TURNS_1300, TURN_COUNT, "組 5（ゆるいターン 1300mm/s、きついターン 1100mm/s）");
+  calculate_set(TURNS_1400, TURN_COUNT, "組 6（ゆるいターン 1400mm/s、きついターン 1200mm/s）");
   return 0;
 }
 
@@ -424,6 +436,15 @@ int main(int argc, char *argv[])
   check_turn(&TURNS_1300[4], T1300_OUT45_OMEGA_DEG_S, T1300_OUT45_PRE_MM, T1300_OUT45_POST_MM);
   check_turn(&TURNS_1300[5], T1300_OUT135_OMEGA_DEG_S, T1300_OUT135_PRE_MM, T1300_OUT135_POST_MM);
   check_turn(&TURNS_1300[6], T1300_V90_OMEGA_DEG_S, T1300_V90_PRE_MM, T1300_V90_POST_MM);
+
+  printf("[1e] 組 6（ゆるいターン 1400mm/s・きついターン 1200mm/s。config/turn_params.h の T1400_…）\n");
+  check_turn(&TURNS_1400[0], T1400_BIG90_OMEGA_DEG_S, T1400_BIG90_PRE_MM, T1400_BIG90_POST_MM);
+  check_turn(&TURNS_1400[1], T1400_BIG180_OMEGA_DEG_S, T1400_BIG180_PRE_MM, T1400_BIG180_POST_MM);
+  check_turn(&TURNS_1400[2], T1400_IN45_OMEGA_DEG_S, T1400_IN45_PRE_MM, T1400_IN45_POST_MM);
+  check_turn(&TURNS_1400[3], T1400_IN135_OMEGA_DEG_S, T1400_IN135_PRE_MM, T1400_IN135_POST_MM);
+  check_turn(&TURNS_1400[4], T1400_OUT45_OMEGA_DEG_S, T1400_OUT45_PRE_MM, T1400_OUT45_POST_MM);
+  check_turn(&TURNS_1400[5], T1400_OUT135_OMEGA_DEG_S, T1400_OUT135_PRE_MM, T1400_OUT135_POST_MM);
+  check_turn(&TURNS_1400[6], T1400_V90_OMEGA_DEG_S, T1400_V90_PRE_MM, T1400_V90_POST_MM);
 
   printf("[2] 遅く入ったターン（速さ k 倍、最高角速度 k 倍、角加速度 k² 倍）\n");
   check_slow_turn(&TURNS[0], BIG90_OMEGA_DEG_S, 0.5f);
