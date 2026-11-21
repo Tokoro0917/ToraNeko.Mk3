@@ -23,7 +23,13 @@
  *     最後に、まっすぐ後ろへゆっくり下がって、お尻を後ろの壁に押し当てる（run_search_back_to_wall()。作者の案）。
  *     これで、走り出す前の置き方（お尻を後ろの壁に付ける）と同じになり、そのまま次のスタートができる
  *
- * ■ 既知区間加速（No.4 だけ。2026-10-27 に追加）
+ * ■ 全面探索（No.5・6。2026-11-21。作者の依頼）
+ * ゴールに着いたら、まだ見ていない壁がある区画を全部目的地にして（search_set_target_unknown_cells()）、足立法で
+ * いちばん近いところへ進むのを繰り返す（run_full_search()）。行けるところがなくなったら、止まらずにスタートへ戻る。
+ * 未知壁探索と違ってダイクストラを使わないので、止まって計算することはない（止まるのは U ターンと横壁合わせのときだけ）。
+ * 時間を使いすぎないように、動く回数が FULL_SEARCH_MAX_MOVES（config/run_params.h）になったら、そこでやめてスタートへ戻る。
+ *
+ * ■ 既知区間加速（No.4・6。2026-10-27 に追加）
  * 走っているとき（行き・未知壁を見に行くあいだ・帰り）、今いる区画から先に「見たことのある区画をまっすぐ進む」が 2 区画以上続くなら、
  * 1 区画ずつではなく、まとめて速く走る（run_search_known_straight()。速さは config/run_params.h の KNOWN_*）。
  * 見たことのある区画では、壁がもうわかっているので、1 区画ずつ止まらずに考えても同じ道になる（maze/path.c の
@@ -43,6 +49,7 @@
 
 #include <stdbool.h>
 
+#include "config/run_params.h"
 #include "ctrl/run.h"
 #include "ctrl/wall_ctrl.h"
 #include "maze/maze_map.h"
@@ -357,6 +364,36 @@ static explore_result_t scan_unknown_walls(int goal_x, int goal_y, int goal_widt
   return result_after_stop(EXPLORE_RESULT_DONE);
 }
 
+/* 全面探索（先頭のコメント）。ゴールの区画の入口の辺に着いたところから呼ぶ。
+ * まだ見ていない壁がある区画のうち、いちばん近いところへ進むのを繰り返す。行けるところがなくなったか、
+ * FULL_SEARCH_MAX_MOVES 回動いたら、EXPLORE_RESULT_DONE を返す（止まらない。このあと、そのままスタートへ戻る） */
+static explore_result_t run_full_search(void)
+{
+  search_set_target_unknown_cells();
+  for (int move_count = 0; move_count < FULL_SEARCH_MAX_MOVES; move_count++) {
+    if (align_if_too_close() && failsafe_is_stopped()) {
+      return EXPLORE_RESULT_FAILSAFE;
+    }
+    search_update_step_map();
+    if (try_known_straight()) {
+      if (failsafe_is_stopped()) {
+        return EXPLORE_RESULT_FAILSAFE;
+      }
+      continue;  /* 見たことのある区画をまとめて走った。着いた区画で、また考える */
+    }
+    action_t action = search_decide_action(s_x, s_y, s_dir);
+    if (action == ACTION_STOP) {
+      return EXPLORE_RESULT_DONE;  /* 見に行ける区画がなくなった（全部見た） */
+    }
+    move(action);
+    if (failsafe_is_stopped()) {
+      return EXPLORE_RESULT_FAILSAFE;
+    }
+    record_walls_here();
+  }
+  return EXPLORE_RESULT_DONE;  /* 決めた回数だけ動いた：ここでやめてスタートへ戻る */
+}
+
 /* 途中で終わったときの後始末をして、result をそのまま返す。
  * フェイルセーフで止まったときは、最後に壁を記録した 5 区画ぶんを戻してから、迷路を Flash に保存する
  * （ぶつかる直前に読み間違えたかもしれない壁を残さないため。モーターは止まっている） */
@@ -410,11 +447,15 @@ explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int go
 {
   explore_result_t result;
 
-  /* 既知区間加速は No.4 だけ。No.4 は、ほかは未知壁探索（No.3）と同じ */
+  /* 既知区間加速は No.4・6 だけ。No.4 は未知壁探索（No.3）と、No.6 は全面探索（No.5）と、ほかは同じ */
   s_use_known = false;
   if (type == EXPLORE_UNKNOWN_WALLS_KNOWN) {
     s_use_known = true;
     type = EXPLORE_UNKNOWN_WALLS;
+  }
+  if (type == EXPLORE_FULL_KNOWN) {
+    s_use_known = true;
+    type = EXPLORE_FULL;
   }
 
   /* この走行で記録した壁だけを、フェイルセーフのときに戻すようにする */
@@ -446,6 +487,14 @@ explore_result_t explore_run(explore_type_t type, int goal_x, int goal_y, int go
   /* 4. 未知壁探索 */
   if (type == EXPLORE_UNKNOWN_WALLS) {
     result = scan_unknown_walls(goal_x, goal_y, goal_width, goal_height);
+    if (result != EXPLORE_RESULT_DONE) {
+      return finish_early(result);
+    }
+  }
+
+  /* 4b. 全面探索 */
+  if (type == EXPLORE_FULL) {
+    result = run_full_search();
     if (result != EXPLORE_RESULT_DONE) {
       return finish_early(result);
     }

@@ -15,6 +15,8 @@
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す。2026-11-10 に、番号の穴をなくし、
  *   似たものを同じモードに集めるように並べ直した。作者が決めた）
  *   モード0 No.1〜4  探索（往復・片道・未知壁探索・未知壁探索＋既知区間加速）
+ *   モード0 No.5・6  全面探索（ゴールのあと、まだ見ていない壁がある区画を全部見に行ってからスタートへ戻る。
+ *                    No.6 は既知区間加速あり。2026-11-21）
  *   モード1 No.1〜7  最短走行（No.1〜3 は曲がるところが探索と同じ小回りで、直進の速さが No.1 → 3 で速くなる。
  *                    No.4〜7 は大回り・斜めのターンで曲がる。No.6 はターンが 7 つとも 1000mm/s、
  *                    No.7 はゆるいターン 1200mm/s・きついターン 1000mm/s）。直進の加速度は、吸引の強さから出した
@@ -97,8 +99,8 @@ int mode_get_number(void)
 bool mode_has_action(int mode, int number)
 {
   if (mode == 0) {
-    if (number >= 1 && number <= 4) {
-      return true;  /* 探索 */
+    if (number >= 1 && number <= 6) {
+      return true;  /* 探索（No.5・6 は全面探索） */
     }
     return false;
   }
@@ -191,7 +193,8 @@ static void select_mode(void)
  * モード0：探索
  * ------------------------------------------------------------------------- */
 
-/* 探索走行をする（No.1 往復、No.2 片道、No.3 未知壁探索、No.4 未知壁探索＋既知区間加速） */
+/* 探索走行をする（No.1 往復、No.2 片道、No.3 未知壁探索、No.4 未知壁探索＋既知区間加速、
+ * No.5 全面探索、No.6 全面探索＋既知区間加速） */
 static void run_explore(int number)
 {
   explore_type_t type = EXPLORE_ROUND_TRIP;
@@ -201,6 +204,10 @@ static void run_explore(int number)
     type = EXPLORE_UNKNOWN_WALLS;
   } else if (number == 4) {
     type = EXPLORE_UNKNOWN_WALLS_KNOWN;
+  } else if (number == 5) {
+    type = EXPLORE_FULL;
+  } else if (number == 6) {
+    type = EXPLORE_FULL_KNOWN;
   }
 
   explore_result_t result = explore_run(type, goal_get_x(), goal_get_y(), GOAL_WIDTH, GOAL_HEIGHT);
