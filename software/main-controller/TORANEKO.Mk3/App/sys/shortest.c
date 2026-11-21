@@ -13,8 +13,8 @@
  * ■ No.4〜9：大回り・斜めのターンで曲がる（2026-10-28 に作った。2026-11-04 に、ターンごとの速さで曲がるようにした）
  *   No.4・5 はターンの組 1（ゆるいターン 800mm/s、きついターン 600mm/s）、No.6 は組 2（7 つとも 1000mm/s。2026-11-10）、
  *   No.7 は組 3（ゆるいターン 1200mm/s・きついターン 1000mm/s。2026-11-11）、
- *   No.8 は組 1 のまま直進だけ速くしたもの（直進 2000mm/s。2026-11-21 の大会で足した）、
- *   No.9 は No.8 の直進で、ゆるいターンだけ組 2 の 1000mm/s にした組 4（2026-11-21 の大会で足した）で
+ *   No.8 は No.7 と同じ組 3 で直進だけ速くしたもの（直進 2000mm/s）、No.9 は No.8 の直進で組 5（ゆるいターン 1300mm/s・
+ *   きついターン 1100mm/s）（どちらも 2026-11-21 の大会で作者の依頼で決めた）で
  *   曲がる（config/turn_params.h の「■ ターンの組」）。走り終わったら組 1 に戻す
  *   1. 吸引を上げて（0.5 秒）、0.5 秒待つ（ターンは吸引して合わせた。モード3。吸引なしでは 800mm/s のターンで滑る）
  *   2. 経路を作る（maze/path.c の path_make_shortest()。大回り 90°・180°、斜め入り・斜め出 45°・135°、V90°、斜めの直進）
@@ -304,11 +304,11 @@ static int turn_set_of(int number)
   if (number == 6) {
     return 2;
   }
-  if (number == 7) {
+  if (number == 7 || number == 8) {
     return 3;
   }
   if (number == 9) {
-    return 4;
+    return 5;
   }
   return 1;
 }
@@ -319,8 +319,11 @@ static float path_turn_speed_mm_s(int number)
   if (number == 6) {
     return T1000_PATH_TURN_SPEED_MM_S;
   }
-  if (number == 7) {
+  if (number == 7 || number == 8) {
     return T1200_PATH_TURN_SPEED_MM_S;
+  }
+  if (number == 9) {
+    return T1300_PATH_TURN_SPEED_MM_S;
   }
   return FAST_TURN_SPEED_MM_S;
 }

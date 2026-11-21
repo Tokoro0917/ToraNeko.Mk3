@@ -818,7 +818,7 @@ static void fast_turn(float speed_mm_s, fast_turn_values_t turn, bool is_left)
   wait_until_done();
 }
 
-/* 大回り・斜めのターンで使う、ターンの値の組（1・2・3・4 のどれか。config/turn_params.h の「■ ターンの組」）。
+/* 大回り・斜めのターンで使う、ターンの値の組（1〜5 のどれか。config/turn_params.h の「■ ターンの組」）。
  * run_fast_set_turn_set() で変える。はじめは組 1 */
 static int s_turn_set = 1;
 
@@ -874,6 +874,32 @@ static fast_turn_values_t fast_turn_values_set2(run_fast_turn_t turn)
   return values;
 }
 
+/* 組 5（ゆるいターン 1300mm/s・きついターン 1100mm/s。2026-11-21）のターン turn の値を、config/turn_params.h の T1300_… から取り出す */
+static fast_turn_values_t fast_turn_values_set5(run_fast_turn_t turn)
+{
+  fast_turn_values_t values = {90.0f, T1300_BIG90_SPEED_MM_S, T1300_BIG90_OMEGA_DEG_S, T1300_BIG90_ALPHA_DEG_S2, T1300_BIG90_PRE_MM + T1300_BIG90_PRE_ADJUST_MM, T1300_BIG90_POST_MM + T1300_BIG90_POST_ADJUST_MM};
+  if (turn == RUN_FAST_TURN_BIG180) {
+    fast_turn_values_t big180 = {180.0f, T1300_BIG180_SPEED_MM_S, T1300_BIG180_OMEGA_DEG_S, T1300_BIG180_ALPHA_DEG_S2, T1300_BIG180_PRE_MM + T1300_BIG180_PRE_ADJUST_MM, T1300_BIG180_POST_MM + T1300_BIG180_POST_ADJUST_MM};
+    values = big180;
+  } else if (turn == RUN_FAST_TURN_IN45) {
+    fast_turn_values_t in45 = {45.0f, T1300_IN45_SPEED_MM_S, T1300_IN45_OMEGA_DEG_S, T1300_IN45_ALPHA_DEG_S2, T1300_IN45_PRE_MM + T1300_IN45_PRE_ADJUST_MM, T1300_IN45_POST_MM + T1300_IN45_POST_ADJUST_MM};
+    values = in45;
+  } else if (turn == RUN_FAST_TURN_IN135) {
+    fast_turn_values_t in135 = {135.0f, T1300_IN135_SPEED_MM_S, T1300_IN135_OMEGA_DEG_S, T1300_IN135_ALPHA_DEG_S2, T1300_IN135_PRE_MM + T1300_IN135_PRE_ADJUST_MM, T1300_IN135_POST_MM + T1300_IN135_POST_ADJUST_MM};
+    values = in135;
+  } else if (turn == RUN_FAST_TURN_OUT45) {
+    fast_turn_values_t out45 = {45.0f, T1300_OUT45_SPEED_MM_S, T1300_OUT45_OMEGA_DEG_S, T1300_OUT45_ALPHA_DEG_S2, T1300_OUT45_PRE_MM + T1300_OUT45_PRE_ADJUST_MM, T1300_OUT45_POST_MM + T1300_OUT45_POST_ADJUST_MM};
+    values = out45;
+  } else if (turn == RUN_FAST_TURN_OUT135) {
+    fast_turn_values_t out135 = {135.0f, T1300_OUT135_SPEED_MM_S, T1300_OUT135_OMEGA_DEG_S, T1300_OUT135_ALPHA_DEG_S2, T1300_OUT135_PRE_MM + T1300_OUT135_PRE_ADJUST_MM, T1300_OUT135_POST_MM + T1300_OUT135_POST_ADJUST_MM};
+    values = out135;
+  } else if (turn == RUN_FAST_TURN_V90) {
+    fast_turn_values_t v90 = {90.0f, T1300_V90_SPEED_MM_S, T1300_V90_OMEGA_DEG_S, T1300_V90_ALPHA_DEG_S2, T1300_V90_PRE_MM + T1300_V90_PRE_ADJUST_MM, T1300_V90_POST_MM + T1300_V90_POST_ADJUST_MM};
+    values = v90;
+  }
+  return values;
+}
+
 /* 組 3（ゆるいターン 1200mm/s・きついターン 1000mm/s）のターン turn の値。ゆるいターン 3 つは
  * config/turn_params.h の T1200_… から取り出し、きついターン 4 つは組 2 と同じ値を使う */
 static fast_turn_values_t fast_turn_values_set3(run_fast_turn_t turn)
@@ -916,12 +942,15 @@ static fast_turn_values_t fast_turn_values(run_fast_turn_t turn)
   if (s_turn_set == 4) {
     return fast_turn_values_set4(turn);
   }
+  if (s_turn_set == 5) {
+    return fast_turn_values_set5(turn);
+  }
   return fast_turn_values_set1(turn);
 }
 
 /* 大回り・斜めのターンで使う、ターンの値の組を選ぶ（1：800・600mm/s、2：7 つとも 1000mm/s、
- * 3：ゆるいターン 1200mm/s・きついターン 1000mm/s、4：ゆるいターン 1000mm/s・きついターン 600mm/s）。
- * 1〜4 のほかを渡したときは組 1 にする。最短走行（sys/shortest.c）は、走り終わったら組 1 に戻す */
+ * 3：ゆるいターン 1200mm/s・きついターン 1000mm/s、4：ゆるいターン 1000mm/s・きついターン 600mm/s、
+ * 5：ゆるいターン 1300mm/s・きついターン 1100mm/s）。1〜5 のほかを渡したときは組 1 にする。最短走行（sys/shortest.c）は、走り終わったら組 1 に戻す */
 void run_fast_set_turn_set(int set)
 {
   if (set == 2) {
@@ -930,6 +959,8 @@ void run_fast_set_turn_set(int set)
     s_turn_set = 3;
   } else if (set == 4) {
     s_turn_set = 4;
+  } else if (set == 5) {
+    s_turn_set = 5;
   } else {
     s_turn_set = 1;
   }

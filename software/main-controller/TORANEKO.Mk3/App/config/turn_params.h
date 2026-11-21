@@ -33,8 +33,9 @@
  *   - 組 1（下の BIG90_… などの名前）：ゆるいターン 800mm/s、きついターン 600mm/s。最短走行 No.4・5 が使う
  *   - 組 2（T1000_BIG90_… などの名前。T1000 は「1000mm/s のターン」）：7 つとも 1000mm/s。最短走行 No.6 が使う
  *   - 組 3（T1200_BIG90_… などの名前）：ゆるいターン（大回り 90°・斜め入り 45°・斜め出 45°）1200mm/s、
- *     きついターン（大回り 180°・斜め入り 135°・斜め出 135°・V90°）は組 2 と同じ 1000mm/s。最短走行 No.7 が使う
- *   - 組 4（2026-11-21 の大会で足した。値は持たない）：ゆるいターンは組 2 の 1000mm/s、きついターンは組 1 の 600mm/s。最短走行 No.9 が使う
+ *     きついターン（大回り 180°・斜め入り 135°・斜め出 135°・V90°）は組 2 と同じ 1000mm/s。最短走行 No.7・No.8 が使う
+ *   - 組 4（2026-11-21 の大会で足した。値は持たない）：ゆるいターンは組 2 の 1000mm/s、きついターンは組 1 の 600mm/s（今は使う No. がない）
+ *   - 組 5（T1300_…。2026-11-21 の大会で足した）：ゆるいターン 1300mm/s、きついターン 1100mm/s。最短走行 No.9 が使う（吸引 7V）
  * モード3（ターンの調整）がどの組を走らせるかは、TURN_TEST_TURN_SET で選ぶ（下）。
  */
 #ifndef CONFIG_TURN_PARAMS_H
@@ -265,6 +266,83 @@
 /* 最短走行 No.7 の経路を選ぶとき（maze/dijkstra.c の走る時間の見積もり）に、どのターンも曲がるとする速さ [mm/s]。
  * 組 3 のターンごとの速さのいちばん遅いもの（きついターンの 1000mm/s）以下にする */
 #define T1200_PATH_TURN_SPEED_MM_S 1000.0f
+
+/* ===========================================================================
+ * 組 5：ゆるいターン 1300mm/s・きついターン 1100mm/s（2026-11-21 の大会で作者の依頼で足した。最短走行 No.9 が使う）
+ * 角加速度は、組 1〜3 と同じく 10000 ×（速さ ÷ 500）²（1300mm/s で 67600、1100mm/s で 48400deg/s²）。
+ * 横向きの加速度は、ゆるいターンで約 21000〜21600、きついターンで約 25000〜27500mm/s²（下の --calc の行）。
+ * 5.0V の吸引で滑り始める見込み（約 21600mm/s²）を超えるので、No.9 は 7.0V で吸う（SHORTEST9_SUCTION_V。7.0V で約 27100mm/s²）。
+ * それでも、きついターンは滑り始めの見込みとほぼ同じなので、滑るかもしれない。前距離・後距離に足す分は、組 2 と同じ（組 1 のまま。合わせていない）
+ * =========================================================================== */
+
+/* ターンごとの速さ [mm/s] と角加速度 [deg/s²] */
+#define T1300_BIG90_SPEED_MM_S      1300.0f
+#define T1300_BIG90_ALPHA_DEG_S2      67600.0f
+#define T1300_BIG180_SPEED_MM_S     1100.0f
+#define T1300_BIG180_ALPHA_DEG_S2     48400.0f
+#define T1300_IN45_SPEED_MM_S       1300.0f
+#define T1300_IN45_ALPHA_DEG_S2       67600.0f
+#define T1300_IN135_SPEED_MM_S      1100.0f
+#define T1300_IN135_ALPHA_DEG_S2      48400.0f
+#define T1300_OUT45_SPEED_MM_S      1300.0f
+#define T1300_OUT45_ALPHA_DEG_S2      67600.0f
+#define T1300_OUT135_SPEED_MM_S     1100.0f
+#define T1300_OUT135_ALPHA_DEG_S2     48400.0f
+#define T1300_V90_SPEED_MM_S        1100.0f
+#define T1300_V90_ALPHA_DEG_S2        48400.0f
+
+/* 実機で足す前距離・後距離 [mm]。まだ合わせていないので、組 2 の値（＝組 1 の値）をそのまま使う */
+#define T1300_BIG90_PRE_ADJUST_MM  T1000_BIG90_PRE_ADJUST_MM
+#define T1300_BIG90_POST_ADJUST_MM T1000_BIG90_POST_ADJUST_MM
+#define T1300_BIG180_PRE_ADJUST_MM  T1000_BIG180_PRE_ADJUST_MM
+#define T1300_BIG180_POST_ADJUST_MM T1000_BIG180_POST_ADJUST_MM
+#define T1300_IN45_PRE_ADJUST_MM  T1000_IN45_PRE_ADJUST_MM
+#define T1300_IN45_POST_ADJUST_MM T1000_IN45_POST_ADJUST_MM
+#define T1300_IN135_PRE_ADJUST_MM  T1000_IN135_PRE_ADJUST_MM
+#define T1300_IN135_POST_ADJUST_MM T1000_IN135_POST_ADJUST_MM
+#define T1300_OUT45_PRE_ADJUST_MM  T1000_OUT45_PRE_ADJUST_MM
+#define T1300_OUT45_POST_ADJUST_MM T1000_OUT45_POST_ADJUST_MM
+#define T1300_OUT135_PRE_ADJUST_MM  T1000_OUT135_PRE_ADJUST_MM
+#define T1300_OUT135_POST_ADJUST_MM T1000_OUT135_POST_ADJUST_MM
+#define T1300_V90_PRE_ADJUST_MM  T1000_V90_PRE_ADJUST_MM
+#define T1300_V90_POST_ADJUST_MM T1000_V90_POST_ADJUST_MM
+#define T1300_BIG180_WIDTH_ADJUST_MM T1000_BIG180_WIDTH_ADJUST_MM  /* 大回り 180° の幅に足す分（組 2 と同じ） */
+#define T1300_OUT45_STRAIGHT_MIN_MM  T1000_OUT45_STRAIGHT_MIN_MM   /* 斜め出 45° の前距離・後距離の短いほう（組 2 と同じ） */
+
+/* 最高角速度・前距離・後距離（test_turn --calc の出力の、組 5 の行） */
+/* 前距離・後距離の短いほう 3.0mm で計算（斜め出 45° は OUT45_STRAIGHT_MIN_MM。test/test_turn.c --calc） */
+/* 大回り 90°（1300mm/s、角加速度 67600deg/s²。横向きの加速度はいちばん大きいとき 21569mm/s²） */
+#define T1300_BIG90_OMEGA_DEG_S 950.6f
+#define T1300_BIG90_PRE_MM 3.0f
+#define T1300_BIG90_POST_MM 3.3f
+/* 大回り 180°（1100mm/s、角加速度 48400deg/s²。横向きの加速度はいちばん大きいとき 25071mm/s²） */
+#define T1300_BIG180_OMEGA_DEG_S 1305.9f
+#define T1300_BIG180_PRE_MM 3.0f
+#define T1300_BIG180_POST_MM 3.0f
+/* 斜め入り 45°（1300mm/s、角加速度 67600deg/s²。横向きの加速度はいちばん大きいとき 20682mm/s²） */
+#define T1300_IN45_OMEGA_DEG_S 911.5f
+#define T1300_IN45_PRE_MM 3.0f
+#define T1300_IN45_POST_MM 22.1f
+/* 斜め入り 135°（1100mm/s、角加速度 48400deg/s²。横向きの加速度はいちばん大きいとき 27395mm/s²） */
+#define T1300_IN135_OMEGA_DEG_S 1426.9f
+#define T1300_IN135_PRE_MM 10.5f
+#define T1300_IN135_POST_MM 3.4f
+/* 斜め出 45°（1300mm/s、角加速度 67600deg/s²。横向きの加速度はいちばん大きいとき 20658mm/s²） */
+#define T1300_OUT45_OMEGA_DEG_S 910.5f
+#define T1300_OUT45_PRE_MM 21.6f
+#define T1300_OUT45_POST_MM 3.4f
+/* 斜め出 135°（1100mm/s、角加速度 48400deg/s²。横向きの加速度はいちばん大きいとき 27480mm/s²） */
+#define T1300_OUT135_OMEGA_DEG_S 1431.4f
+#define T1300_OUT135_PRE_MM 3.0f
+#define T1300_OUT135_POST_MM 11.1f
+/* V90°（1100mm/s、角加速度 48400deg/s²。横向きの加速度はいちばん大きいとき 27460mm/s²） */
+#define T1300_V90_OMEGA_DEG_S 1430.3f
+#define T1300_V90_PRE_MM 3.0f
+#define T1300_V90_POST_MM 3.5f
+
+/* 最短走行 No.9 の経路を選ぶときに、どのターンも曲がるとする速さ [mm/s]（組 5 のいちばん遅いターン 1100mm/s 以下） */
+#define T1300_PATH_TURN_SPEED_MM_S 1100.0f
+
 
 /* モード3（ターンの調整。sys/turn_test.c）で走らせる組（1・2・3 のどれか）。2026-11-10 に、組 2 を合わせるため 2 にした。
  * 組 1 を走らせたいときは 1 にして、書き込み直す */

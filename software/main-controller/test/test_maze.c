@@ -2672,6 +2672,8 @@ void run_fast_set_turn_set(int set)
     s_fast_turn_set = 3;
   } else if (set == 4) {
     s_fast_turn_set = 4;
+  } else if (set == 5) {
+    s_fast_turn_set = 5;
   } else {
     s_fast_turn_set = 1;
   }
@@ -2716,6 +2718,30 @@ static float turn_speed_set3_mm_s(run_fast_turn_t turn)
   return turn_speed_set2_mm_s(turn);
 }
 
+/* 組 5 のターンの速さ（config/turn_params.h の T1300_…_SPEED_MM_S） */
+static float turn_speed_set5_mm_s(run_fast_turn_t turn)
+{
+  if (turn == RUN_FAST_TURN_BIG90) {
+    return T1300_BIG90_SPEED_MM_S;
+  }
+  if (turn == RUN_FAST_TURN_BIG180) {
+    return T1300_BIG180_SPEED_MM_S;
+  }
+  if (turn == RUN_FAST_TURN_IN45) {
+    return T1300_IN45_SPEED_MM_S;
+  }
+  if (turn == RUN_FAST_TURN_IN135) {
+    return T1300_IN135_SPEED_MM_S;
+  }
+  if (turn == RUN_FAST_TURN_OUT45) {
+    return T1300_OUT45_SPEED_MM_S;
+  }
+  if (turn == RUN_FAST_TURN_OUT135) {
+    return T1300_OUT135_SPEED_MM_S;
+  }
+  return T1300_V90_SPEED_MM_S;
+}
+
 float run_fast_turn_speed_mm_s(run_fast_turn_t turn)
 {
   if (s_fast_turn_set == 2) {
@@ -2723,6 +2749,9 @@ float run_fast_turn_speed_mm_s(run_fast_turn_t turn)
   }
   if (s_fast_turn_set == 3) {
     return turn_speed_set3_mm_s(turn);
+  }
+  if (s_fast_turn_set == 5) {
+    return turn_speed_set5_mm_s(turn);
   }
   if (s_fast_turn_set == 4) {
     /* 組 4：ゆるいターンは組 2、きついターンは組 1（ctrl/run.c と同じ） */

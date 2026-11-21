@@ -84,7 +84,7 @@
 #define SHORTEST6_SUCTION_V 5.0f
 #define SHORTEST7_SUCTION_V 5.0f
 #define SHORTEST8_SUCTION_V 5.0f
-#define SHORTEST9_SUCTION_V 5.0f
+#define SHORTEST9_SUCTION_V 7.0f  /* 組 5 のターンは横向きの加速度が大きいので、いちばん強く吸う（ファンの定格の 2 倍近いので、続けて走らせない） */
 
 /* No.6（2026-11-10）：ターンは組 2（7 つとも 1000mm/s。config/turn_params.h の T1000_…）。直進は No.5 と同じ。
  * 斜めの直進の最高速は、ターンの速さ（1000mm/s）より速くする */
@@ -100,18 +100,18 @@
 #define SHORTEST7_DIAG_MAX_SPEED_MM_S 1200.0f
 #define SHORTEST7_DIAG_ACCEL_MM_S2    6000.0f
 
-/* No.8（2026-11-21 の大会で作者の依頼で足した）：ターンは組 1（実機で合わせ終わった 800・600mm/s）のまま、直進・斜めだけ速くする。
- * 加速度 10000mm/s² は、2026-11-03 の加速度テスト（吸引 5V、そのときの吸引の力 55g）で滑らなかったいちばん大きい値。
+/* No.8（2026-11-21 の大会で作者の依頼で決めた）：ターンは No.7 と同じ組 3（ゆるいターン 1200mm/s・きついターン 1000mm/s）で、
+ * 直進・斜めだけ速くする。加速度 10000mm/s² は、2026-11-03 の加速度テスト（吸引 5V、そのときの吸引の力 55g）で滑らなかったいちばん大きい値。
  * 今の吸引の力（5V で 130g）でのグリップの上限は約 17300mm/s² なので、まだ余裕がある。
- * 1000mm/s から 2000mm/s まで上げて戻すのに約 300mm（4 区画くらい）要るので、短い直進では 2000mm/s まで届かない */
+ * 1000mm/s から 2000mm/s まで上げて戻すのに約 300mm（4 区画くらい）要るので、短い直進では 2000mm/s まで届かない。
+ * （はじめはターンを組 1 にしていて、2026-11-21 の 16:28 にその形で 2000mm/s まで出て完走した） */
 #define SHORTEST8_MAX_SPEED_MM_S      2000.0f
 #define SHORTEST8_ACCEL_MM_S2         10000.0f
 #define SHORTEST8_DIAG_MAX_SPEED_MM_S 1500.0f
 #define SHORTEST8_DIAG_ACCEL_MM_S2    8000.0f
 
-/* No.9（2026-11-21 の大会で作者の依頼で足した）：直進・斜めは No.8 と同じ。ターンは組 4
- * （ゆるいターン 1000mm/s は組 2 の値、きついターン 600mm/s は組 1 の実機で合わせた値。ctrl/run.c の fast_turn_values_set4()）。
- * ゆるいターンの 1000mm/s は、2026-11-10 の No.6 で 14 回曲がれた（ずれを足す分は組 1 のまま）。横向きの加速度は約 12800mm/s² */
+/* No.9（2026-11-21 の大会で作者の依頼で決めた）：直進・斜めは No.8 と同じ。ターンは組 5（ゆるいターン 1300mm/s・きついターン 1100mm/s。
+ * config/turn_params.h の T1300_…）。横向きの加速度が 5.0V の吸引の見込みを超えるので、7.0V で吸う（上の SHORTEST9_SUCTION_V） */
 #define SHORTEST9_MAX_SPEED_MM_S      2000.0f
 #define SHORTEST9_ACCEL_MM_S2         10000.0f
 #define SHORTEST9_DIAG_MAX_SPEED_MM_S 1500.0f
