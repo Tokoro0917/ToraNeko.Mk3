@@ -15,9 +15,14 @@
  * ■ 今あるモード（ほかのモードは、中身を作ったときにここに足す。2026-11-10 に、番号の穴をなくし、
  *   似たものを同じモードに集めるように並べ直した。作者が決めた）
  *   モード0 No.1〜4  探索（往復・片道・未知壁探索・未知壁探索＋既知区間加速）
- *   モード1 No.1〜7  最短走行（No.1〜3 は曲がるところが探索と同じ小回りで、直進の速さが No.1 → 3 で速くなる。
- *                    No.4〜7 は大回り・斜めのターンで曲がる。No.6 はターンが 7 つとも 1000mm/s、
- *                    No.7 はゆるいターン 1200mm/s・きついターン 1000mm/s）。直進の加速度は、吸引の強さから出した
+ *   モード0 No.5・6  全面探索（ゴールのあと、まだ見ていない壁がある区画を全部見に行ってからスタートへ戻る。
+ *                    No.6 は既知区間加速あり。2026-11-21）
+ *   モード1 No.1〜12 最短走行（No.1〜3 は曲がるところが探索と同じ小回りで、直進の速さが No.1 → 3 で速くなる。
+ *                    No.4〜12 は大回り・斜めのターンで曲がる。No.6 はターンが 7 つとも 1000mm/s、
+ *                    No.7 はゆるいターン 1200mm/s・きついターン 1000mm/s、No.8 はターンは No.7 と同じで直進 2000mm/s、
+ *                    No.9 は No.8 の直進で、ゆるいターン 1300mm/s・きついターン 1100mm/s〈吸引 7V〉、
+ *                    No.10 は No.9 のターンで直進 2500mm/s、No.11 は No.10 の直進でゆるいターン 1400・きついターン 1200mm/s、
+ *                    No.12 は No.11 のターンで直進 3000mm/s）。直進の加速度は、吸引の強さから出した
  *                    グリップの上限で抑える（sys/shortest.c）。
  *                    決定したときに道がなければ、「できなかった」を出して選び直す。
  *                    ゴールで止まったら、入ってきた向きを向いて、止まった位置を覚える
@@ -37,6 +42,7 @@
  *   モード6 No.3     吸引 ON（吸引ファンを回し、スイッチを押すまで吸い続ける）
  *   モード6 No.4     吸引の力（吸引の強さを段ごとに上げて回す。はかりで測る）
  *   モード6 No.5     エンコーダの歪みを測る（タイヤを浮かせて、左右のモーターを回す）
+ *   モード6 No.6     長い直進（16 区画 1360mm を、横の壁に沿う補正を入れて走って止まる。タイヤの直径を合わせる。2026-11-21）
  *   モード7 No.1     ログ出力（迷路と走行ログを PC へ出す）
  *   モード7 No.2     倍率合わせ（区画の境目で測って、感度の倍率を Flash に保存する。置いた位置がずれないように、
  *                    スタート待ちをせず、決定してから 2 秒後に測る）
@@ -97,13 +103,13 @@ int mode_get_number(void)
 bool mode_has_action(int mode, int number)
 {
   if (mode == 0) {
-    if (number >= 1 && number <= 4) {
-      return true;  /* 探索 */
+    if (number >= 1 && number <= 6) {
+      return true;  /* 探索（No.5・6 は全面探索） */
     }
     return false;
   }
   if (mode == 1) {
-    if (number >= 1 && number <= 7) {
+    if (number >= 1 && number <= 12) {
       return true;  /* 最短走行 */
     }
     return false;
@@ -133,8 +139,8 @@ bool mode_has_action(int mode, int number)
     return false;
   }
   if (mode == 6) {
-    if (number >= 1 && number <= 5) {
-      return true;  /* 直進、壁に沿って直進、吸引 ON、吸引の力、エンコーダの歪み */
+    if (number >= 1 && number <= 6) {
+      return true;  /* 直進、壁に沿って直進、吸引 ON、吸引の力、エンコーダの歪み、長い直進 */
     }
     return false;
   }
@@ -191,7 +197,8 @@ static void select_mode(void)
  * モード0：探索
  * ------------------------------------------------------------------------- */
 
-/* 探索走行をする（No.1 往復、No.2 片道、No.3 未知壁探索、No.4 未知壁探索＋既知区間加速） */
+/* 探索走行をする（No.1 往復、No.2 片道、No.3 未知壁探索、No.4 未知壁探索＋既知区間加速、
+ * No.5 全面探索、No.6 全面探索＋既知区間加速） */
 static void run_explore(int number)
 {
   explore_type_t type = EXPLORE_ROUND_TRIP;
@@ -201,6 +208,10 @@ static void run_explore(int number)
     type = EXPLORE_UNKNOWN_WALLS;
   } else if (number == 4) {
     type = EXPLORE_UNKNOWN_WALLS_KNOWN;
+  } else if (number == 5) {
+    type = EXPLORE_FULL;
+  } else if (number == 6) {
+    type = EXPLORE_FULL_KNOWN;
   }
 
   explore_result_t result = explore_run(type, goal_get_x(), goal_get_y(), GOAL_WIDTH, GOAL_HEIGHT);
@@ -337,6 +348,8 @@ static void run_selected(void)
     adjust_suction_force();
   } else if (s_mode == 6 && s_number == 5) {
     encoder_cal_run();
+  } else if (s_mode == 6 && s_number == 6) {
+    adjust_straight_long();
   } else if (s_mode == 7) {
     run_setting(s_number);
   }

@@ -38,6 +38,13 @@
  *     測った速さを見比べて、config/ctrl_gains.h の係数を合わせる
  *   - 走り終わったら、エンコーダで測った距離と、ジャイロで測った向きのずれを覚えておく
  *
+ * ■ モード6 No.6 長い直進（adjust_straight_long。2026-11-21。作者の依頼）
+ * No.1 と同じ走り方で、16 区画（1360mm = 10 + 15 × 90）まっすぐ走り、16 区画目のまん中で止まる。
+ * 距離が長いので、タイヤの直径のずれが No.1 の約 5 倍の大きさで出て、ものさしの読み違いの影響が小さくなる。
+ * 測り方と直し方は No.1 と同じ（新しい直径 = 今の直径 × ものさしの距離 ÷ encoder の距離）。
+ * 長いので、横の壁に沿う補正を入れる（2026-11-21。作者の依頼。距離はエンコーダで測るので、補正を入れても距離の測り方は変わらない）。
+ * 走行ログは 3ms ごとなので、途中で記録がいっぱいになるが、走りは続ける
+ *
  * ■ モード6 No.2 壁に沿って直進（adjust_straight_along_wall）
  * 区画のまん中から 4 区画（360mm）を、探索の速さ（300mm/s）で、横の壁に沿って走る補正を入れて走って止まる。
  *   - 左右に壁がある通路で、少し左か右に寄せて（または少し斜めに）置いて走らせ、まん中に戻るかを見る
@@ -104,6 +111,7 @@
 #define RESULT_LINE_LENGTH_MAX 120  /* RESULT の 1 行の長さの上限 [文字]。出す前に、送信待ちバッファにこれだけの空きを待つ */
 
 #define STRAIGHT_DISTANCE_MM  280.0f   /* 走る距離 [mm]（スタートから 4 区画目のまん中まで：10 + 3 × 90） */
+#define STRAIGHT_LONG_DISTANCE_MM 1360.0f  /* 長い直進で走る距離 [mm]（スタートから 16 区画目のまん中まで：10 + 15 × 90。モード6 No.6） */
 #define STRAIGHT_SPEED_MM_S   200.0f   /* 最高速 [mm/s] */
 #define STRAIGHT_ACCEL_MM_S2  1000.0f  /* 加速度 [mm/s²] */
 #define STRAIGHT_LOG_INTERVAL_MS 3     /* 走行ログの間隔 [ms]（止まるまで約 1.9 秒なので、1000 行に入るように） */
@@ -184,10 +192,10 @@ static void signal_end(void)
 }
 
 /* 直進の結果を覚える（ケーブルは走り終わってから挿すので、あとでモード7 No.1 で出す） */
-static void save_straight_result(float start_distance_mm, float start_angle_deg)
+static void save_straight_result(float target_mm, float start_distance_mm, float start_angle_deg)
 {
   s_result.kind = RESULT_STRAIGHT;
-  s_result.target = STRAIGHT_DISTANCE_MM;
+  s_result.target = target_mm;
   s_result.moved_mm = odometry_get_distance_mm() - start_distance_mm;
   s_result.turned_deg = imu_get_angle_deg() - start_angle_deg;
   s_result.position_error_mm = control_get_position_error_mm();
@@ -316,23 +324,37 @@ void adjust_print_last_result(void)
   printf("#END RESULT\r\n");
 }
 
-/* モード6 No.1 直進：ゆっくり 280mm まっすぐ走って止まる（流れは先頭のコメント） */
-void adjust_straight(void)
+/* 直進のテスト（モード6 No.1・No.6）：ゆっくり distance_mm まっすぐ走って止まり、結果を覚える（流れは先頭のコメント）。
+ * use_wall_control が true なら、横の壁に沿って走る補正を入れる（No.6。長いので、向きのずれで壁に寄らないように） */
+static void run_straight_test(float distance_mm, bool use_wall_control)
 {
   imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒） */
   float start_distance_mm = odometry_get_distance_mm();
   float start_angle_deg = imu_get_angle_deg();
 
   log_start(STRAIGHT_LOG_INTERVAL_MS);
-  control_set_wall_control(false);  /* 横の壁に沿って走る補正は入れない */
+  control_set_wall_control(use_wall_control);  /* 横の壁に沿って走る補正（No.1 は入れない、No.6 は入れる） */
   control_start();
-  trajectory_start_straight(STRAIGHT_DISTANCE_MM, STRAIGHT_SPEED_MM_S, 0.0f, STRAIGHT_ACCEL_MM_S2);
+  trajectory_start_straight(distance_mm, STRAIGHT_SPEED_MM_S, 0.0f, STRAIGHT_ACCEL_MM_S2);
   wait_until_done();
   settle_and_stop();
+  control_set_wall_control(false);  /* ほかの動きに残さないように、切っておく */
 
-  save_straight_result(start_distance_mm, start_angle_deg);
+  save_straight_result(distance_mm, start_distance_mm, start_angle_deg);
   adjust_print_last_result();  /* ケーブルを挿したまま走らせたときのために、すぐにも出す */
   signal_end();
+}
+
+/* モード6 No.1 直進：ゆっくり 280mm（4 区画目のまん中まで）まっすぐ走って止まる */
+void adjust_straight(void)
+{
+  run_straight_test(STRAIGHT_DISTANCE_MM, false);
+}
+
+/* モード6 No.6 長い直進：ゆっくり 1360mm（16 区画目のまん中まで）、横の壁に沿う補正を入れて、まっすぐ走って止まる */
+void adjust_straight_long(void)
+{
+  run_straight_test(STRAIGHT_LONG_DISTANCE_MM, true);
 }
 
 /* その場旋回の結果を覚える（あとでモード7 No.1 で出す） */
@@ -424,7 +446,7 @@ void adjust_straight_along_wall(void)
   settle_and_stop();
   control_set_wall_control(false);
 
-  save_straight_result(start_distance_mm, start_angle_deg);
+  save_straight_result(STRAIGHT_DISTANCE_MM, start_distance_mm, start_angle_deg);
   adjust_print_last_result();
   signal_end();
 }

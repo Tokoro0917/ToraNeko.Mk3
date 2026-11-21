@@ -8,6 +8,8 @@
  *   EXPLORE_UNKNOWN_WALLS 未知壁探索：スタート → ゴール → 最短経路の上の見ていない壁を見に行く → スタート（No.3）
  *   EXPLORE_UNKNOWN_WALLS_KNOWN 未知壁探索＋既知区間加速：No.3 と同じ道を通り、行きと帰りで、見たことのある区画が
  *                                 まっすぐ 2 区画以上続くところは、まとめて速く走る（No.4）
+ *   EXPLORE_FULL          全面探索  ：スタート → ゴール → まだ見ていない壁がある区画を、近いところから全部見に行く → スタート（No.5。2026-11-21）
+ *   EXPLORE_FULL_KNOWN    全面探索＋既知区間加速（No.6）
  *
  * ■ 使い方
  * 機体をスタート区画に北向きに置いてから explore_run() を呼ぶ。走り終わるまで戻ってこない。
@@ -22,6 +24,8 @@ typedef enum {
   EXPLORE_ONE_WAY,        /* 片道 */
   EXPLORE_UNKNOWN_WALLS,  /* 未知壁探索 */
   EXPLORE_UNKNOWN_WALLS_KNOWN,  /* 未知壁探索＋既知区間加速 */
+  EXPLORE_FULL,           /* 全面探索 */
+  EXPLORE_FULL_KNOWN,     /* 全面探索＋既知区間加速 */
 } explore_type_t;
 
 /* 探索の結果 */

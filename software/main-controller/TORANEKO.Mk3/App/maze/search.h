@@ -21,6 +21,11 @@
  *       UNKNOWN_WALL_NONE  ：経路の壁を全部見た。止まらずにスタートへ戻る
  *       UNKNOWN_WALL_NO_PLAN：経路を覚えていない。search_plan_unknown_walls() が false だった（ゴールへの道がない）など
  * U ターンするときも止まるので、そのときにも計算し直す。
+ *
+ * ■ 全面探索（2026-11-21。KOGUMA の全面探索と同じ考え方）
+ * search_set_target_unknown_cells() で、まだ見ていない壁がある区画を全部目的地にして、足立法でいちばん近いところへ進む。
+ * 入った区画の壁を見ると、その区画は目的地でなくなる。行ける目的地がなくなると search_decide_action() が ACTION_STOP を返す。
+ * ダイクストラは使わないので、止まって計算することはない（止まるのは U ターンのときだけ）。
  */
 #ifndef MAZE_SEARCH_H
 #define MAZE_SEARCH_H
@@ -50,6 +55,7 @@ typedef enum {
 } action_t;
 
 void search_set_target(int x, int y, int width, int height);
+void search_set_target_unknown_cells(void);
 bool search_is_in_target(int x, int y);
 void search_update_step_map(void);
 uint16_t search_get_step(int x, int y);

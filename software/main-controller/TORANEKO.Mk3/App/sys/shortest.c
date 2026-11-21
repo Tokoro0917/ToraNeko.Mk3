@@ -10,9 +10,12 @@
  *   2. 直進は最高速まで速くしてから、小回りの速さ（300mm/s）まで遅くする。左・右は探索と同じスラローム 90°
  *   3. 最後の直進で、ゴールの最初の区画のまん中で止まる
  *
- * ■ No.4〜7：大回り・斜めのターンで曲がる（2026-10-28 に作った。2026-11-04 に、ターンごとの速さで曲がるようにした）
+ * ■ No.4〜12：大回り・斜めのターンで曲がる（2026-10-28 に作った。2026-11-04 に、ターンごとの速さで曲がるようにした）
  *   No.4・5 はターンの組 1（ゆるいターン 800mm/s、きついターン 600mm/s）、No.6 は組 2（7 つとも 1000mm/s。2026-11-10）、
- *   No.7 は組 3（ゆるいターン 1200mm/s・きついターン 1000mm/s。2026-11-11）で
+ *   No.7 は組 3（ゆるいターン 1200mm/s・きついターン 1000mm/s。2026-11-11）、
+ *   No.8 は No.7 と同じ組 3 で直進だけ速くしたもの（直進 2000mm/s）、No.9 は No.8 の直進で組 5（ゆるいターン 1300mm/s・
+ *   きついターン 1100mm/s）、No.10 は No.9 のターンで直進 2500mm/s、
+ *   No.11 は No.10 の直進で組 6（ゆるいターン 1400mm/s・きついターン 1200mm/s）、No.12 は No.11 のターンで直進 3000mm/s（どれも 2026-11-21 の大会で作者の依頼で決めた）で
  *   曲がる（config/turn_params.h の「■ ターンの組」）。走り終わったら組 1 に戻す
  *   1. 吸引を上げて（0.5 秒）、0.5 秒待つ（ターンは吸引して合わせた。モード3。吸引なしでは 800mm/s のターンで滑る）
  *   2. 経路を作る（maze/path.c の path_make_shortest()。大回り 90°・180°、斜め入り・斜め出 45°・135°、V90°、斜めの直進）
@@ -32,20 +35,20 @@
  *   小回り（MOTION_TURN_LEFT・RIGHT）は経路に残らない（PC で 500 個の迷路を調べて 0 個）が、残ったら走らずに「道がない」にする
  *
  * 経路は、その走り方と速さで本当にかかる時間が短いものを選ぶ（ダイクストラの走行時間のコスト。maze/dijkstra.c）。
- * No.4〜7 は「直線 ＋ ターン 1 つ」ごとの時間で数える（KOGUMA の #100）ので、ターンの種類ごとの時間の違いまで比べる。
+ * No.4〜12 は「直線 ＋ ターン 1 つ」ごとの時間で数える（KOGUMA の #100）ので、ターンの種類ごとの時間の違いまで比べる。
  * 時間を数えるときは、どのターンも FAST_TURN_SPEED_MM_S（500mm/s）で曲がるとして数える（本当はターンごとに速さが違うが、
  * 直線の時間が前後のターンの速さで変わり、ダイクストラで数えにくいため。ターンの形はどれも同じなので、選ぶ道はあまり変わらない）。
  * No.6 は、ターンが 7 つとも 1000mm/s なので、T1000_PATH_TURN_SPEED_MM_S（1000mm/s）で数える。
  * No.7 は、いちばん遅いターン（きついターン）の 1000mm/s で数える（T1200_PATH_TURN_SPEED_MM_S）。
  *
- * ■ ゴールで止まるところ（2026-11-10。作者の案。No.1〜7 とも）
+ * ■ ゴールで止まるところ（2026-11-10。作者の案。No.1〜12 とも）
  * 経路は、ゴールの最初の区画のまん中で終わる。ゴールは 2×2 なので、そこから同じ向きにもう 1 区画進んでも、まだゴールの中にいる。
  * そこで、経路の最後に「1 区画（90mm）の直進」を足して（最後が直進ならその直進を 1 区画長くして）、その区画のまん中で止まる
  * （extend_into_goal()）。こうすると、ゴールに直進で入っても、ターンで入っても、止まるところは同じ「ゴールの 2 つ目の区画の
  * まん中」になり、止まるまでに 1 区画ぶんの余裕ができる（ターンで入ったときに、ターンの速さを落とさなくてよい）。
  * 次の区画がゴールの外のとき・あいだに壁があるときは、足さない（今までどおり、最初の区画で止まる）
  *
- * ■ ゴールで止まったあと（2026-11-11。作者の案。No.1〜7 とも）
+ * ■ ゴールで止まったあと（2026-11-11。作者の案。No.1〜12 とも）
  * ゴールの区画のまん中で止まったら、次の順に動く（turn_back_at_goal()）。
  *   1. 止まった区画の前・左・右の壁を、センサで見る（探索で、この区画の壁を使うため）
  *   2. 前に壁があれば前壁合わせをしながら、その場で左に 90° を 2 回回って、入ってきた向きを向く
@@ -59,7 +62,7 @@
  * 直進・斜めの直進の加速度は、No. ごとに決めた値（config/run_params.h の SHORTEST*_ACCEL_MM_S2）と、
  * その No. の吸引の電圧から出した「タイヤが滑らない加速度」（グリップの上限。grip_accel_limit_mm_s2()）の小さいほうにする。
  * 吸引を強くすると上限が上がり、弱くすると下がる（式と値は config/run_params.h の「グリップの上限」）。
- * 今の値では、No.3（3000mm/s²、吸引なし）だけが上限の約 2880mm/s² で抑えられ、No.4〜7（5.0V で上限 約 17300mm/s²）は決めた値のまま。
+ * 今の値では、No.3（3000mm/s²、吸引なし）だけが上限の約 2880mm/s² で抑えられ、No.4〜12（5.0V で上限 約 17300mm/s²）は決めた値のまま。
  * 速くするときは、さらにモーターが出せる加速度でも抑えられる（ctrl/trajectory.c）
  *
  * ■ スタートの位置
@@ -94,7 +97,7 @@ static path_t s_path;  /* 最短経路（大きいので、関数の中ではな
 /* ゴールで止まったときに覚えた位置（先頭のコメントの「■ ゴールで止まったあと」） */
 static shortest_end_pose_t s_end_pose = { false, 0, 0, DIR_NORTH, false, false, false };
 
-/* 大回り・斜めで走る No. か（No.4〜7） */
+/* 大回り・斜めで走る No. か（No.4〜12） */
 static bool uses_diagonal(int number)
 {
   if (number >= 4) {
@@ -124,6 +127,21 @@ static float max_speed_mm_s(int number)
   if (number == 7) {
     return SHORTEST7_MAX_SPEED_MM_S;
   }
+  if (number == 8) {
+    return SHORTEST8_MAX_SPEED_MM_S;
+  }
+  if (number == 9) {
+    return SHORTEST9_MAX_SPEED_MM_S;
+  }
+  if (number == 10) {
+    return SHORTEST10_MAX_SPEED_MM_S;
+  }
+  if (number == 11) {
+    return SHORTEST11_MAX_SPEED_MM_S;
+  }
+  if (number == 12) {
+    return SHORTEST12_MAX_SPEED_MM_S;
+  }
   return SHORTEST1_MAX_SPEED_MM_S;
 }
 
@@ -148,10 +166,25 @@ static float set_accel_mm_s2(int number)
   if (number == 7) {
     return SHORTEST7_ACCEL_MM_S2;
   }
+  if (number == 8) {
+    return SHORTEST8_ACCEL_MM_S2;
+  }
+  if (number == 9) {
+    return SHORTEST9_ACCEL_MM_S2;
+  }
+  if (number == 10) {
+    return SHORTEST10_ACCEL_MM_S2;
+  }
+  if (number == 11) {
+    return SHORTEST11_ACCEL_MM_S2;
+  }
+  if (number == 12) {
+    return SHORTEST12_ACCEL_MM_S2;
+  }
   return SHORTEST1_ACCEL_MM_S2;
 }
 
-/* No. ごとの、斜めの直進の最高速 [mm/s]（No.4〜7 だけ使う） */
+/* No. ごとの、斜めの直進の最高速 [mm/s]（No.4〜12 だけ使う） */
 static float diag_max_speed_mm_s(int number)
 {
   if (number == 5) {
@@ -163,10 +196,25 @@ static float diag_max_speed_mm_s(int number)
   if (number == 7) {
     return SHORTEST7_DIAG_MAX_SPEED_MM_S;
   }
+  if (number == 8) {
+    return SHORTEST8_DIAG_MAX_SPEED_MM_S;
+  }
+  if (number == 9) {
+    return SHORTEST9_DIAG_MAX_SPEED_MM_S;
+  }
+  if (number == 10) {
+    return SHORTEST10_DIAG_MAX_SPEED_MM_S;
+  }
+  if (number == 11) {
+    return SHORTEST11_DIAG_MAX_SPEED_MM_S;
+  }
+  if (number == 12) {
+    return SHORTEST12_DIAG_MAX_SPEED_MM_S;
+  }
   return SHORTEST4_DIAG_MAX_SPEED_MM_S;
 }
 
-/* No. ごとの、決めた斜めの直進の加速度 [mm/s²]（No.4〜7 だけ使う。グリップの上限で抑える前） */
+/* No. ごとの、決めた斜めの直進の加速度 [mm/s²]（No.4〜12 だけ使う。グリップの上限で抑える前） */
 static float set_diag_accel_mm_s2(int number)
 {
   if (number == 5) {
@@ -178,10 +226,25 @@ static float set_diag_accel_mm_s2(int number)
   if (number == 7) {
     return SHORTEST7_DIAG_ACCEL_MM_S2;
   }
+  if (number == 8) {
+    return SHORTEST8_DIAG_ACCEL_MM_S2;
+  }
+  if (number == 9) {
+    return SHORTEST9_DIAG_ACCEL_MM_S2;
+  }
+  if (number == 10) {
+    return SHORTEST10_DIAG_ACCEL_MM_S2;
+  }
+  if (number == 11) {
+    return SHORTEST11_DIAG_ACCEL_MM_S2;
+  }
+  if (number == 12) {
+    return SHORTEST12_DIAG_ACCEL_MM_S2;
+  }
   return SHORTEST4_DIAG_ACCEL_MM_S2;
 }
 
-/* No. ごとの、吸引の電圧 [V]（No.4〜7 だけ使う。config/run_params.h の SHORTEST*_SUCTION_V） */
+/* No. ごとの、吸引の電圧 [V]（No.4〜12 だけ使う。config/run_params.h の SHORTEST*_SUCTION_V） */
 static float suction_voltage_v(int number)
 {
   if (number == 5) {
@@ -192,6 +255,21 @@ static float suction_voltage_v(int number)
   }
   if (number == 7) {
     return SHORTEST7_SUCTION_V;
+  }
+  if (number == 8) {
+    return SHORTEST8_SUCTION_V;
+  }
+  if (number == 9) {
+    return SHORTEST9_SUCTION_V;
+  }
+  if (number == 10) {
+    return SHORTEST10_SUCTION_V;
+  }
+  if (number == 11) {
+    return SHORTEST11_SUCTION_V;
+  }
+  if (number == 12) {
+    return SHORTEST12_SUCTION_V;
   }
   return SHORTEST4_SUCTION_V;
 }
@@ -233,7 +311,7 @@ static float suction_force_g(float suction_v)
 }
 
 /* No. ごとの、グリップの上限 [mm/s²]（config/run_params.h の「グリップの上限」の説明）。
- * 吸引するのは No.4〜7 だけなので、No.1〜3 は吸引なしの値 */
+ * 吸引するのは No.4〜12 だけなので、No.1〜3 は吸引なしの値 */
 static float grip_accel_limit_mm_s2(int number)
 {
   float suction_v = 0.0f;
@@ -255,7 +333,7 @@ static float accel_mm_s2(int number)
   return set_accel_mm_s2(number);
 }
 
-/* No. ごとの、斜めの直進の加速度 [mm/s²]（No.4〜7 だけ使う）。決めた加速度と、グリップの上限の小さいほう */
+/* No. ごとの、斜めの直進の加速度 [mm/s²]（No.4〜12 だけ使う）。決めた加速度と、グリップの上限の小さいほう */
 static float diag_accel_mm_s2(int number)
 {
   float grip_mm_s2 = grip_accel_limit_mm_s2(number);
@@ -272,8 +350,14 @@ static int turn_set_of(int number)
   if (number == 6) {
     return 2;
   }
-  if (number == 7) {
+  if (number == 7 || number == 8) {
     return 3;
+  }
+  if (number == 9 || number == 10) {
+    return 5;
+  }
+  if (number == 11 || number == 12) {
+    return 6;
   }
   return 1;
 }
@@ -284,13 +368,19 @@ static float path_turn_speed_mm_s(int number)
   if (number == 6) {
     return T1000_PATH_TURN_SPEED_MM_S;
   }
-  if (number == 7) {
+  if (number == 7 || number == 8) {
     return T1200_PATH_TURN_SPEED_MM_S;
+  }
+  if (number == 9 || number == 10) {
+    return T1300_PATH_TURN_SPEED_MM_S;
+  }
+  if (number == 11 || number == 12) {
+    return T1400_PATH_TURN_SPEED_MM_S;
   }
   return FAST_TURN_SPEED_MM_S;
 }
 
-/* 経路の中に、小回り（探索用の左右のターン）があるか（No.4〜7 では走れない） */
+/* 経路の中に、小回り（探索用の左右のターン）があるか（No.4〜12 では走れない） */
 static bool has_small_turn(void)
 {
   for (int i = 0; i < s_path.count; i++) {
@@ -391,7 +481,7 @@ static float straight_distance_mm(int i)
 /* 経路の i 番目の直進を始める位置が、うしろの区画の境目から何 mm 先か（壁切れに使う。ctrl/run.c の run_fast_straight）。
  *   最初の直進：スタート区画の南の辺から、タイヤの軸まで（先頭のコメントの「■ スタートの位置」。35mm）
  *   小回りのあと（No.1〜3）：小回りは区画の入口から次の区画の入口まで曲がるので、境目の上（0mm）
- *   大回り・斜め出のあと（No.4〜7）：区画のまん中（45mm） */
+ *   大回り・斜め出のあと（No.4〜12）：区画のまん中（45mm） */
 static float straight_start_in_cell_mm(int i)
 {
   if (i == 0) {
@@ -422,7 +512,7 @@ static void run_small_turn_step(int i, float max_speed, float accel)
   }
 }
 
-/* No.4〜7：動き motion が、どの大回り・斜めのターンか */
+/* No.4〜12：動き motion が、どの大回り・斜めのターンか */
 static run_fast_turn_t fast_turn_kind(motion_t motion)
 {
   if (motion == MOTION_BIG_TURN_LEFT_90 || motion == MOTION_BIG_TURN_RIGHT_90) {
@@ -446,7 +536,7 @@ static run_fast_turn_t fast_turn_kind(motion_t motion)
   return RUN_FAST_TURN_V90;
 }
 
-/* No.4〜7：動き motion が左に曲がるターンか */
+/* No.4〜12：動き motion が左に曲がるターンか */
 static bool is_left_turn(motion_t motion)
 {
   if (motion == MOTION_BIG_TURN_LEFT_90 || motion == MOTION_BIG_TURN_LEFT_180
@@ -473,7 +563,7 @@ static float diag_distance_mm(int i)
   return s_path.steps[i].half_count * DIAG_STEP_MM;
 }
 
-/* No.4〜7：経路の first 番目の動きを始めるときに、出していてよい速さの上限 [mm/s]（先頭のコメントの 3）。
+/* No.4〜12：経路の first 番目の動きを始めるときに、出していてよい速さの上限 [mm/s]（先頭のコメントの 3）。
  * その先のどのターンも、そのターンの速さ以下で曲がれて、最後に止まれる速さにする。
  * 直進で遅くできる分は「速さの 2 乗」で 2 × 加速度 × 距離（速さ v から、距離 d で遅くできるのは √(v² − 2ad) まで）。
  * なので、あるターンの手前までに遅くできる分を slow_down とすると、今の速さは √(ターンの速さ² ＋ slow_down) までよい。
@@ -510,7 +600,7 @@ static float speed_limit_ahead_mm_s(int first, float accel, float diag_accel)
   return slower_mm_s(limit_mm_s, stop_limit_mm_s);
 }
 
-/* No.4〜7：直進の終わりの速さ [mm/s]。速さ start_mm_s から distance_mm で上げられる速さ、最高速 max_speed、
+/* No.4〜12：直進の終わりの速さ [mm/s]。速さ start_mm_s から distance_mm で上げられる速さ、最高速 max_speed、
  * その先を見た上限 limit_mm_s の、いちばん遅いもの（上げきれない速さを頼むと、着いたときに速さが飛んでしまうので）。
  * 上げられる速さは、速いところでモーターの加速度が小さくなる分も入れて出す（ctrl/trajectory.c。2026-11-11） */
 static float straight_end_speed_mm_s(float start_mm_s, float distance_mm, float accel, float max_speed, float limit_mm_s)
@@ -521,7 +611,7 @@ static float straight_end_speed_mm_s(float start_mm_s, float distance_mm, float 
   return end_mm_s;
 }
 
-/* No.4〜7：経路を前から順に走る。speed_mm_s は今の速さ（直進が終わった速さで、次のターンを曲がる） */
+/* No.4〜12：経路を前から順に走る。speed_mm_s は今の速さ（直進が終わった速さで、次のターンを曲がる） */
 static void run_diagonal_path(int number)
 {
   float max_speed = max_speed_mm_s(number);
@@ -568,7 +658,7 @@ static void run_diagonal_path(int number)
   }
 }
 
-/* No.4〜7：吸引を No. ごとの電圧まで上げて、少し待つ（先頭のコメントの 1） */
+/* No.4〜12：吸引を No. ごとの電圧まで上げて、少し待つ（先頭のコメントの 1） */
 static void start_suction(int number)
 {
   suction_ramp_up_to(suction_voltage_v(number));  /* 0.5 秒かけて吸引を上げる（sys/suction.c） */
@@ -625,7 +715,7 @@ shortest_result_t shortest_run(int number, int goal_x, int goal_y)
     start_suction(number);
   }
   run_fast_set_turn_set(turn_set_of(number));  /* No.6 は組 2、No.7 は組 3 で曲がる */
-  run_fast_start();  /* ジャイロのゼロ点を測り直してから、制御を始める（No.4〜7 は、吸ったまま測る） */
+  run_fast_start();  /* ジャイロのゼロ点を測り直してから、制御を始める（No.4〜12 は、吸ったまま測る） */
   if (uses_diagonal(number)) {
     run_diagonal_path(number);
   } else {

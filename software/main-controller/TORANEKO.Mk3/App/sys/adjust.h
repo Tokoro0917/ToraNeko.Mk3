@@ -6,6 +6,7 @@
 #define SYS_ADJUST_H
 
 void adjust_straight(void);
+void adjust_straight_long(void);
 void adjust_pivot_180(void);
 void adjust_slalom_90(void);
 void adjust_straight_along_wall(void);

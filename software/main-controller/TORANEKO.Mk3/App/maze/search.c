@@ -16,6 +16,7 @@
 #include "maze/dijkstra.h"
 
 /* 目的地（長方形の範囲）。(左下の x, 左下の y) と 幅・高さ [区画] */
+static bool s_target_unknown_cells = false;  /* true なら、長方形のかわりに「まだ見ていない壁がある区画」全部を目的地にする（全面探索） */
 static int s_target_x = 0;
 static int s_target_y = 0;
 static int s_target_width = 1;
@@ -32,15 +33,45 @@ static uint8_t s_queue_y[MAZE_SIZE * MAZE_SIZE];
 /* 目的地を決める。ゴールなら大会のゴールの範囲、帰りならスタート (0, 0, 1, 1) を渡す */
 void search_set_target(int x, int y, int width, int height)
 {
+  s_target_unknown_cells = false;
   s_target_x = x;
   s_target_y = y;
   s_target_width = width;
   s_target_height = height;
 }
 
-/* (x, y) が目的地の範囲の中か */
+/* 全面探索（2026-11-21）：まだ見ていない壁がある区画を、全部目的地にする。
+ * 歩数マップは「いちばん近い、まだ見ていない壁がある区画まであと何区画か」になる。
+ * その区画に入ると壁を見るので、目的地ではなくなる（目的地が少しずつ減っていく） */
+void search_set_target_unknown_cells(void)
+{
+  s_target_unknown_cells = true;
+}
+
+/* 区画 (x, y) に、まだ見ていない壁が 1 枚でもあるか */
+static bool has_unknown_wall(int x, int y)
+{
+  if (maze_map_get_wall(x, y, DIR_NORTH) == WALL_UNKNOWN) {
+    return true;
+  }
+  if (maze_map_get_wall(x, y, DIR_EAST) == WALL_UNKNOWN) {
+    return true;
+  }
+  if (maze_map_get_wall(x, y, DIR_SOUTH) == WALL_UNKNOWN) {
+    return true;
+  }
+  if (maze_map_get_wall(x, y, DIR_WEST) == WALL_UNKNOWN) {
+    return true;
+  }
+  return false;
+}
+
+/* (x, y) が目的地か（長方形の範囲の中か。全面探索なら、まだ見ていない壁がある区画か） */
 bool search_is_in_target(int x, int y)
 {
+  if (s_target_unknown_cells) {
+    return has_unknown_wall(x, y);
+  }
   return maze_is_in_area(x, y, s_target_x, s_target_y, s_target_width, s_target_height);
 }
 
