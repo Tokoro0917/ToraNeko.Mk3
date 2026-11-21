@@ -2935,7 +2935,7 @@ static bool run_shortest_and_check(int number)
 /* ランダムな迷路（ゴールが 2×2 のもの）と、壁のない迷路で、No.4〜7 を走らせる */
 static void test_shortest_diagonal(int maze_count)
 {
-  printf("[10] 最短走行の大回り・斜め（No.4〜7）：ランダムな迷路 %d 個\n", maze_count);
+  printf("[10] 最短走行の大回り・斜め（No.4〜8）：ランダムな迷路 %d 個\n", maze_count);
   int tried = 0;
   int fail_count = 0;
   s_fast_slow_turn_count = 0;
@@ -2960,6 +2960,9 @@ static void test_shortest_diagonal(int maze_count)
     if (!run_shortest_and_check(7)) {
       fail_count = fail_count + 1;
     }
+    if (!run_shortest_and_check(8)) {
+      fail_count = fail_count + 1;
+    }
     if (s_fast_turn_set != 1) {
       fast_error("走り終わったのに、ターンの組が 1 に戻っていない");
       fail_count = fail_count + 1;
@@ -2968,7 +2971,7 @@ static void test_shortest_diagonal(int maze_count)
   printf("  走らせた迷路 %d 個、うまくいかなかった走行 %d 回\n", tried, fail_count);
   printf("  そのターンの速さで曲がったターン %d 回、遅く曲がったターン %d 回（スタートの直後・ターンが続くとき・ゴールで止まるとき）\n",
          s_fast_full_turn_count, s_fast_slow_turn_count);
-  check(tried > 0 && fail_count == 0, "No.4〜7 で、ターンが迷路の形どおりに始まり、速さに無理がなく、ゴールの区画で止まる。走り終わると組 1 に戻る");
+  check(tried > 0 && fail_count == 0, "No.4〜8 で、ターンが迷路の形どおりに始まり、速さに無理がなく、ゴールの区画で止まる。走り終わると組 1 に戻る");
 
   make_open_true_maze();
   copy_true_maze_to_map();
@@ -2976,8 +2979,9 @@ static void test_shortest_diagonal(int maze_count)
   s_goal_y = 7;
   s_goal_width = 2;
   s_goal_height = 2;
-  check(run_shortest_and_check(4) && run_shortest_and_check(5) && run_shortest_and_check(6) && run_shortest_and_check(7),
-        "壁のない迷路で (7,7) へ、No.4〜7 が正しく走る");
+  check(run_shortest_and_check(4) && run_shortest_and_check(5) && run_shortest_and_check(6) && run_shortest_and_check(7)
+        && run_shortest_and_check(8),
+        "壁のない迷路で (7,7) へ、No.4〜8 が正しく走る");
 }
 
 /* ---------------------------------------------------------------------------
