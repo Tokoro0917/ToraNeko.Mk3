@@ -42,7 +42,8 @@
  * No.1 と同じ走り方で、16 区画（1360mm = 10 + 15 × 90）まっすぐ走り、16 区画目のまん中で止まる。
  * 距離が長いので、タイヤの直径のずれが No.1 の約 5 倍の大きさで出て、ものさしの読み違いの影響が小さくなる。
  * 測り方と直し方は No.1 と同じ（新しい直径 = 今の直径 × ものさしの距離 ÷ encoder の距離）。
- * 横の壁に沿う補正は入れない（向きはジャイロで保つ）。走行ログは 3ms ごとなので、途中で記録がいっぱいになるが、走りは続ける
+ * 長いので、横の壁に沿う補正を入れる（2026-11-21。作者の依頼。距離はエンコーダで測るので、補正を入れても距離の測り方は変わらない）。
+ * 走行ログは 3ms ごとなので、途中で記録がいっぱいになるが、走りは続ける
  *
  * ■ モード6 No.2 壁に沿って直進（adjust_straight_along_wall）
  * 区画のまん中から 4 区画（360mm）を、探索の速さ（300mm/s）で、横の壁に沿って走る補正を入れて走って止まる。
@@ -323,19 +324,21 @@ void adjust_print_last_result(void)
   printf("#END RESULT\r\n");
 }
 
-/* 直進のテスト（モード6 No.1・No.6）：ゆっくり distance_mm まっすぐ走って止まり、結果を覚える（流れは先頭のコメント） */
-static void run_straight_test(float distance_mm)
+/* 直進のテスト（モード6 No.1・No.6）：ゆっくり distance_mm まっすぐ走って止まり、結果を覚える（流れは先頭のコメント）。
+ * use_wall_control が true なら、横の壁に沿って走る補正を入れる（No.6。長いので、向きのずれで壁に寄らないように） */
+static void run_straight_test(float distance_mm, bool use_wall_control)
 {
   imu_remeasure_offset();  /* ジャイロのゼロ点を測り直す（約 0.5 秒） */
   float start_distance_mm = odometry_get_distance_mm();
   float start_angle_deg = imu_get_angle_deg();
 
   log_start(STRAIGHT_LOG_INTERVAL_MS);
-  control_set_wall_control(false);  /* 横の壁に沿って走る補正は入れない */
+  control_set_wall_control(use_wall_control);  /* 横の壁に沿って走る補正（No.1 は入れない、No.6 は入れる） */
   control_start();
   trajectory_start_straight(distance_mm, STRAIGHT_SPEED_MM_S, 0.0f, STRAIGHT_ACCEL_MM_S2);
   wait_until_done();
   settle_and_stop();
+  control_set_wall_control(false);  /* ほかの動きに残さないように、切っておく */
 
   save_straight_result(distance_mm, start_distance_mm, start_angle_deg);
   adjust_print_last_result();  /* ケーブルを挿したまま走らせたときのために、すぐにも出す */
@@ -345,13 +348,13 @@ static void run_straight_test(float distance_mm)
 /* モード6 No.1 直進：ゆっくり 280mm（4 区画目のまん中まで）まっすぐ走って止まる */
 void adjust_straight(void)
 {
-  run_straight_test(STRAIGHT_DISTANCE_MM);
+  run_straight_test(STRAIGHT_DISTANCE_MM, false);
 }
 
-/* モード6 No.6 長い直進：ゆっくり 1360mm（16 区画目のまん中まで）まっすぐ走って止まる */
+/* モード6 No.6 長い直進：ゆっくり 1360mm（16 区画目のまん中まで）、横の壁に沿う補正を入れて、まっすぐ走って止まる */
 void adjust_straight_long(void)
 {
-  run_straight_test(STRAIGHT_LONG_DISTANCE_MM);
+  run_straight_test(STRAIGHT_LONG_DISTANCE_MM, true);
 }
 
 /* その場旋回の結果を覚える（あとでモード7 No.1 で出す） */
