@@ -1,0 +1,5 @@
+#BEGIN WALLREF set=1
+sensor,raw,home
+L,1522.5,1460
+R,898.7,815
+#END WALLREF
