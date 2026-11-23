@@ -11,11 +11,13 @@
  *        フィードフォワード：目標の角速度・角加速度を、タイヤ 1 つの速さ・加速度に直して、2 と同じ係数をかける
  *                            （角速度 [rad/s] × トレッド幅の半分 = タイヤ 1 つの速さ [mm/s]）
  *        フィードバック    ：角速度のずれ × OMEGA_KP + 角度のずれ × ANGLE_KI
+ *        角度のずれ ＝ 目標の向き − ジャイロの角度（下の「目標の向き」）
  *      横の壁に沿って走る補正が入っているときは、直進中の目標の角速度に、横の壁からのずれで決めた分を足す
  *      （ずれ × WALL_KP + ずれの変わる速さ × WALL_KD。左の壁に近ければ右へ曲げる）
  *      斜めの補正が入っているときは（斜めの直進。KOGUMA の calWallConrol_NANAME）、前のセンサがしきい値を超えた分で決めた分を足す
  *      （ずれ × DIAG_KP ×（目標の速さ ÷ 1000）。左の柱・壁に近ければ右へ曲げる。下の「斜めの直進」）
- *      横の壁の補正が入っているのに、左右とも使える壁がないときは、向きを迷路の向きに戻す分を足す（下の「向きを戻す」）
+ *      横の壁の補正が入っているのに、左右とも使える壁がないとき（斜めの直進では、斜めの補正を入れているのに、柱や壁が
+ *      見えていないとき）は、向きを迷路の向きに戻す分を足す（下の「向きを戻す」）
  *   4. 左 = 前に進む分 − 向きの分、右 = 前に進む分 + 向きの分 をモーターにかける
  *      （左回りが + なので、左に向けたいときは右を速く、左を遅くする）
  *   5. 走行ログに 1 行渡す（sys/log.c が、決めた間隔ごとに残す）
@@ -25,12 +27,25 @@
  *        この 2 つは、FAILSAFE_HOLD_MS 続いたら止める（KOGUMA_PORTING.md の F2〜F4）
  * 係数は config/ctrl_gains.h にある。
  *
- * ■ 向きを戻す（2026-11-04）
+ * ■ 目標の向き（2026-11-23）
+ * 制御を始めたとき（最短走行ならスタート）の向きを 0° として、「機体が向いているはずの向き」を、走り終わるまで 1 つの値で持つ。
+ *     目標の向き ＝ 始めたときの向き ＋（目標の角速度 ＋ 補正で足した角速度）を 0.5ms ごとに足していったもの
+ * 動作ごとに 0 に戻さない（KOGUMA は動作ごとに 0 に戻す）。なので、ターンで 3° 回り足りなければ、次の直進のあいだも
+ * 角度のずれ 3° が残り、ANGLE_KI の分で戻す。斜めの直進なら、目標の向きはちょうど 45°・135° … になっている。
+ * 横の壁の補正・斜めの補正・向きを戻す分も目標の向きに足す（壁があるときは、壁で決めた向きを信じる）。
+ * ジャイロの角度も、同じ角速度を同じ周期で足した値なので（drv/imu.c）、
+ * 目標の向き − ジャイロの角度 は、「目標の角速度 − 測った角速度」を足し合わせた値と同じになる。
+ * 制御を始め直したとき（control_restart()。探索で止まったあと）は、そのときの向きを目標の向きにする。
+ *
+ * ■ 向きを戻す（2026-11-04。斜めは 2026-11-23）
  * 横の壁の補正は、横の位置を直すために向きを少し変える。壁がなくなると、変えた向きがそのまま残り、斜めに進んでしまう
  * （柱のテストで、壁のない区間を 2〜4° 向いたまま走り、壁や柱に当たった）。そこで、縦横の直進で、横の壁の補正を入れて
  * いるのに左右とも使える壁がないときは、ジャイロで測った向きを「迷路の向き」（基準の向きから 90° ごと）に戻す：
  *     戻す角速度 ＝ −（向き − いちばん近い迷路の向き）× HEADING_HOLD_GAIN ×（目標の速さ ÷ 1000）（上限 HEADING_HOLD_LIMIT_DEG_S）
  * 速さに比例させるのは、向きが戻るまでに進む距離を、速さによらずそろえるため（1000 ÷ HEADING_HOLD_GAIN mm で戻る）。
+ * 斜めの直進でも、斜めの補正を入れているのに柱や壁が見えていない（前のセンサがしきい値を超えていない）ときは、
+ * 同じように戻す。斜めの迷路の向きは、基準の向きから 45° ずらして 90° ごと（45°・135°・−45°・−135°）。
+ * 斜めの補正で向きを変えたあと、柱を過ぎたら向きを戻すので、ずれた向きのまま次の柱へ向かって進まない。
  * 基準の向き：
  *   - 制御を始めたときの向き（control_start()。最短走行は、これだけ）
  *   - 壁で姿勢を合わせたとき（前壁合わせ・横壁合わせのあと。ctrl/run.c が control_reset_heading_reference() を呼ぶ）
@@ -59,8 +74,8 @@
  *
  * ■ ずれの足し合わせ
  * 「速さのずれ × 0.5ms」を足していくと、目標の位置と本当の位置のずれ [mm] になる。
- * 同じように「角速度のずれ × 0.5ms」を足すと、角度のずれ [deg] になる。
  * 速さのずれだけで電圧を決めると、少し遅れたぶんを取り戻せないので、足し合わせたずれも使う（I の項）。
+ * 向きも同じで、角速度のずれだけでなく、角度のずれ（上の「目標の向き」）も使う。
  *
  * ■ 割り込み
  * control_start()・control_stop() はメインの処理から呼ぶ。値を書いているあいだに割り込みが
@@ -88,7 +103,8 @@
 /* 割り込みの中で書き換える（volatile の理由は sys/scheduler.c の先頭のコメント） */
 static volatile bool s_running = false;
 static volatile float s_position_error_mm = 0.0f;  /* 位置のずれ（速さのずれの足し合わせ） */
-static volatile float s_angle_error_deg = 0.0f;    /* 角度のずれ（角速度のずれの足し合わせ） */
+static volatile float s_target_heading_deg = 0.0f; /* 目標の向き [deg]（ジャイロの角度と同じ数え方。先頭のコメントの「目標の向き」） */
+static volatile float s_angle_error_deg = 0.0f;    /* 角度のずれ [deg]（目標の向き − ジャイロの角度） */
 static volatile float s_start_angle_deg = 0.0f;    /* 始めたときの向き */
 static volatile float s_left_voltage_v = 0.0f;     /* 最後にかけた電圧（ログ用） */
 static volatile float s_right_voltage_v = 0.0f;
@@ -129,6 +145,7 @@ static void start_common(void)
   s_position_error_mm = 0.0f;
   s_angle_error_deg = 0.0f;
   s_start_angle_deg = imu_get_angle_deg();
+  s_target_heading_deg = s_start_angle_deg;  /* 今の向きを、目標の向きにする（最短走行なら、スタートの向き = 0°） */
   s_both_walls_mm = 0.0f;
   wall_ctrl_reset_end_check(odometry_get_distance_mm());
   side_edge_reset();
@@ -188,6 +205,17 @@ static float heading_error_from_grid_deg(float angle_deg)
   float turned_deg = angle_deg - s_heading_reference_deg;
   float quarter_count = roundf(turned_deg / 90.0f);  /* roundf は、いちばん近い整数にする（math.h） */
   return turned_deg - quarter_count * 90.0f;
+}
+
+/* ジャイロの角度 angle_deg の、今走っている向きの迷路の向きからのずれ [deg]（−45〜+45°。+ なら左を向いている）。
+ * 斜めの直進のあいだは、基準の向きから 45° ずらした向き（45°・135° …）を迷路の向きとする */
+static float heading_error_now_deg(float angle_deg)
+{
+  if (s_on_diagonal) {
+    /* 45° 引いてから縦横の向きのずれを求めると、45° ずらした向きからのずれになる */
+    return heading_error_from_grid_deg(angle_deg - 45.0f);
+  }
+  return heading_error_from_grid_deg(angle_deg);
 }
 
 /* 今の向きを、迷路の向き（90° ごと）とみなして、基準の向きをリセットする。
@@ -393,15 +421,31 @@ static void update_heading_auto_reset(void)
   }
 }
 
+/* 今、向きを戻すときか（先頭のコメントの「向きを戻す」）。使える壁（s_wall_used）と、斜めの補正で使ったセンサ（s_diag_used）を
+ * 決めてから呼ぶ */
+static bool should_hold_heading(float speed_mm_s)
+{
+  if (!s_heading_hold_enabled || s_front_align) {
+    return false;
+  }
+  if (trajectory_get_kind() != TRAJECTORY_STRAIGHT || speed_mm_s < WALL_CONTROL_MIN_SPEED_MM_S) {
+    return false;
+  }
+  if (s_on_diagonal) {
+    /* 斜めの直進：斜めの補正を入れているのに、柱や壁が見えていない */
+    return s_diag_control && s_diag_used == 0;
+  }
+  /* 縦横の直進：横の壁の補正を入れているのに、左右とも使える壁がない */
+  return s_wall_control && s_wall_used == 0;
+}
+
 /* 向きを戻すために、目標の角速度に足す分 [deg/s]（+ なら左へ曲げる。先頭のコメントの「向きを戻す」）。
- * 縦横の直進で、横の壁の補正を入れているのに、左右とも使える壁がないときだけ。遅いときは 0 */
+ * 戻すときでなければ 0 */
 static float heading_hold_omega_deg_s(void)
 {
   float speed_mm_s = trajectory_get_speed_mm_s();
-  s_heading_error_deg = heading_error_from_grid_deg(imu_get_angle_deg());
-  s_heading_hold_active = s_heading_hold_enabled && s_wall_control && trajectory_get_kind() == TRAJECTORY_STRAIGHT
-                          && s_wall_used == 0
-                          && speed_mm_s >= WALL_CONTROL_MIN_SPEED_MM_S && !s_front_align;
+  s_heading_error_deg = heading_error_now_deg(imu_get_angle_deg());
+  s_heading_hold_active = should_hold_heading(speed_mm_s);
   if (!s_heading_hold_active) {
     s_heading_hold_omega_deg_s = 0.0f;
     return 0.0f;
@@ -443,13 +487,20 @@ static float diag_omega_deg_s(void)
 static float turn_voltage(void)
 {
   float target_omega = target_omega_deg_s();
-  /* 横の壁の補正・斜めの補正・向きを戻す分（同時には入らない。向きを戻すのは、横の壁の補正で使える壁がないときだけ）。
-   * wall_omega_deg_s() が、使える壁（s_wall_used）を決めるので、向きを戻す分より先に呼ぶ */
+  /* 横の壁の補正・斜めの補正・向きを戻す分（同時には入らない。向きを戻すのは、使える壁や柱がないときだけ）。
+   * wall_omega_deg_s() が使える壁（s_wall_used）を、diag_omega_deg_s() が使ったセンサ（s_diag_used）を決めるので、
+   * 向きを戻す分より先に、1 行ずつ順に呼ぶ */
   float wall_deg_s = wall_omega_deg_s();
-  float correction_deg_s = wall_deg_s + diag_omega_deg_s() + heading_hold_omega_deg_s();
+  float diag_deg_s = diag_omega_deg_s();
+  float hold_deg_s = heading_hold_omega_deg_s();
+  float correction_deg_s = wall_deg_s + diag_deg_s + hold_deg_s;
   update_heading_auto_reset();
-  float omega_error_deg_s = target_omega + correction_deg_s - imu_get_gyro_z_dps();
-  s_angle_error_deg = s_angle_error_deg + omega_error_deg_s * CTRL_PERIOD_S;
+
+  /* 目標の向きを、この周期の目標の角速度（補正も入れたもの）の分だけ進める（先頭のコメントの「目標の向き」） */
+  float omega_with_correction_deg_s = target_omega + correction_deg_s;
+  s_target_heading_deg = s_target_heading_deg + omega_with_correction_deg_s * CTRL_PERIOD_S;
+  s_angle_error_deg = s_target_heading_deg - imu_get_angle_deg();
+  float omega_error_deg_s = omega_with_correction_deg_s - imu_get_gyro_z_dps();
 
   /* 目標の角速度・角加速度で回るときの、タイヤ 1 つの速さ [mm/s]・加速度 [mm/s²] */
   float wheel_speed_mm_s = target_omega * DEG_TO_RAD * (TREAD_MM / 2.0f);
@@ -479,18 +530,20 @@ static void record_log(void)
   values.speed_target_mm_s = target_speed_mm_s();
   values.omega_deg_s = imu_get_gyro_z_dps();
   values.omega_target_deg_s = target_omega_deg_s() + s_wall_omega_deg_s + s_diag_omega_deg_s + s_heading_hold_omega_deg_s;
-  if (s_heading_hold_active) {
-    /* 向きを戻しているあいだは、wall_err の列に迷路の向きからのずれ [deg]、wall_p の列に戻す角速度（+ なら右へ）を入れる
-     * （logs/README.md。横の壁の補正は入っていないので、その列はあいている） */
-    values.wall_error = s_heading_error_deg;
-    values.wall_p = -s_heading_hold_omega_deg_s;
-    values.wall_d = 0.0f;
-  }
   values.wall_used = s_wall_used;
   values.wall_error = s_wall_error;
   values.wall_p = s_wall_error * WALL_KP;
   values.wall_d = s_wall_error_rate * WALL_KD;
+  if (s_heading_hold_active) {
+    /* 向きを戻しているあいだは、wall_err の列に迷路の向きからのずれ [deg]、wall_p の列に戻す角速度（+ なら右へ）を入れる
+     * （logs/README.md。横の壁の補正は入っていないので、その列はあいている）。
+     * 横の壁の値を入れたあとで書く（2026-11-23 まで、先に書いていたので、横の壁の値で上書きされて 0 になっていた） */
+    values.wall_error = s_heading_error_deg;
+    values.wall_p = -s_heading_hold_omega_deg_s;
+    values.wall_d = 0.0f;
+  }
   values.angle_deg = imu_get_angle_deg() - s_start_angle_deg;
+  values.angle_target_deg = s_target_heading_deg - s_start_angle_deg;  /* 目標の向き（angle の列と同じく、始めたときを 0°） */
   values.sensor_left = wall_ctrl_get_left();
   values.sensor_right = wall_ctrl_get_right();
   values.voltage_left_v = s_left_voltage_v;
@@ -511,9 +564,12 @@ static void record_log(void)
     values.wall_dist_left_mm = wall_ctrl_get_front_left_mm();
     values.wall_dist_right_mm = wall_ctrl_get_front_right_mm();
     values.wall_used = s_diag_used;
-    values.wall_error = s_diag_error;
-    values.wall_p = -s_diag_omega_deg_s;  /* 曲げた角速度（横の壁の補正の P 項と同じ向き。+ なら右へ曲げた） */
-    values.wall_d = 0.0f;
+    /* 向きを戻しているあいだは、上で入れた向きの値をそのまま残す（そのとき斜めの補正は 0） */
+    if (!s_heading_hold_active) {
+      values.wall_error = s_diag_error;
+      values.wall_p = -s_diag_omega_deg_s;  /* 曲げた角速度（横の壁の補正の P 項と同じ向き。+ なら右へ曲げた） */
+      values.wall_d = 0.0f;
+    }
   } else if (trajectory_get_kind() == TRAJECTORY_PIVOT) {
     values.phase = LOG_PHASE_PIVOT;
   } else if (trajectory_get_kind() == TRAJECTORY_SLALOM) {
@@ -633,7 +689,13 @@ float control_get_position_error_mm(void)
   return s_position_error_mm;
 }
 
-/* 角度のずれ [deg]（目標 − 測った値。+ なら目標より右を向いている＝左回りが足りない） */
+/* 向きを戻すために、最後に足した角速度 [deg/s]（+ なら左へ曲げた。テストで使う） */
+float control_get_heading_hold_omega_deg_s(void)
+{
+  return s_heading_hold_omega_deg_s;
+}
+
+/* 角度のずれ [deg]（目標の向き − ジャイロの角度。+ なら目標より右を向いている＝左回りが足りない） */
 float control_get_angle_error_deg(void)
 {
   return s_angle_error_deg;

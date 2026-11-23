@@ -41,7 +41,7 @@ typedef struct {
   float speed_target_mm_s;   /* 目標の速度 [mm/s] */
   float omega_deg_s;         /* 角速度 [deg/s] */
   float omega_target_deg_s;  /* 目標の角速度 [deg/s] */
-  float angle_deg;           /* 角度 [deg]（動作ごとに 0 から） */
+  float angle_deg;           /* 角度 [deg]（制御を始めたときを 0°） */
   int sensor_left;           /* 左の横センサの値（LPF だけ。1 回だけの落ち込みも見える） */
   int sensor_right;          /* 右の横センサの値 */
   float wall_dist_left_mm;   /* 左の壁までの距離 [mm]（区画のまん中で 42。前壁合わせのあいだは左前から求めた前の壁までの距離） */
@@ -54,6 +54,7 @@ typedef struct {
   float voltage_right_v;     /* 右のモーターにかけた電圧 [V] */
   float battery_v;           /* 電池の電圧 [V] */
   float accel_y_mm_s2;       /* IMU の前後の加速度 Y [mm/s²]（前に速くなるときに + か - かは、加速度テストで確かめる） */
+  float angle_target_deg;    /* 目標の向き [deg]（angle と同じく、制御を始めたときを 0°。ctrl/control.c の「目標の向き」） */
   log_phase_t phase;         /* 何の動作中か */
 } log_values_t;
 

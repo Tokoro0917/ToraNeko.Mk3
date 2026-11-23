@@ -20,9 +20,10 @@ void control_set_heading_auto_reset(bool on);
 void control_set_front_align(bool on);
 bool control_is_running(void);
 
-/* 今の動きを始めてからの、位置のずれ [mm] と角度のずれ [deg]（目標 − 測った値）。動作確認用 */
+/* 制御を始めてからの位置のずれ [mm] と、角度のずれ [deg]（目標の向き − ジャイロの角度）。動作確認用 */
 float control_get_position_error_mm(void);
 float control_get_angle_error_deg(void);
+float control_get_heading_hold_omega_deg_s(void);  /* 向きを戻すために、最後に足した角速度 [deg/s]（テストで使う） */
 
 /* フェイルセーフで止めたわけ（最後に止めたもの。control_start() で「なし」に戻る） */
 typedef enum {
