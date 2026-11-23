@@ -19,8 +19,9 @@
 
 【境目版の置き方】
 会場ごとの倍率合わせ（ファームウェアのモード7 No.3）は、タイヤの軸を区画の境目（入口の辺）に合わせ、左右の壁のまん中に置いて測る。
-境目版は、うしろの区画（区画 B）に置く。区画 B の後ろの壁から機体の後ろまでの枠で、機体の中心を、区画 B と前の区画（区画 A）の
-境目の上に、左右のまん中・まっすぐ前向きに置く。区画 B には後ろと左右の壁が要る（スタート区画と同じ形）。
+境目版は、うしろの区画（区画 B）に置く。左右の壁に沿う 2 本の棒と、機体の後ろの帯でできた U 字の枠で、機体の中心を、
+区画 B と前の区画（区画 A）の境目の上に、左右のまん中・まっすぐ前向きに置く。2 本の棒の後ろの端を区画 B の後ろの壁に当てる。
+区画 B には後ろと左右の壁が要る（スタート区画と同じ形）。
 
 【斜め版の置き方】
 斜めの動き（斜め入りの終わり、V90、斜め出の始め）は、区画の辺の中点を 45° の向きで通る。
@@ -52,8 +53,10 @@ RIM_BASE_W = 4.0       # 縁の外側に付ける土台（板と同じ厚さ）�
 REAR_BAR_W = 8.0       # 斜め版の、機体の後ろの辺に沿う棒の幅（縁の後ろから）
 SIDE_BAR_W = 10.0      # 斜め版の、横の壁に沿う棒の幅
 GUSSET_LEN = 20.0      # 斜め版の、2 本の棒のつなぎ目に入れる三角の補強の大きさ
-EDGE_BAND_W = 8.0      # 境目版の、後ろの壁に沿う帯の幅
 EDGE_SIDE_W = 8.0      # 境目版の、左右の壁に沿う棒の幅
+EDGE_RIM_LEN = 25.0    # 境目版の縁が基板の横を受ける長さ（基板の後ろの端から前へ）。
+                       # 前の端はタイヤ用の切り欠き（車軸から ±6.5mm。そこには基板の縁がない）のすぐ後ろ
+EDGE_GUSSET = 10.0     # 境目版の、機体の後ろの帯と左右の棒のつなぎ目に入れる三角の補強の大きさ
 
 # ---- 機体の寸法（STEP 座標）-----------------------------------------------
 FLOOR_Z = -2.36                # 床の高さ（基板の下面から）
@@ -133,15 +136,15 @@ def board_shape(margin, z0, z1):
             .edges("|Z").fillet(BOARD_CORNER_R + margin))
 
 
-def rim():
-    """基板の後ろの 2 つの角を受ける L 字の縁（後ろの端と、横の後ろ RIM_LEN だけ）。
+def rim(length=RIM_LEN):
+    """基板の後ろの 2 つの角を受ける L 字の縁（後ろの端と、横の後ろ length だけ）。
 
     縁の外側には、板と同じ厚さの土台（幅 RIM_BASE_W）を付けて、断面を L 字にする。
     縁だけだと細い壁が床に立っているだけになり、根もとで折れやすいため。
     """
     wall = board_shape(BOARD_GAP + RIM_W, FLOOR_Z, FLOOR_Z + RIM_H)
     base = board_shape(BOARD_GAP + RIM_W + RIM_BASE_W, FLOOR_Z, FLOOR_Z + PLATE_T)
-    keep = robot_rect(-50, 50, BOARD_REAR - RIM_LEN, BOARD_REAR + 10, -10, 10)
+    keep = robot_rect(-50, 50, BOARD_REAR - length, BOARD_REAR + 10, -10, 10)
     return wall.union(base).intersect(keep)
 
 
@@ -152,20 +155,38 @@ def straight_frame():
 
 
 def edge_frame():
-    """境目版の枠: 後ろの壁に沿う帯、左右の壁に沿う棒、機体の後ろの帯（左右の壁まで）、縁。
+    """境目版の枠: 左右の壁に沿う棒、機体の後ろの帯（左右の壁まで）、つなぎ目の三角の補強、縁。
 
-    真ん中は抜いて、口の字の形にする（材料と印刷の時間を減らす）。
-    後ろの壁に沿う帯が後ろの壁に当たって前後の位置が、左右の棒が左右の壁に当たって左右の位置と向きが決まる。
+    左右の棒が左右の壁に当たって左右の位置と向きが、左右の棒の後ろの端が後ろの壁に当たって前後の位置が決まる。
+    後ろの壁に沿う帯は付けない（左右の棒の端で足りるので、肉抜きのために省く）。
+    機体の後ろの帯は、縁とその土台の幅だけにする。
+    縁は基板の横を EDGE_RIM_LEN だけ受けて、機体の前を横から押しても回らないようにする。
     """
-    rear_band = robot_rect(-HALF_CELL, HALF_CELL, EDGE_PLATE_REAR_V - EDGE_BAND_W, EDGE_PLATE_REAR_V,
-                           FLOOR_Z, FLOOR_Z + PLATE_T)
-    robot_band = robot_rect(-HALF_CELL, HALF_CELL, RIM_INNER_V, RIM_INNER_V + RIM_W + REAR_BAR_W,
-                            FLOOR_Z, FLOOR_Z + PLATE_T)
+    band_rear_v = RIM_INNER_V + RIM_W + RIM_BASE_W
+    robot_band = robot_rect(-HALF_CELL, HALF_CELL, RIM_INNER_V, band_rear_v, FLOOR_Z, FLOOR_Z + PLATE_T)
     left_bar = robot_rect(HALF_CELL - EDGE_SIDE_W, HALF_CELL, RIM_INNER_V, EDGE_PLATE_REAR_V,
                           FLOOR_Z, FLOOR_Z + PLATE_T)
     right_bar = robot_rect(-HALF_CELL, -HALF_CELL + EDGE_SIDE_W, RIM_INNER_V, EDGE_PLATE_REAR_V,
                            FLOOR_Z, FLOOR_Z + PLATE_T)
-    return rear_band.union(robot_band).union(left_bar).union(right_bar).union(rim())
+    frame = robot_band.union(left_bar).union(right_bar)
+    for sign in (-1, 1):
+        frame = frame.union(edge_gusset(sign, band_rear_v))
+    return frame.union(rim(EDGE_RIM_LEN))
+
+
+def edge_gusset(sign, band_rear_v):
+    """境目版の、機体の後ろの帯と左右の棒の内側の角に入れる三角の補強。sign = +1 で左、-1 で右。
+
+    角の点（棒の内側の面と、帯の後ろの面が交わる所）から、棒に沿って後ろへ EDGE_GUSSET、
+    帯に沿って内側へ EDGE_GUSSET の三角形。少し棒と帯の中に入れて、すきまなくつなぐ。
+    """
+    corner_u = sign * (HALF_CELL - EDGE_SIDE_W)
+    points = [
+        at(corner_u + sign * 1.0, band_rear_v - 1.0, 0)[:2],
+        at(corner_u + sign * 1.0, band_rear_v + EDGE_GUSSET, 0)[:2],
+        at(corner_u - sign * EDGE_GUSSET, band_rear_v - 1.0, 0)[:2],
+    ]
+    return prism(points, FLOOR_Z, FLOOR_Z + PLATE_T)
 
 
 def gusset():
@@ -245,10 +266,10 @@ def diagonal_centering_plate_left():
 
 
 def edge_centering_plate():
-    """境目版のセンタリング板。後ろの壁に沿う帯に「EDGE」と彫る（読める向きが機体の前）。"""
+    """境目版のセンタリング板。左の棒に「EDGE」と彫る（棒に沿って、後ろから前へ読む向き）。"""
     body = cut_board(edge_frame())
-    position = at(0, EDGE_PLATE_REAR_V - EDGE_BAND_W / 2, 0)
-    return carve_text(body, "EDGE", position[0], position[1], 4.0, 180)
+    position = at(HALF_CELL - EDGE_SIDE_W / 2, (RIM_INNER_V + EDGE_PLATE_REAR_V) / 2 + 4.0, 0)
+    return carve_text(body, "EDGE", position[0], position[1], 4.0, -90)
 
 
 def export(body, name):
