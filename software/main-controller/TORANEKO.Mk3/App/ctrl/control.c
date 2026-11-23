@@ -46,6 +46,9 @@
  * 斜めの直進でも、斜めの補正を入れているのに柱や壁が見えていない（前のセンサがしきい値を超えていない）ときは、
  * 同じように戻す。斜めの迷路の向きは、基準の向きから 45° ずらして 90° ごと（45°・135°・−45°・−135°）。
  * 斜めの補正で向きを変えたあと、柱を過ぎたら向きを戻すので、ずれた向きのまま次の柱へ向かって進まない。
+ * 壁を見ないで戻す（control_set_heading_hold_without_walls(true)。ターンの調整。2026-11-23）：ターンの調整は、壁のない
+ * 広いところで走るので、横の壁の補正も斜めの補正も切っている。そのときも、最短走行と同じように直進のあいだ向きを戻す
+ * （補正を切ったまま、いつも戻す。斜めの補正を入れているときは、ふだんと同じく柱や壁が見えていないときだけ）。
  * 基準の向き：
  *   - 制御を始めたときの向き（control_start()。最短走行は、これだけ）
  *   - 壁で姿勢を合わせたとき（前壁合わせ・横壁合わせのあと。ctrl/run.c が control_reset_heading_reference() を呼ぶ）
@@ -124,6 +127,7 @@ static volatile float s_diag_omega_deg_s = 0.0f;    /* 斜めの補正で曲げ�
 static volatile int s_diag_used = 0;                /* しきい値を超えた前のセンサ（0 なし、1 左前、2 右前。ログ用） */
 static volatile float s_heading_reference_deg = 0.0f;  /* 迷路の向きの基準（ジャイロの角度。ここから 90° ごとが迷路の向き） */
 static volatile bool s_heading_hold_enabled = false;   /* 向きを戻すのを入れるか（探索と最短走行で入れる） */
+static volatile bool s_hold_without_walls = false;     /* 補正を切っている直進でも、向きを戻すか（ターンの調整で入れる） */
 static volatile bool s_heading_auto_reset = false;     /* 両側の壁が続いたら、基準の向きをリセットするか（探索と最短走行で入れる） */
 static volatile float s_both_walls_mm = 0.0f;          /* 両側の壁で、まっすぐ・まん中を走れている状態が続いた距離 [mm] */
 static volatile bool s_heading_hold_active = false;    /* 今、向きを戻しているか（ログ用） */
@@ -162,6 +166,7 @@ void control_start(void)
   start_common();
   s_heading_reference_deg = s_start_angle_deg;
   s_heading_hold_enabled = false;
+  s_hold_without_walls = false;
   s_heading_auto_reset = false;
   s_running = true;   /* 最後に、動いているにする */
 }
@@ -179,6 +184,13 @@ void control_restart(void)
 void control_set_heading_hold(bool on)
 {
   s_heading_hold_enabled = on;
+}
+
+/* 横の壁の補正・斜めの補正を切っている直進でも、向きを戻す（true）・戻さない（false）。
+ * ターンの調整の、助走と止まるところの直進で入れる（ctrl/run.c。先頭のコメントの「向きを戻す」） */
+void control_set_heading_hold_without_walls(bool on)
+{
+  s_hold_without_walls = on;
 }
 
 /* 横の壁に沿って走る補正を入れる（true）・入れない（false）。探索（ctrl/run.c）で入れる */
@@ -225,6 +237,13 @@ void control_reset_heading_reference(void)
   float angle_deg = imu_get_angle_deg();
   /* 今の向きのずれの分だけ基準を動かすと、今の向きのずれが 0 になる（90° ごとの数は変わらない） */
   s_heading_reference_deg = s_heading_reference_deg + heading_error_from_grid_deg(angle_deg);
+}
+
+/* 迷路の向きの基準を、angle_deg だけ回す（+ なら左へ）。斜めに置いて始めるとき（ターンの調整）に、
+ * 置いた向きを「迷路の北」ではなく「斜め」とするために使う（ctrl/run.c） */
+void control_turn_heading_reference(float angle_deg)
+{
+  s_heading_reference_deg = s_heading_reference_deg + angle_deg;
 }
 
 /* 両側の壁が続いたら、基準の向きをリセットする（true）・しない（false）。探索と最短走行で入れる（ctrl/run.c） */
@@ -432,11 +451,19 @@ static bool should_hold_heading(float speed_mm_s)
     return false;
   }
   if (s_on_diagonal) {
-    /* 斜めの直進：斜めの補正を入れているのに、柱や壁が見えていない */
-    return s_diag_control && s_diag_used == 0;
+    if (s_diag_control) {
+      /* 斜めの補正を入れている：柱や壁が見えていないときだけ */
+      return s_diag_used == 0;
+    }
+    /* 斜めの補正を切っている：壁を見ないで戻すとき（ターンの調整）だけ */
+    return s_hold_without_walls;
   }
-  /* 縦横の直進：横の壁の補正を入れているのに、左右とも使える壁がない */
-  return s_wall_control && s_wall_used == 0;
+  if (s_wall_control) {
+    /* 横の壁の補正を入れている：左右とも使える壁がないときだけ */
+    return s_wall_used == 0;
+  }
+  /* 横の壁の補正を切っている：壁を見ないで戻すとき（ターンの調整）だけ */
+  return s_hold_without_walls;
 }
 
 /* 向きを戻すために、目標の角速度に足す分 [deg/s]（+ なら左へ曲げる。先頭のコメントの「向きを戻す」）。

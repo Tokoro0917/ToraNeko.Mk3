@@ -10,12 +10,14 @@
 void control_start(void);
 void control_restart(void);
 void control_set_heading_hold(bool on);
+void control_set_heading_hold_without_walls(bool on);
 void control_stop(void);
 void control_update(void);
 void control_set_wall_control(bool on);
 void control_set_on_diagonal(bool on);
 void control_set_diag_control(bool on);
 void control_reset_heading_reference(void);
+void control_turn_heading_reference(float angle_deg);
 void control_set_heading_auto_reset(bool on);
 void control_set_front_align(bool on);
 bool control_is_running(void);

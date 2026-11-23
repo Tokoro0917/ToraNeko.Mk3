@@ -14,7 +14,8 @@
  *   6. 斜めの補正：左の柱に近い（ずれ +）と右へ、右に近いと左へ曲げる。速さに比例し、上限で止まる。切ってあれば曲げない
  *   7. 向きを戻す：使える横の壁がないとき、迷路の向きからずれていたら戻す。壁があるとき・切ってあるときは戻さない。
  *      速さに比例し、上限で止まる。基準の向きのリセット（手で・両側の壁が続いたとき）、始め直しても基準が残ること。
- *      斜めの直進では、柱や壁が見えていないときに、45° ずらした向き（45°・135° …）へ戻す
+ *      斜めの直進では、柱や壁が見えていないときに、45° ずらした向き（45°・135° …）へ戻す。
+ *      壁を見ないで戻すとき（ターンの調整）は、補正を切っていても戻す。基準の向きを 45° 回すと、置いた向きが斜めになる
  *   8. 目標の向き：スタートを 0° として持ち続ける。ターンで回り足りなかった分は、次の直進でも角度のずれとして残り、戻す
  */
 #include <math.h>
@@ -414,6 +415,26 @@ static float diag_hold_omega(float speed_mm_s, float angle_deg, bool use_correct
   return control_get_heading_hold_omega_deg_s();
 }
 
+/* 横の壁の補正も斜めの補正も切って、800mm/s で走っていて、ジャイロの角度が angle_deg のときに、向きを戻すために足す
+ * 角速度 [deg/s]（ターンの調整の直進）。on_diagonal は斜めの直進か、without_walls は壁を見ないで戻すか、
+ * reference_turn_deg は始めたあとに基準の向きを回す角度。制御は 0° で始める */
+static float open_hold_omega(float angle_deg, bool on_diagonal, bool without_walls, float reference_turn_deg)
+{
+  s_fake_angle_deg = 0.0f;
+  reset();
+  control_set_heading_hold(true);
+  control_set_heading_hold_without_walls(without_walls);
+  control_turn_heading_reference(reference_turn_deg);
+  control_set_on_diagonal(on_diagonal);
+  run_up_to(800.0f, 6000.0f);
+  s_fake_angle_deg = angle_deg;
+  tick(trajectory_get_speed_mm_s());
+  s_fake_angle_deg = 0.0f;
+  control_set_on_diagonal(false);
+  control_set_heading_hold_without_walls(false);
+  return control_get_heading_hold_omega_deg_s();
+}
+
 /* 2 つの値がほぼ同じか（0.01 まで） */
 static bool nearly_equal(float a, float b)
 {
@@ -456,6 +477,19 @@ static void test_heading_hold(void)
   check(nearly_equal(diag_minus_134, -one_deg_omega), "斜めで −134° なら、斜めの向き −135° から +1° として右へ曲げる");
   check(nearly_equal(diag_pillar, 0.0f), "柱や壁が見えているときは、向きを戻さない（斜めの補正だけ）");
   check(nearly_equal(diag_off, 0.0f), "斜めの補正を切ってあるとき（ターンの調整など）は、向きも戻さない");
+
+  /* 壁を見ないで戻す（ターンの調整）：補正を切っていても戻す。切ってあれば戻さない */
+  float open_on = open_hold_omega(1.0f, false, true, 0.0f);
+  float open_off = open_hold_omega(1.0f, false, false, 0.0f);
+  float open_diag = open_hold_omega(46.0f, true, true, 0.0f);
+  /* 北東を向けて置いたとき（基準を 45° 左へ回す）：置いた向き 0° が斜めの向きになり、1° なら +1° として戻す */
+  float placed_diag = open_hold_omega(1.0f, true, true, 45.0f);
+  printf("  壁を見ないで戻す [deg/s]：縦横 1° %.2f、入れていない %.2f、斜め 46° %.2f、斜めに置いて 1° %.2f\n",
+         open_on, open_off, open_diag, placed_diag);
+  check(nearly_equal(open_on, -one_deg_omega), "壁を見ないで戻すときは、横の壁の補正を切っていても、縦横の向きへ戻す");
+  check(nearly_equal(open_off, 0.0f), "壁を見ないで戻すのを入れていなければ、補正を切った直進では戻さない（ターンの前距離・後距離と同じ）");
+  check(nearly_equal(open_diag, -one_deg_omega), "壁を見ないで戻すときは、斜めの補正を切っていても、斜めの向きへ戻す");
+  check(nearly_equal(placed_diag, -one_deg_omega), "基準を 45° 回すと、置いた向き（0°）が斜めの向きになる");
 
   /* 基準の向きのリセット：3° 向いているところでリセットすると、そこが迷路の向きになり、曲げなくなる */
   s_fake_angle_deg = 0.0f;
