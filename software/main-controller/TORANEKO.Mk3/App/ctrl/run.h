@@ -78,6 +78,7 @@ void run_search_align_to_side(bool is_left);
  *   run_fast_start_open_area(斜めに置くなら true)       run_fast_start() と同じ。このあとの直進では、壁を見ないで向きを迷路の向きに戻す
  *   run_fast_open_straight(…)・run_fast_open_stop(…)    横の壁に沿う補正を入れない直進・止まる（run_fast_straight・run_fast_stop と同じ引数。
  *                                                     run_fast_straight の「始める位置」はない）
+ *   run_fast_end_open_area()                          このあとの直進では、向きを戻すのをやめる（ターンのあとの止まるところ）
  * フェイルセーフで止まったときは、探索と同じく、すぐに戻る */
 
 /* 大回り・斜めのターン（始めと終わりの位置は config/turn_params.h の先頭のコメント） */
@@ -106,6 +107,7 @@ void run_fast_set_diag_correction(bool on);
 void run_fast_start_open_area(bool start_on_diagonal);
 void run_fast_open_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2);
 void run_fast_open_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2);
+void run_fast_end_open_area(void);
 
 /* 走っているあいだに、動きが戻ってから次の動きを頼まれるまでの、いちばん長かった時間 [µs]（発進してから）。
  * 探索の計算が長すぎないかを確かめる（300mm/s では 1ms で 0.3mm 進む）。モード7 No.1 で出す */

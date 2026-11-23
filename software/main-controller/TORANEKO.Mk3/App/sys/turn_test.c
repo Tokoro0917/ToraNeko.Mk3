@@ -43,11 +43,12 @@
  * ■ 向き（2026-11-23。作者の依頼で、最短走行と同じにした）
  * 最短走行は、スタートの向きを 0° として「目標の向き」を持ち続け、壁や柱が使えない直進では、向きを迷路の向き
  * （縦横なら 0°・90° …、斜めなら 45°・135° …）に戻す（ctrl/control.c の「目標の向き」「向きを戻す」）。
- * ターンの調整も同じにする：助走と止まるところの直進では、横の壁・斜めの補正は入れないまま、向きを迷路の向きに戻す
+ * ターンの調整も同じにする：助走の直進では、横の壁・斜めの補正は入れないまま、向きを迷路の向きに戻す
  * （run_fast_start_open_area()）。ターンの前距離・後距離では、最短走行と同じく戻さない。
- * No.5〜9 は北東を向けて置くので、置いた向きを斜め（北東）として始める。
- * 止まるまでに向きが戻るので、止まったときの向きは、ターンの向きのずれより小さく見える。ターンで何度ずれたかは、
- * 走行ログで、ターンが終わったところ（phase 4 の最後）の angle と angle_target を比べて見る。
+ * ターンのあとの止まるところ（後距離のあと）は、今までどおり向きを戻さない（run_fast_end_open_area()）。止まったときの
+ * 向きで、ターンの向きのずれを見るため（走行ログでは、ターンの終わりの angle と angle_target の差でも見られる）。
+ * No.5〜9 は北東を向けて置くので、置いた向きを斜め（北東）として始める。斜めの直進のテスト（No.8・9）はターンがないので、
+ * 止まるまで向きを戻す。
  *
  * ■ 斜めの直進のテスト（No.8・9。2026-11-04 に足した）
  * 斜めの通り道（階段のような形に壁を並べたもの）で、斜めに DIAG_TEST_STEPS つぶん（6 つ、382mm）走って止まる。
@@ -108,7 +109,8 @@ static void approach_on_diag(float speed_mm_s)
   run_fast_diag_straight(DIAG_STEP_MM, speed_mm_s, speed_mm_s, TURN_TEST_ACCEL_MM_S2);
 }
 
-/* 区画のまん中から、1 区画進みながら止まる（速さ speed_mm_s から）。横の壁に沿う補正は入れない（approach_from_start と同じ） */
+/* 区画のまん中から、1 区画進みながら止まる（速さ speed_mm_s から）。横の壁に沿う補正は入れない（approach_from_start と同じ）。
+ * 向きは戻さない（run_fast_end_open_area() のあとに呼ぶ。先頭のコメントの「向き」） */
 static void stop_after_cell(float speed_mm_s)
 {
   run_fast_open_stop(CELL_MM, speed_mm_s, TURN_TEST_ACCEL_MM_S2);
@@ -211,6 +213,7 @@ void turn_test_run(int number)
   }
 
   run_one_turn(turn);
+  run_fast_end_open_area();  /* 止まるところでは、今までどおり向きを戻さない（止まったときの向きでターンを見る） */
 
   /* 止まる */
   if (ends_on_diag(turn)) {

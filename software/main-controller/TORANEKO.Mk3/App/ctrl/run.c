@@ -753,6 +753,13 @@ void run_fast_start_open_area(bool start_on_diagonal)
   }
 }
 
+/* 広いところで走っているとき（ターンの調整）に、このあとの直進では、向きを戻すのをやめる（今までどおりにする）。
+ * ターンのあとの止まるところで使う（止まったときの向きで、ターンの向きのずれを見るため。sys/turn_test.c） */
+void run_fast_end_open_area(void)
+{
+  s_open_area = false;
+}
+
 /* 広いところで distance_mm まっすぐ進む（ターンの調整の助走）。横の壁に沿う補正は入れず、向きを迷路の向きに戻す
  * （run_fast_start_open_area() のあと） */
 void run_fast_open_straight(float distance_mm, float max_speed_mm_s, float end_speed_mm_s, float accel_mm_s2)
@@ -1079,8 +1086,8 @@ void run_fast_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2)
   stop_after(distance_mm, max_speed_mm_s, accel_mm_s2);
 }
 
-/* 広いところで distance_mm 進みながら止まる（ターンの調整。run_fast_stop と同じだが、横の壁に沿う補正は入れず、
- * 向きを迷路の向きに戻す。run_fast_start_open_area() のあと） */
+/* 広いところで distance_mm 進みながら止まる（ターンの調整。run_fast_stop と同じだが、横の壁に沿う補正は入れない。
+ * run_fast_end_open_area() のあとなら、向きも戻さない） */
 void run_fast_open_stop(float distance_mm, float max_speed_mm_s, float accel_mm_s2)
 {
   control_set_wall_control(false);
