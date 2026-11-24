@@ -3,6 +3,7 @@
 ソフト・ハード・機構のいずれにも属さない横断的なドキュメントを格納します。
 
 - [overview.md](./overview.md) — ロボット（ToraNeko.Mk3）の概要・仕様
+- [next-machine.md](./next-machine.md) — 新機体（Mk4）でやりたいことと検証
 
 例:
 

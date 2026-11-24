@@ -23,6 +23,13 @@
 | NCR321PAS | 壁センサLEDドライバ（定電流） | Nexperia | https://assets.nexperia.com/documents/data-sheet/NCR320PAS_NCR321PAS.pdf | [NCR321PAS.pdf](NCR321PAS.pdf)（NCR320PAS と共通、Rev.1 2020-05-13） |
 | LXDC55FAAA-203 | 3.3Vレギュレータ | - | - | 未アップロード |
 
+新機体（Mk4）で使ってみたい部品（[docs/next-machine.md](../../docs/next-machine.md)）：
+
+| 型番 | 用途 | メーカー | 参考リンク | PDF |
+|---|---|---|---|---|
+| AM2520PD1BT03 | 壁センサ受光の候補（PIN フォトダイオード、上向き、940nm） | Kingbright | https://www.kingbrightusa.com/images/catalog/SPEC/AM2520PD1BT03.pdf | [AM2520PD1BT03.pdf](AM2520PD1BT03.pdf)（Rev V.4 2024-11-18） |
+| SFH 4045N | 壁センサ発光の候補（IR LED、横向きの表面実装、940nm） | ams OSRAM | https://ams-osram.com/products/leds/ir-leds/osram-chip-led-lens-sfh-4045n | [SFH4045N.pdf](SFH4045N.pdf)（Version 1.6 2021-09-30） |
+
 「参考リンク」が空欄の部品は型番からの検索が必要です。分かる方はこのテーブルに追記してください。
 
 ## 備考
