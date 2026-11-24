@@ -29,6 +29,8 @@
 |---|---|---|---|---|
 | AM2520PD1BT03 | 壁センサ受光の候補（PIN フォトダイオード、上向き、940nm） | Kingbright | https://www.kingbrightusa.com/images/catalog/SPEC/AM2520PD1BT03.pdf | [AM2520PD1BT03.pdf](AM2520PD1BT03.pdf)（Rev V.4 2024-11-18） |
 | SFH 4045N | 壁センサ発光の候補（IR LED、横向きの表面実装、940nm） | ams OSRAM | https://ams-osram.com/products/leds/ir-leds/osram-chip-led-lens-sfh-4045n | [SFH4045N.pdf](SFH4045N.pdf)（Version 1.6 2021-09-30） |
+| VEMD2023SLX01 | 横向きの受光の候補（PIN フォトダイオード、横向き、±35°） | Vishay | https://www.vishay.com/docs/83493/vemd2023slx01.pdf | [VEMD2023SLX01.pdf](VEMD2023SLX01.pdf)（Rev. 1.0 2013-04-04） |
+| VEMT2023SLX01 | 横向きの受光の候補（フォトトランジスタ、横向き、±35°） | Vishay | https://www.vishay.com/docs/84166/vemt2023slx01.pdf | [VEMT2023SLX01.pdf](VEMT2023SLX01.pdf)（Rev. 1.0 2013-04-05） |
 
 「参考リンク」が空欄の部品は型番からの検索が必要です。分かる方はこのテーブルに追記してください。
 
